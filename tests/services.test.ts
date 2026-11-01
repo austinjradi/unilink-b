@@ -571,6 +571,40 @@ describe('ST2 assignment planner', () => {
     expect(plan.tight || plan.overloaded).toBe(false);
   });
 
+  it('moves a plan when a classmate moves the class deadline it follows', async () => {
+    const {
+      classId,
+      people: [maya, jonah],
+    } = await classmates('Maya', 'Jonah');
+    const deadline = (due: Date) => ({ classId, kind: 'assignment' as const, title: 'Problem set 4', dueAt: due, notes: '' });
+    await jonah.api.calendar.addDeadline(deadline(new Date(2026, 9, 9, 23, 59)));
+    const [shared] = await maya.api.calendar.deadlines();
+    await maya.api.planner.create({
+      title: 'Problem set 4',
+      classId,
+      dueAt: shared.dueAt,
+      notes: '',
+      tasks: problems(45),
+      attachmentPath: null,
+      deadlineId: shared.id,
+      assessmentId: null,
+    });
+
+    // Jonah pushes it back a week: Maya's plan takes the new date and tells her.
+    await jonah.api.calendar.updateDeadline({ id: shared.id, ...deadline(new Date(2026, 9, 16, 23, 59)) });
+    let [plan] = await maya.api.planner.list();
+    expect(plan.dueAt).toEqual(new Date(2026, 9, 16, 23, 59));
+    expect((await titles(maya)).some((title) => title.startsWith('"Problem set 4" is now due'))).toBe(true);
+    // It's listed once, as the class deadline.
+    expect((await maya.api.calendar.upcoming({ days: 30 })).map((e) => e.title)).toEqual(['Problem set 4']);
+
+    // Picking her own date stops following it.
+    await maya.api.planner.update({ assignmentId: plan.id, title: plan.title, classId, dueAt: new Date(2026, 9, 14, 12), notes: '', bufferDays: 2 });
+    await jonah.api.calendar.updateDeadline({ id: shared.id, ...deadline(new Date(2026, 9, 20, 23, 59)) });
+    [plan] = await maya.api.planner.list();
+    expect(plan.dueAt).toEqual(new Date(2026, 9, 14, 12));
+  });
+
   it('follows free time set per weekday', async () => {
     const { api } = await student('Maya');
     await api.planner.create({ title: 'Essay', classId: null, dueAt: new Date(2026, 9, 12, 23, 59), notes: '', tasks: problems(90), attachmentPath: null });

@@ -182,6 +182,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
     .where(and(eq(plannerAssignments.userId, userId), gte(plannerAssignments.dueAt, from), lt(plannerAssignments.dueAt, to)))
     .all()) {
     if (p.classId != null && listed.has(`${p.classId}|${ymd(p.dueAt)}`)) continue;
+    if (events.some((e) => e.key === `deadline-${p.deadlineId}` || e.key === `assessment-${p.assessmentId}`)) continue;
     events.push({
       key: `planner-${p.id}`,
       kind: 'deadline',

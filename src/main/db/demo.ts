@@ -371,7 +371,7 @@ function seedSections(db: DB, passwordHash: string) {
 
   const everyone = [...CLASSMATES, ...quietClassmates()];
   const ids = new Map<Who, number>();
-  const plans: { assignmentId: number; userId: number; done: number }[] = [];
+  const plans: { assignmentId: number; userId: number }[] = [];
 
   db.transaction((tx) => {
     tx.insert(users)
@@ -468,6 +468,10 @@ function seedSections(db: DB, passwordHash: string) {
     }
 
     const notices: { userId: number; type: string; title: Message; body: Message; link: string; createdAt: Date }[] = [];
+    // The sign-in accounts go to at most one session they didn't set up, so their free
+    // time (and the plans that use it, ST2) isn't all taken by sessions.
+    const coreIds = new Set(Object.keys(CORE_EMAILS).map((key) => ids.get(key)));
+    const sessionsJoined = new Map<number, number>();
 
     for (const [code, seed] of Object.entries(SECTIONS)) {
       const section = sections.get(code);
@@ -571,8 +575,9 @@ function seedSections(db: DB, passwordHash: string) {
           })
           .returning()
           .get();
-        const line = [hostId, ...others(hostId)];
+        const line = [hostId, ...others(hostId).filter((id) => !coreIds.has(id) || !sessionsJoined.get(id))];
         const going = line.slice(0, Math.min(s.going, s.capacity));
+        for (const id of going.slice(1)) if (coreIds.has(id)) sessionsJoined.set(id, 1);
         const waiting = line.slice(going.length, going.length + (s.waitlist ?? 0));
         const joinedAt = (i: number) => new Date(createdAt.getTime() + i * 3 * HOUR);
         tx.insert(studySessionMembers)
@@ -770,38 +775,42 @@ function seedSections(db: DB, passwordHash: string) {
       );
       for (const plan of seed.plans) {
         if (myPlans.has(plan.title)) continue;
+        const classId = mine(plan.section);
+        const source = classId && plan.follows
+          ? tx.select().from(assessments).where(and(eq(assessments.classId, classId), eq(assessments.name, plan.follows))).get()
+          : undefined;
+        const dueAt = source?.dueAt ?? at(plan.inDays, '23:59');
         const assignment = tx
           .insert(plannerAssignments)
-          .values({ userId, classId: mine(plan.section), title: plan.title, dueAt: at(plan.inDays, '23:59'), notes: plan.notes, bufferDays: 1, createdAt: ago(30) })
+          .values({
+            userId,
+            classId,
+            title: plan.title,
+            dueAt,
+            notes: plan.notes,
+            bufferDays: 1,
+            assessmentId: source?.dueAt ? source.id : null,
+            createdAt: ago(30),
+          })
           .returning()
           .get();
+        // The first few are already done today. The rest wait on the due date until their
+        // plan runs, so they don't crowd out the plans made before them.
         tx.insert(plannerTasks)
-          .values(plan.tasks.map(([title, minutes], position) => ({ assignmentId: assignment.id, title, minutes, position, scheduledFor: today })))
+          .values(
+            plan.tasks.map(([title, minutes], position) => {
+              const done = position < (plan.done ?? 0);
+              return { assignmentId: assignment.id, title, minutes, position, scheduledFor: done ? today : ymd(dueAt), doneAt: done ? ago(3) : null };
+            }),
+          )
           .run();
-        plans.push({ assignmentId: assignment.id, userId, done: plan.done ?? 0 });
+        plans.push({ assignmentId: assignment.id, userId });
       }
     }
   });
 
-  for (const { assignmentId, userId, done } of plans) {
+  for (const { assignmentId, userId } of plans) {
     replan({ db, userId, now: () => now } as unknown as Context & { userId: number }, assignmentId);
-    if (!done) continue;
-    const first = db
-      .select({ id: plannerTasks.id })
-      .from(plannerTasks)
-      .where(eq(plannerTasks.assignmentId, assignmentId))
-      .orderBy(plannerTasks.position)
-      .limit(done)
-      .all();
-    db.update(plannerTasks)
-      .set({ doneAt: ago(3), scheduledFor: today })
-      .where(
-        inArray(
-          plannerTasks.id,
-          first.map((t) => t.id),
-        ),
-      )
-      .run();
   }
 }
 

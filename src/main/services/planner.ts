@@ -1,14 +1,25 @@
 import { copyFile, mkdir, rm, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { and, asc, eq, gte, isNotNull, isNull, lt, lte, max, ne } from 'drizzle-orm';
+import { and, asc, eq, gte, isNotNull, isNull, lt, lte, max, ne, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { addDays, parseYmd, ymd } from '@shared/dates';
 import { DEFAULT_BUFFER_DAYS, minutesOn, planTasks, weeklyMinutes } from '@shared/planner';
 import { randomUUID } from '../crypto';
 import type { DB } from '../db/client';
-import { classes, courses, plannerAssignments, plannerTasks, studySessionMembers, studySessions, users } from '../db/schema';
+import {
+  assessments,
+  classes,
+  courses,
+  deadlines,
+  plannerAssignments,
+  plannerTasks,
+  studySessionMembers,
+  studySessions,
+  users,
+} from '../db/schema';
 import { AppError, type AuthedContext, type Context, idSchema, nonEmpty, procedure } from '../rpc/core';
-import { notFound, requireMember } from './access';
+import { isMember, notFound, requireMember } from './access';
+import { m, notify } from './notifications';
 
 // ST2: assignments broken into tasks, scheduled as early as the student's free study
 // time per weekday allows (see shared/planner.ts), and re-planned when tasks are missed.
@@ -140,6 +151,7 @@ export function replan(ctx: Context & { userId: number }, assignmentId: number, 
 // day that's now over the study budget (e.g. after joining a study session).
 // Past-due assignments are left alone.
 export function reconcile(ctx: AuthedContext) {
+  followMovedDeadlines(ctx);
   const today = ymd(ctx.now());
   const open = ctx.db
     .select({
@@ -164,6 +176,53 @@ export function reconcile(ctx: AuthedContext) {
       .map((t) => t.assignmentId),
   );
   for (const id of stale) replan(ctx, id);
+}
+
+// Plans made from a class deadline or graded item move with it: when a classmate changes
+// the shared due date, the plan takes the new one, re-plans, and says so.
+function followMovedDeadlines(ctx: AuthedContext) {
+  const linked = ctx.db
+    .select({
+      id: plannerAssignments.id,
+      title: plannerAssignments.title,
+      dueAt: plannerAssignments.dueAt,
+      deadlineDue: deadlines.dueAt,
+      assessmentDue: assessments.dueAt,
+    })
+    .from(plannerAssignments)
+    .leftJoin(deadlines, eq(plannerAssignments.deadlineId, deadlines.id))
+    .leftJoin(assessments, eq(plannerAssignments.assessmentId, assessments.id))
+    .where(
+      and(
+        eq(plannerAssignments.userId, ctx.userId),
+        or(isNotNull(plannerAssignments.deadlineId), isNotNull(plannerAssignments.assessmentId)),
+      ),
+    )
+    .all();
+  for (const a of linked) {
+    const due = a.deadlineDue ?? a.assessmentDue;
+    if (!due || due.getTime() === a.dueAt.getTime()) continue;
+    ctx.db.update(plannerAssignments).set({ dueAt: due }).where(eq(plannerAssignments.id, a.id)).run();
+    replan(ctx, a.id);
+    notify(ctx.db, ctx.userId, {
+      type: 'plan-moved',
+      title: m('"{{title}}" is now due {{when}}', { title: a.title, when: { date: due.getTime() } }),
+      body: m('Your plan was adjusted to the new date.'),
+      link: '/planner',
+    });
+  }
+}
+
+// What a new plan can follow: a deadline the student can see, or a graded item in their section.
+function checkSource(db: DB, userId: number, { deadlineId, assessmentId }: { deadlineId: number | null; assessmentId: number | null }) {
+  if (deadlineId) {
+    const d = db.select().from(deadlines).where(eq(deadlines.id, deadlineId)).get() ?? notFound('deadline');
+    if (d.classId ? !isMember(db, userId, d.classId) : d.userId !== userId) notFound('deadline');
+  }
+  if (assessmentId) {
+    const a = db.select().from(assessments).where(eq(assessments.id, assessmentId)).get() ?? notFound('assessment');
+    requireMember(db, userId, a.classId);
+  }
 }
 
 async function storeAttachment(ctx: Context, source: string) {
@@ -261,9 +320,13 @@ export const plannerRouter = {
       ...assignmentFields,
       tasks: z.array(taskInput).min(1, 'Add at least one task').max(100),
       attachmentPath: z.string().nullable(),
+      // The class deadline or graded item it was started from, if any.
+      deadlineId: idSchema.nullable().default(null),
+      assessmentId: idSchema.nullable().default(null),
     }),
     async ({ tasks, attachmentPath, ...fields }, ctx) => {
       if (fields.classId) requireMember(ctx.db, ctx.userId, fields.classId);
+      checkSource(ctx.db, ctx.userId, fields);
       const attachment = attachmentPath ? await storeAttachment(ctx, attachmentPath) : {};
       const today = ymd(ctx.now());
       const assignment = ctx.db.transaction((tx) => {
@@ -286,8 +349,14 @@ export const plannerRouter = {
   update: procedure(z.object({ assignmentId: idSchema, ...assignmentFields }), ({ assignmentId, ...fields }, ctx) => {
     const before = ownAssignment(ctx.db, ctx.userId, assignmentId);
     if (fields.classId) requireMember(ctx.db, ctx.userId, fields.classId);
-    ctx.db.update(plannerAssignments).set(fields).where(eq(plannerAssignments.id, assignmentId)).run();
-    if (before.dueAt.getTime() !== fields.dueAt.getTime() || before.bufferDays !== fields.bufferDays) {
+    // Setting your own due date stops following the class deadline.
+    const moved = before.dueAt.getTime() !== fields.dueAt.getTime();
+    ctx.db
+      .update(plannerAssignments)
+      .set(moved ? { ...fields, deadlineId: null, assessmentId: null } : fields)
+      .where(eq(plannerAssignments.id, assignmentId))
+      .run();
+    if (moved || before.bufferDays !== fields.bufferDays) {
       replan(ctx, assignmentId);
     }
   }),

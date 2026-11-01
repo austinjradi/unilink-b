@@ -329,6 +329,10 @@ export const plannerAssignments = sqliteTable('planner_assignments', {
   bufferDays: integer('buffer_days').notNull().default(1),
   attachmentName: text('attachment_name'),
   attachmentPath: text('attachment_path'),
+  // Planned from the section's class deadline or graded item: the plan follows its due date
+  // when a classmate moves it ("if a deadline moves, the plan adjusts").
+  deadlineId: integer('deadline_id').references(() => deadlines.id, { onDelete: 'set null' }),
+  assessmentId: integer('assessment_id').references(() => assessments.id, { onDelete: 'set null' }),
   createdAt: createdAt(),
 });
 

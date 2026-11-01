@@ -12,6 +12,7 @@ export const NOTIFICATION_TYPES = {
   'link-hidden': { label: 'Your group chat link was hidden after reports', desktop: true, email: false },
   'deadline-soon': { label: 'Deadlines in the next 24 hours', desktop: true, email: true },
   'tasks-today': { label: "Today's planned tasks", desktop: true, email: false },
+  'plan-moved': { label: 'Plans that moved with a class deadline', desktop: true, email: false },
   'study-mode': { label: 'Study mode turning on and off', desktop: true, email: false },
 } as const;
 

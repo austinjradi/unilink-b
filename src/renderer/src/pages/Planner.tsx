@@ -28,6 +28,7 @@ import {
   IconAlertTriangle,
   IconChecklist,
   IconDots,
+  IconLink,
   IconPaperclip,
   IconPencil,
   IconPin,
@@ -197,6 +198,13 @@ function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onE
               {a.title}
             </Text>
             {a.classLabel && <Badge variant="light">{a.classLabel}</Badge>}
+            {(a.deadlineId != null || a.assessmentId != null) && (
+              <Tooltip label={t("Follows the section's due date: if a classmate moves it, this plan moves too.")} multiline w={260}>
+                <Badge variant="outline" color="gray" leftSection={<IconLink size={12} />}>
+                  {t('Follows the class deadline')}
+                </Badge>
+              </Tooltip>
+            )}
           </Group>
           <Text size="sm" c={a.pastDue ? 'red' : 'dimmed'}>
             {t('Due {{when}} ({{relative}})', { when: fmtDateTime(a.dueAt), relative: fromNow(a.dueAt) })} ·{' '}
@@ -348,8 +356,13 @@ function NewAssignmentForm({ onDone }: { onDone: () => void }) {
   // the form can start from one of them.
   const upcoming = useQuery({ queryKey: ['calendar', 'upcoming', 60], queryFn: () => rpc.calendar.upcoming({ days: 60 }) });
   const sources = (upcoming.data ?? []).filter((e) => e.detail !== 'planner');
+  // A plan started from a class deadline or graded item keeps following its due date,
+  // unless the student picks a different date here.
+  const [follows, setFollows] = useState<{ deadlineId: number | null; assessmentId: number | null; due: Date } | null>(null);
   const startFrom = (key: string | null) => {
     const source = sources.find((e) => e.key === key);
+    const assessmentId = source?.key.startsWith('assessment-') ? Number(source.key.slice('assessment-'.length)) : null;
+    setFollows(source && (source.deadlineId != null || assessmentId != null) ? { deadlineId: source.deadlineId, assessmentId, due: source.start } : null);
     if (!source) return;
     form.setValues({
       title: source.detail === 'graded' ? source.title.replace(/ \([\d.]+%\)$/, '') : source.title,
@@ -369,6 +382,9 @@ function NewAssignmentForm({ onDone }: { onDone: () => void }) {
         notes: v.notes,
         tasks,
         attachmentPath: attachment?.path ?? null,
+        ...(follows && toDate(v.dueAt)?.getTime() === follows.due.getTime()
+          ? { deadlineId: follows.deadlineId, assessmentId: follows.assessmentId }
+          : { deadlineId: null, assessmentId: null }),
       }),
     { success: t('Planned {{count}} tasks before the deadline', { count: tasks.length }), onSuccess: onDone },
   );

@@ -1872,7 +1872,8 @@ export interface CoreSeed {
   planned: string[];
   marks: Record<string, Record<string, number>>;
   notes: Record<string, [target: string, notes: string]>;
-  plans: { section: string; title: string; inDays: number; notes: string; tasks: [title: string, minutes: number][]; done?: number }[];
+  // `follows` names the section's graded item the plan was made from; it takes that due date.
+  plans: { section: string; title: string; follows?: string; inDays: number; notes: string; tasks: [title: string, minutes: number][]; done?: number }[];
   todos: [title: string, inDays: number | null, section: string | null, done?: boolean][];
   privateDeadlines: { kind: 'assignment' | 'exam' | 'quiz' | 'other'; title: string; inDays: number; time: string; notes: string }[];
 }
@@ -1909,6 +1910,7 @@ export const CORE: Record<Who, CoreSeed> = {
       {
         section: 'COMP 251-001',
         title: 'COMP 251 Assignment 2',
+        follows: 'Assignment 2',
         inDays: 5,
         notes: 'Greedy proofs and MSTs. Check the A2 Q3 thread on the board.',
         tasks: [
@@ -1923,6 +1925,7 @@ export const CORE: Record<Who, CoreSeed> = {
       {
         section: 'COMP 273-001',
         title: 'COMP 273 Assignment 2 (MIPS)',
+        follows: 'Assignment 2',
         inDays: 4,
         notes: '',
         tasks: [
@@ -1948,7 +1951,7 @@ export const CORE: Record<Who, CoreSeed> = {
   },
   priya: {
     program: 'sample-software-eng',
-    weekly: [180, 120, 150, 120, 150, 90, 180],
+    weekly: [240, 150, 180, 150, 180, 90, 240],
     records: [
       ['MATH 133', 'Fall 2025', 'A'],
       ['MATH 140', 'Fall 2025', 'A'],
@@ -1977,6 +1980,7 @@ export const CORE: Record<Who, CoreSeed> = {
       {
         section: 'ECSE 222-001',
         title: 'Lab 3 report',
+        follows: 'Lab 3',
         inDays: 3,
         notes: 'FSM diagram, VHDL listing, simulation screenshots.',
         tasks: [
@@ -1990,11 +1994,12 @@ export const CORE: Record<Who, CoreSeed> = {
       {
         section: 'COMP 303-001',
         title: 'Project milestone 2: my part',
+        follows: 'Project milestone 2',
         inDays: 13,
         notes: "I'm doing the persistence layer.",
         tasks: [
           ['UML for the storage classes', 60],
-          ['JSON serializer', 120],
+          ['JSON serializer', 90],
           ['Unit tests', 90],
           ['Code review with Lucas', 45],
           ['Update the README', 30],
@@ -2040,6 +2045,7 @@ export const CORE: Record<Who, CoreSeed> = {
       {
         section: 'MATH 323-001',
         title: 'MATH 323 Assignment 3',
+        follows: 'Assignment 3',
         inDays: 8,
         notes: '',
         tasks: [

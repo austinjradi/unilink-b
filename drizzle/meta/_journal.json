@@ -43,6 +43,13 @@
       "when": 1793517382130,
       "tag": "0005_version_b_cleanup",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1793560790755,
+      "tag": "0006_planner_follows_deadlines",
+      "breakpoints": true
     }
   ]
 }
