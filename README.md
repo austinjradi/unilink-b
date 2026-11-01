@@ -29,6 +29,24 @@ The yellow features, with what couldn't be fully built:
 | ST1 | Study mode                           | Study mode page; sidebar chip            | `shared/studyMode.ts`, `services/studyMode.ts` | **Can't block websites**; runs only while the app is open; system Do Not Disturb on GNOME only |
 | ST3 | To-do list                           | Home (first thing you see)               | `services/todos.ts`, `pages/Dashboard.tsx`    | None |
 
+## UI design
+
+The interface follows the team's wireframes in `A2Team.pdf`:
+
+- **Top navigation:** pill tabs, and your goat avatar on the right.
+- **Goat mascot:** customizable under Settings → Goat (`components/Goat.tsx`, `shared/goat.ts`).
+- **Home:** today's tasks and deadline countdowns on the left, a cross-class discussion feed with 🐐
+  reactions in the middle, and filters on the right.
+- **Threads:** threaded replies.
+- **Grade Calculator:** a "You need at least X%" bubble and a scenarios table.
+- **Calendar & Planner:** Month, Week and Semester views.
+- **Group chat links:** cards with Open/Report buttons.
+- **Study sessions:** your upcoming sessions, plus a search page.
+- **Settings:** sections down the side.
+
+The design uses rounded fonts (Nunito, with Fredoka for headings), bundled locally through Fontsource, and
+works in light and dark mode.
+
 ## Getting started
 
 Needs Node 22+.

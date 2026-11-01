@@ -15,7 +15,7 @@ import {
   SimpleGrid,
   Stack,
   Table,
-  Tabs,
+
   Text,
   TextInput,
   Title,
@@ -24,11 +24,10 @@ import {
 import { useForm } from '@mantine/form';
 import { IconAlertTriangle, IconCertificate, IconCircleCheck, IconDownload, IconListDetails, IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate, useParams } from 'react-router';
 import { OTHER_GRADES, RECORD_GRADES, RECORD_STATUSES, type RecordStatus, summarizeRecord, termOptions } from '@shared/academics';
 import { CURRENT_TERM } from '@shared/dates';
 import { letterFor } from '@shared/grades';
-import { Empty, Loading, PageHeader, SectionCard } from '../components/ui';
+import { Empty, Loading, SectionCard } from '../components/ui';
 import { useAction } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
 
@@ -56,10 +55,8 @@ const GRADE_OPTIONS = RECORD_GRADES.map((g) => ({
   label: g in OTHER_GRADES ? `${g} (${OTHER_GRADES[g as keyof typeof OTHER_GRADES]})` : g,
 }));
 
-export function AcademicsPage() {
-  const params = useParams();
-  const navigate = useNavigate();
-  const tab = params.tab === 'degree' ? 'degree' : 'record';
+// A1 course record / A2 degree plan, shown as tabs of the Courses page.
+export function AcademicsPanel({ tab }: { tab: 'record' | 'degree' }) {
   const [editing, setEditing] = useState<{ record: CourseRecord | null; draft: RecordDraft } | null>(null);
 
   const openNew = (draft?: Partial<RecordDraft>) =>
@@ -70,32 +67,16 @@ export function AcademicsPage() {
 
   return (
     <>
-      <PageHeader
-        title="Academics"
-        subtitle="Your courses, credits and grades across semesters, and how they add up toward your degree."
-        actions={
-          <Button leftSection={<IconPlus size={16} />} onClick={() => openNew()}>
-            Add course
-          </Button>
-        }
-      />
-      <Tabs value={tab} onChange={(v) => navigate(`/academics/${v}`)} keepMounted={false}>
-        <Tabs.List mb="lg">
-          <Tabs.Tab value="record" leftSection={<IconListDetails size={16} />}>
-            Course record
-          </Tabs.Tab>
-          <Tabs.Tab value="degree" leftSection={<IconCertificate size={16} />}>
-            Degree plan
-          </Tabs.Tab>
-        </Tabs.List>
-        <Tabs.Panel value="record">
-          <RecordTab onEdit={(record) => setEditing({ record, draft: record })} />
-        </Tabs.Panel>
-        <Tabs.Panel value="degree">
-          <DegreeTab onPlan={(draft) => openNew(draft)} />
-        </Tabs.Panel>
-      </Tabs>
-
+      <Group justify="flex-end" mb="md">
+        <Button leftSection={<IconPlus size={16} />} onClick={() => openNew()}>
+          Add course
+        </Button>
+      </Group>
+      {tab === 'record' ? (
+        <RecordTab onEdit={(record) => setEditing({ record, draft: record })} />
+      ) : (
+        <DegreeTab onPlan={(draft) => openNew(draft)} />
+      )}
       <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing?.record ? 'Edit course' : 'Add course'}>
         {editing && <RecordForm key={editing.record?.id ?? editing.draft.code} {...editing} onDone={() => setEditing(null)} />}
       </Modal>

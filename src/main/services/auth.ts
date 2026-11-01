@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomInt, scrypt, timingSafeEqual } from 'nod
 import { promisify } from 'node:util';
 import { and, desc, eq, gt, isNull } from 'drizzle-orm';
 import { z } from 'zod';
+import { GOAT_OPTIONS, type GoatPart, isGoatConfig } from '@shared/goat';
 import { MCGILL_EMAIL, passwordProblems } from '@shared/validation';
 import type { DB } from '../db/client';
 import { DEMO_PASSWORD, DEMO_USERS } from '../db/demo';
@@ -191,6 +192,19 @@ export const profileRouter = {
       studyMinutesPerDay: z.number().int().min(15, 'Plan at least 15 minutes a day').max(16 * 60),
     }),
     (input, ctx) => publicUser(ctx.db.update(users).set(input).where(eq(users.id, ctx.userId)).returning().get()),
+  ),
+
+  // Settings → Goat.
+  setAvatar: procedure(
+    z.object(
+      Object.fromEntries(
+        (Object.keys(GOAT_OPTIONS) as GoatPart[]).map((part) => [part, z.enum(GOAT_OPTIONS[part] as unknown as [string, ...string[]])]),
+      ) as Record<GoatPart, z.ZodEnum>,
+    ),
+    (avatar, ctx) => {
+      if (!isGoatConfig(avatar)) throw new AppError('That goat outfit is not available.');
+      ctx.db.update(users).set({ avatar }).where(eq(users.id, ctx.userId)).run();
+    },
   ),
 
   changePassword: procedure(

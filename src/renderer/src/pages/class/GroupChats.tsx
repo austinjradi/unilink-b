@@ -1,15 +1,15 @@
 import { useState } from 'react';
-import { ActionIcon, Alert, Anchor, Badge, Button, Card, Group, Menu, Modal, Stack, Switch, Text, TextInput } from '@mantine/core';
+import { Badge, Button, Card, Divider, Group, Menu, Modal, Stack, Switch, Text, TextInput, ThemeIcon, Title } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { modals } from '@mantine/modals';
 import {
+  IconAlertTriangle,
   IconBrandDiscord,
   IconBrandMessenger,
   IconBrandTelegram,
   IconBrandWhatsapp,
   IconDots,
   IconExternalLink,
-  IconFlag,
   IconLink,
   IconLock,
   IconPencil,
@@ -18,68 +18,79 @@ import {
   IconWorld,
 } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router';
 import { parseChatLink } from '@shared/links';
-import { Empty, Loading, SectionCard } from '../../components/ui';
+import { Empty, Loading } from '../../components/ui';
 import { fromNow, plural } from '../../lib/format';
 import { useAction } from '../../lib/hooks';
 import { type Out, rpc } from '../../lib/rpc';
 
-type Link = Out<typeof rpc.links.list>[number];
+type ChatLink = Out<typeof rpc.links.list>[number];
 
 const FLAG_REASONS = ['Expired', 'Broken', 'Not relevant', 'Spam or inappropriate'] as const;
 
-const PLATFORM_ICONS: Record<string, typeof IconLink> = {
-  WhatsApp: IconBrandWhatsapp,
-  Discord: IconBrandDiscord,
-  Messenger: IconBrandMessenger,
-  Telegram: IconBrandTelegram,
+const PLATFORMS: Record<string, { icon: typeof IconLink; color: string }> = {
+  WhatsApp: { icon: IconBrandWhatsapp, color: 'green' },
+  Discord: { icon: IconBrandDiscord, color: 'indigo' },
+  Messenger: { icon: IconBrandMessenger, color: 'blue' },
+  Telegram: { icon: IconBrandTelegram, color: 'cyan' },
 };
-const PLATFORM_COLORS: Record<string, string> = { WhatsApp: 'green', Discord: 'indigo', Messenger: 'blue', Telegram: 'cyan' };
 
-// S2: group chat links for a class.
-export function GroupChats({ classId }: { classId: number }) {
+// S2 in the layout of the wireframe (A2Team.pdf p. 8).
+export function GroupChats({ classId, classLabel }: { classId: number; classLabel: string }) {
   const links = useQuery({ queryKey: ['links', classId], queryFn: () => rpc.links.list({ classId }) });
-  const [editing, setEditing] = useState<Link | 'new' | null>(null);
+  const [editing, setEditing] = useState<ChatLink | 'new' | null>(null);
 
   return (
-    <SectionCard
-      title="Group chats"
-      actions={
-        <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => setEditing('new')}>
-          Add a link
+    <>
+      <Group justify="space-between" align="flex-start" mb="lg">
+        <div>
+          <Title order={2}>Group Chat Links</Title>
+          <Text c="dimmed" maw={560}>
+            Find and join the course group chats. Links are shared by students and can be reported if they've expired.
+          </Text>
+        </div>
+        <Button size="md" variant="default" leftSection={<IconPlus size={18} />} onClick={() => setEditing('new')}>
+          Add a group link
         </Button>
-      }
-    >
+      </Group>
+
       {links.isPending ? (
         <Loading />
       ) : links.data?.length ? (
-        <Stack gap="sm">
+        <Stack gap="lg">
           {links.data.map((l) => (
-            <LinkCard key={l.id} link={l} onEdit={() => setEditing(l)} />
+            <LinkCard key={l.id} link={l} classLabel={classLabel} onEdit={() => setEditing(l)} />
           ))}
         </Stack>
       ) : (
-        <Empty icon={<IconBrandWhatsapp size={22} />}>
-          No group chats shared yet. Know about a WhatsApp or Discord group for this class? Add it.
-        </Empty>
+        <Card>
+          <Empty icon={<IconBrandWhatsapp size={22} />}>
+            No group chats shared yet. Know about a WhatsApp or Discord group for this class? Add it.
+          </Empty>
+        </Card>
       )}
 
-      <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing === 'new' ? 'Add a group chat' : 'Edit link'}>
+      <Group justify="center" mt="xl" gap="lg">
+        <Button size="md" variant="default" component={Link} to="/courses/mine" bg="var(--ul-soft)">
+          Browse other courses
+        </Button>
+        <Button size="md" color="yellow" variant="light" component={Link} to="/courses/find">
+          Can't find your class?
+        </Button>
+      </Group>
+
+      <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing === 'new' ? 'Add a group link' : 'Edit link'}>
         {editing && (
-          <LinkForm
-            key={editing === 'new' ? 'new' : editing.id}
-            classId={classId}
-            existing={editing === 'new' ? null : editing}
-            onDone={() => setEditing(null)}
-          />
+          <LinkForm key={editing === 'new' ? 'new' : editing.id} classId={classId} existing={editing === 'new' ? null : editing} onDone={() => setEditing(null)} />
         )}
       </Modal>
-    </SectionCard>
+    </>
   );
 }
 
-function LinkCard({ link, onEdit }: { link: Link; onEdit: () => void }) {
-  const Icon = PLATFORM_ICONS[link.platform] ?? IconLink;
+function LinkCard({ link, classLabel, onEdit }: { link: ChatLink; classLabel: string; onEdit: () => void }) {
+  const platform = PLATFORMS[link.platform] ?? { icon: IconLink, color: 'gray' };
   const flag = useAction((reason: (typeof FLAG_REASONS)[number]) => rpc.links.flag({ linkId: link.id, reason }), {
     success: 'Thanks, your classmates will see this link was reported.',
   });
@@ -98,89 +109,94 @@ function LinkCard({ link, onEdit }: { link: Link; onEdit: () => void }) {
       onConfirm: () => remove.mutate(),
     });
 
+  const status = !link.isPublic
+    ? { label: 'Only you', color: 'gray' }
+    : link.hidden
+      ? { label: 'Reported', color: 'red' }
+      : { label: 'Active', color: 'teal' };
+
   return (
-    <Card withBorder padding="md" opacity={link.hidden ? 0.7 : 1}>
-      <Group justify="space-between" wrap="nowrap" align="flex-start">
-        <Group wrap="nowrap" align="flex-start">
-          <Icon size={28} color={`var(--mantine-color-${PLATFORM_COLORS[link.platform] ?? 'gray'}-6)`} />
-          <div style={{ minWidth: 0 }}>
-            <Group gap="xs">
-              <Text fw={600}>{link.label || `${link.platform} group`}</Text>
-              <Badge size="xs" variant="light" color={PLATFORM_COLORS[link.platform] ?? 'gray'}>
-                {link.platform}
-              </Badge>
-              {!link.isPublic && (
-                <Badge size="xs" variant="outline" color="gray" leftSection={<IconLock size={10} />}>
-                  Only you
-                </Badge>
-              )}
-            </Group>
-            <Anchor href={link.url} target="_blank" size="sm" style={{ wordBreak: 'break-all' }}>
-              {link.url} <IconExternalLink size={12} />
-            </Anchor>
-            <Text size="xs" c="dimmed">
-              Added by {link.mine ? 'you' : link.ownerName} {fromNow(link.createdAt)}
+    <Card padding="lg" radius={44} style={{ borderWidth: 2 }}>
+      <Group wrap="nowrap" gap="lg" align="center">
+        <ThemeIcon size={84} radius={84} color={platform.color} variant="light">
+          <platform.icon size={48} />
+        </ThemeIcon>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <Group gap="sm" wrap="nowrap">
+            <Text fz={28} fw={600} className="display" truncate>
+              {link.platform} - {classLabel}
             </Text>
-          </div>
-        </Group>
-
-        {link.mine ? (
-          <Menu position="bottom-end">
-            <Menu.Target>
-              <ActionIcon variant="subtle" aria-label="Link options">
-                <IconDots size={16} />
-              </ActionIcon>
-            </Menu.Target>
-            <Menu.Dropdown>
-              <Menu.Item leftSection={<IconPencil size={14} />} onClick={onEdit}>
-                Edit
-              </Menu.Item>
-              <Menu.Item leftSection={link.isPublic ? <IconLock size={14} /> : <IconWorld size={14} />} onClick={() => toggle.mutate()}>
-                {link.isPublic ? 'Make private' : 'Share with class'}
-              </Menu.Item>
-              <Menu.Item leftSection={<IconTrash size={14} />} color="red" onClick={confirmRemove}>
-                Remove
-              </Menu.Item>
-            </Menu.Dropdown>
-          </Menu>
-        ) : link.myFlag ? (
-          <Button size="xs" variant="subtle" color="gray" onClick={() => unflag.mutate()}>
-            Undo report
-          </Button>
-        ) : (
-          <Menu position="bottom-end">
-            <Menu.Target>
-              <Button size="xs" variant="subtle" color="gray" leftSection={<IconFlag size={14} />}>
-                Report
-              </Button>
-            </Menu.Target>
-            <Menu.Dropdown>
-              <Menu.Label>What's wrong with it?</Menu.Label>
-              {FLAG_REASONS.map((r) => (
-                <Menu.Item key={r} onClick={() => flag.mutate(r)}>
-                  {r}
-                </Menu.Item>
-              ))}
-            </Menu.Dropdown>
-          </Menu>
-        )}
-      </Group>
-
-      {link.flagCount > 0 && (
-        <Alert mt="sm" p="xs" color={link.hidden ? 'red' : 'yellow'} variant="light" icon={<IconFlag size={16} />}>
-          <Text size="xs">
-            Reported by {plural(link.flagCount, 'classmate')}
-            {link.myFlag ? ` (including you: ${link.myFlag.toLowerCase()})` : ''}.
-            {link.hidden && ' It may no longer work.'}
-            {link.mine && ' Updating the link clears the reports.'}
+            <Badge size="lg" color={status.color} variant="light" leftSection={!link.isPublic ? <IconLock size={12} /> : undefined}>
+              {status.label}
+            </Badge>
+          </Group>
+          <Text fw={700}>{link.label || `${link.platform} group`}</Text>
+          <Text size="sm" c="dimmed" truncate>
+            Added by {link.mine ? 'you' : link.ownerName} {fromNow(link.createdAt)} · {link.url}
           </Text>
-        </Alert>
-      )}
+          {link.flagCount > 0 && (
+            <Group gap={4} mt={4} c={link.hidden ? 'red' : 'orange'}>
+              <IconAlertTriangle size={14} />
+              <Text size="xs" fw={700}>
+                Reported by {plural(link.flagCount, 'classmate')}
+                {link.myFlag ? ` (including you: ${link.myFlag.toLowerCase()})` : ''}
+                {link.mine && '. Updating the link clears the reports.'}
+              </Text>
+            </Group>
+          )}
+        </div>
+        <Divider orientation="vertical" />
+        <Stack gap="sm" w={170}>
+          <Button component="a" href={link.url} target="_blank" color="periwinkle" variant="light" leftSection={<IconExternalLink size={16} />}>
+            Open link
+          </Button>
+          {link.mine ? (
+            <Menu position="bottom-end">
+              <Menu.Target>
+                <Button variant="default" leftSection={<IconDots size={16} />}>
+                  Manage
+                </Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item leftSection={<IconPencil size={14} />} onClick={onEdit}>
+                  Edit
+                </Menu.Item>
+                <Menu.Item leftSection={link.isPublic ? <IconLock size={14} /> : <IconWorld size={14} />} onClick={() => toggle.mutate()}>
+                  {link.isPublic ? 'Make private' : 'Share with class'}
+                </Menu.Item>
+                <Menu.Item leftSection={<IconTrash size={14} />} color="red" onClick={confirmRemove}>
+                  Remove
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+          ) : link.myFlag ? (
+            <Button variant="default" onClick={() => unflag.mutate()}>
+              Undo report
+            </Button>
+          ) : (
+            <Menu position="bottom-end">
+              <Menu.Target>
+                <Button variant="default" leftSection={<IconAlertTriangle size={16} />}>
+                  Report link
+                </Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Label>What's wrong with it?</Menu.Label>
+                {FLAG_REASONS.map((r) => (
+                  <Menu.Item key={r} onClick={() => flag.mutate(r)}>
+                    {r}
+                  </Menu.Item>
+                ))}
+              </Menu.Dropdown>
+            </Menu>
+          )}
+        </Stack>
+      </Group>
     </Card>
   );
 }
 
-function LinkForm({ classId, existing, onDone }: { classId: number; existing: Link | null; onDone: () => void }) {
+function LinkForm({ classId, existing, onDone }: { classId: number; existing: ChatLink | null; onDone: () => void }) {
   const form = useForm({
     initialValues: { url: existing?.url ?? '', label: existing?.label ?? '', isPublic: existing?.isPublic ?? false },
     validate: { url: (v) => (parseChatLink(v) ? null : 'Paste a full link, starting with https://') },
@@ -204,7 +220,7 @@ function LinkForm({ classId, existing, onDone }: { classId: number; existing: Li
           description={detected ? `Detected: ${detected.platform}` : 'WhatsApp, Discord, Messenger, Telegram, Teams…'}
           {...form.getInputProps('url')}
         />
-        <TextInput label="Name" placeholder="e.g. Lecture 001 group" {...form.getInputProps('label')} />
+        <TextInput label="What's it for?" placeholder="General course group, study server…" {...form.getInputProps('label')} />
         <Switch
           label="Share with everyone in the class"
           description="Leave off to keep this link to yourself for now."
@@ -219,3 +235,4 @@ function LinkForm({ classId, existing, onDone }: { classId: number; existing: Li
     </form>
   );
 }
+

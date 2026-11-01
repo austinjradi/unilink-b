@@ -1,8 +1,9 @@
 import { randomBytes, scryptSync } from 'node:crypto';
 import { and, count, eq } from 'drizzle-orm';
 import { CURRENT_TERM } from '@shared/dates';
+import type { GoatConfig } from '@shared/goat';
 import type { DB } from './client';
-import { chatLinks, classes, courses, enrollments, posts, replies, studySessionMembers, studySessions, users } from './schema';
+import { chatLinks, classes, courses, enrollments, postReactions, posts, replies, studySessionMembers, studySessions, users } from './schema';
 
 // Dev builds start with a few classmates in COMP 251 and MATH 240 so the social
 // features (S1–S4) have someone to interact with. All demo accounts share this password.
@@ -12,6 +13,12 @@ export const DEMO_USERS = [
   { name: 'Alex Tremblay', email: 'alex.tremblay@mail.mcgill.ca', program: 'Computer Science', year: 2 },
   { name: 'Priya Shah', email: 'priya.shah@mail.mcgill.ca', program: 'Software Engineering', year: 2 },
   { name: 'Samuel Côté', email: 'samuel.cote@mail.mcgill.ca', program: 'Mathematics and CS', year: 3 },
+];
+
+const DEMO_GOATS: GoatConfig[] = [
+  { hat: 'toque', eyes: 'happy', horns: 'classic', fur: 'cream', background: 'rose' },
+  { hat: 'grad', eyes: 'glasses', horns: 'curly', fur: 'caramel', background: 'lavender' },
+  { hat: 'tophat', eyes: 'shades', horns: 'nubs', fur: 'charcoal', background: 'mint' },
 ];
 
 function hash(password: string) {
@@ -43,10 +50,10 @@ export function seedDemoData(db: DB) {
 
   db.transaction((tx) => {
     const [alex, priya, samuel] = DEMO_USERS.map(
-      (u) =>
+      (u, i) =>
         tx
           .insert(users)
-          .values({ ...u, passwordHash })
+          .values({ ...u, passwordHash, avatar: DEMO_GOATS[i] })
           .returning()
           .get().id,
     );
@@ -72,6 +79,7 @@ export function seedDemoData(db: DB) {
         startsAt: at(2, 18),
         endsAt: at(2, 20),
         capacity: 6,
+        tag: 'Assignment',
       })
       .returning()
       .get();
@@ -100,6 +108,12 @@ export function seedDemoData(db: DB) {
         authorId: samuel,
         body: "It's the extended case 2: f(n) = Θ(n log n) = Θ(n^(log_b a) · log^1 n), so T(n) = Θ(n log² n).",
       })
+      .run();
+    tx.insert(postReactions)
+      .values([
+        { postId: post.id, userId: priya },
+        { postId: post.id, userId: samuel },
+      ])
       .run();
     tx.insert(posts)
       .values({

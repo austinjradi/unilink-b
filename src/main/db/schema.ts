@@ -1,4 +1,5 @@
-import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { type AnySQLiteColumn, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import type { GoatConfig } from '@shared/goat';
 import type { NotificationPrefs } from '@shared/notifications';
 
 const id = () => integer('id').primaryKey({ autoIncrement: true });
@@ -28,6 +29,8 @@ export const users = sqliteTable('users', {
   degreeProgramId: text('degree_program_id'),
   // G3: per-type channel choices; missing types use the defaults in shared/notifications.ts.
   notificationPrefs: text('notification_prefs', { mode: 'json' }).$type<NotificationPrefs>(),
+  // The student's goat avatar; null until customized (see shared/goat.ts).
+  avatar: text('avatar', { mode: 'json' }).$type<GoatConfig>(),
   createdAt: createdAt(),
 });
 
@@ -133,6 +136,8 @@ export const studySessions = sqliteTable(
     startsAt: timestamp('starts_at').notNull(),
     endsAt: timestamp('ends_at').notNull(),
     capacity: integer('capacity'),
+    // What it's for, shown as a tag: "Assignment", "Midterm", …
+    tag: text('tag'),
     cancelledAt: timestamp('cancelled_at'),
     createdAt: createdAt(),
   },
@@ -190,6 +195,8 @@ export const replies = sqliteTable(
       .notNull()
       .references(() => posts.id, { onDelete: 'cascade' }),
     authorId: userRef('author_id'),
+    // Set when replying to another reply (one level of threading).
+    parentId: integer('parent_id').references((): AnySQLiteColumn => replies.id, { onDelete: 'cascade' }),
     body: text('body').notNull(),
     createdAt: createdAt(),
   },
@@ -372,3 +379,27 @@ export const studyModeSettings = sqliteTable('study_mode_settings', {
   // Study mode was switched off by hand during an automatic window; stay off until then.
   pausedUntil: timestamp('paused_until'),
 });
+
+// --- 🐐 reactions on discussion posts and replies (UI design, A2Team.pdf) --------------
+
+export const postReactions = sqliteTable(
+  'post_reactions',
+  {
+    postId: integer('post_id')
+      .notNull()
+      .references(() => posts.id, { onDelete: 'cascade' }),
+    userId: userRef(),
+  },
+  (t) => [primaryKey({ columns: [t.postId, t.userId] })],
+);
+
+export const replyReactions = sqliteTable(
+  'reply_reactions',
+  {
+    replyId: integer('reply_id')
+      .notNull()
+      .references(() => replies.id, { onDelete: 'cascade' }),
+    userId: userRef(),
+  },
+  (t) => [primaryKey({ columns: [t.replyId, t.userId] })],
+);

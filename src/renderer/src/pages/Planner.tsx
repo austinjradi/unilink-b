@@ -36,7 +36,7 @@ import {
 } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { addDays, ymd } from '@shared/dates';
 import { Empty, Loading, PageHeader } from '../components/ui';
 import { dayLabel, fmtDateTime, fromNow, plural, toDate } from '../lib/format';
@@ -51,7 +51,13 @@ type Task = Assignment['tasks'][number];
 export function PlannerPage() {
   const me = useMe();
   const list = useQuery({ queryKey: ['planner', 'list'], queryFn: () => rpc.planner.list() });
-  const [editing, setEditing] = useState<Assignment | 'new' | null>(null);
+  // "Add event/assignment" on the calendar links here with ?new=1.
+  const [params, setParams] = useSearchParams();
+  const [editing, setEditing] = useState<Assignment | 'new' | null>(params.get('new') ? 'new' : null);
+  const close = () => {
+    setEditing(null);
+    if (params.get('new')) setParams({}, { replace: true });
+  };
 
   const active = list.data?.filter((a) => !a.pastDue && a.doneCount < a.tasks.length) ?? [];
   const finished = list.data?.filter((a) => a.pastDue || a.doneCount === a.tasks.length) ?? [];
@@ -63,7 +69,7 @@ export function PlannerPage() {
         subtitle={
           <>
             Work is spread across the days before each deadline, within your {me.studyMinutesPerDay} minutes of study
-            time a day (<Anchor component={Link} to="/profile" size="sm">change</Anchor>). Missed tasks move forward
+            time a day (<Anchor component={Link} to="/settings/account" size="sm">change</Anchor>). Missed tasks move forward
             automatically.
           </>
         }
@@ -105,9 +111,9 @@ export function PlannerPage() {
         </Stack>
       )}
 
-      <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing === 'new' ? 'New assignment' : 'Edit assignment'} size="lg">
-        {editing === 'new' && <NewAssignmentForm onDone={() => setEditing(null)} />}
-        {editing && editing !== 'new' && <EditAssignmentForm assignment={editing} onDone={() => setEditing(null)} />}
+      <Modal opened={editing != null} onClose={close} title={editing === 'new' ? 'New assignment' : 'Edit assignment'} size="lg">
+        {editing === 'new' && <NewAssignmentForm onDone={close} />}
+        {editing && editing !== 'new' && <EditAssignmentForm assignment={editing} onDone={close} />}
       </Modal>
     </>
   );

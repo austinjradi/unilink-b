@@ -1,9 +1,10 @@
-import { and, asc, eq, gte, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, like, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import type { DB } from '../db/client';
-import { classes, courses, studySessionMembers, studySessions, users } from '../db/schema';
-import { AppError, idSchema, nonEmpty, procedure } from '../rpc/core';
 import { fmtWhen } from '@shared/dates';
+import { goatFor } from '@shared/goat';
+import type { DB } from '../db/client';
+import { classes, courses, enrollments, studySessionMembers, studySessions, users } from '../db/schema';
+import { AppError, idSchema, nonEmpty, procedure } from '../rpc/core';
 import { classLabel, notFound, requireMember } from './access';
 import { enrolledUsersByEmail } from './classes';
 import { notify } from './notifications';
@@ -18,6 +19,7 @@ const details = z
     startsAt: z.date(),
     endsAt: z.date(),
     capacity: z.number().int().min(2).max(500).nullable(),
+    tag: z.string().trim().max(40).nullable().default(null),
   })
   .refine((s) => s.endsAt > s.startsAt, { message: 'The session must end after it starts', path: ['endsAt'] });
 
@@ -50,6 +52,7 @@ function describe(db: DB, userId: number, rows: (typeof studySessions.$inferSele
       userId: users.id,
       name: users.name,
       email: users.email,
+      avatar: users.avatar,
       status: studySessionMembers.status,
     })
     .from(studySessionMembers)
@@ -69,12 +72,14 @@ function describe(db: DB, userId: number, rows: (typeof studySessions.$inferSele
 
   return rows.map((s) => {
     const mine = members.filter((m) => m.sessionId === s.id);
-    const going = mine.filter((m) => m.status === 'going');
+    const going = mine
+      .filter((m) => m.status === 'going')
+      .map(({ userId, name, email, avatar }) => ({ userId, name, email, goat: goatFor(userId, avatar) }));
     return {
       ...s,
       classLabel: labels.get(s.classId) ?? '',
       host: going.find((m) => m.userId === s.hostId) ?? null,
-      going: going.map(({ userId, name, email }) => ({ userId, name, email })),
+      going,
       invitedCount: mine.length - going.length,
       myStatus: mine.find((m) => m.userId === userId)?.status ?? null,
       isHost: s.hostId === userId,
@@ -111,6 +116,36 @@ export const studySessionsRouter = {
       .orderBy(asc(studySessions.startsAt))
       .all();
     return describe(ctx.db, ctx.userId, mine);
+  }),
+
+  // "Search for study sessions": upcoming sessions in any of the student's classes.
+  browse: procedure(z.object({ search: z.string().trim().max(100) }), ({ search }, ctx) => {
+    const classIds = ctx.db.select({ id: enrollments.classId }).from(enrollments).where(eq(enrollments.userId, ctx.userId));
+    const term = `%${search}%`;
+    const rows = ctx.db
+      .select({ session: studySessions })
+      .from(studySessions)
+      .innerJoin(classes, eq(studySessions.classId, classes.id))
+      .innerJoin(courses, eq(classes.courseId, courses.id))
+      .where(
+        and(
+          inArray(studySessions.classId, classIds),
+          gte(studySessions.endsAt, ctx.now()),
+          isNull(studySessions.cancelledAt),
+          search
+            ? or(
+                like(studySessions.title, term),
+                like(studySessions.tag, term),
+                like(studySessions.location, term),
+                like(sql`${courses.subject} || ' ' || ${courses.number}`, term),
+              )
+            : undefined,
+        ),
+      )
+      .orderBy(asc(studySessions.startsAt))
+      .all()
+      .map((r) => r.session);
+    return describe(ctx.db, ctx.userId, rows);
   }),
 
   // S3.1

@@ -1,28 +1,61 @@
-import type { ReactNode } from 'react';
-import { Badge, Card, Center, Group, Loader, Stack, Text, ThemeIcon, Title } from '@mantine/core';
+import type { CSSProperties, ReactNode } from 'react';
+import { Anchor, Badge, Breadcrumbs, Card, Center, Group, Loader, Stack, Text, ThemeIcon, Title } from '@mantine/core';
 import { IconMoodEmpty } from '@tabler/icons-react';
+import { Link } from 'react-router';
+import { KIND_COLORS } from '../theme';
 
-export function PageHeader({ title, subtitle, actions }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode }) {
+export function PageHeader({
+  title,
+  subtitle,
+  actions,
+  crumbs,
+}: {
+  title: ReactNode;
+  subtitle?: ReactNode;
+  actions?: ReactNode;
+  crumbs?: { label: string; to?: string }[];
+}) {
   return (
-    <Group justify="space-between" align="flex-start" mb="lg">
-      <div>
-        <Title order={2}>{title}</Title>
-        {subtitle && (
-          <Text c="dimmed" mt={4}>
-            {subtitle}
-          </Text>
-        )}
-      </div>
-      {actions && <Group gap="sm">{actions}</Group>}
-    </Group>
+    <div style={{ marginBottom: 'var(--mantine-spacing-lg)' }}>
+      {crumbs && (
+        <Breadcrumbs mb={6} separatorMargin={6}>
+          {crumbs.map((c) =>
+            c.to ? (
+              <Anchor key={c.label} component={Link} to={c.to} size="sm" c="dimmed" fw={600}>
+                {c.label}
+              </Anchor>
+            ) : (
+              <Text key={c.label} size="sm" fw={700}>
+                {c.label}
+              </Text>
+            ),
+          )}
+        </Breadcrumbs>
+      )}
+      <Group justify="space-between" align="flex-start">
+        <div>
+          <Title order={1} fz={34}>
+            {title}
+          </Title>
+          {subtitle && (
+            <Text c="dimmed" mt={2}>
+              {subtitle}
+            </Text>
+          )}
+        </div>
+        {actions && <Group gap="sm">{actions}</Group>}
+      </Group>
+    </div>
   );
 }
 
 export function SectionCard({ title, actions, children }: { title: ReactNode; actions?: ReactNode; children: ReactNode }) {
   return (
-    <Card withBorder padding="lg">
+    <Card padding="lg">
       <Group justify="space-between" mb="md">
-        <Text fw={600}>{title}</Text>
+        <Text fw={800} size="lg" className="display">
+          {title}
+        </Text>
         {actions}
       </Group>
       {children}
@@ -51,22 +84,33 @@ export function Loading() {
   );
 }
 
-const KIND_COLORS: Record<string, string> = {
-  class: 'indigo',
-  assignment: 'orange',
-  exam: 'red',
-  quiz: 'grape',
-  other: 'gray',
-  graded: 'pink',
-  planner: 'orange',
-  session: 'teal',
-  task: 'cyan',
-};
+// Class codes and post/session types, as outlined tags.
+export function Tag({ children, color }: { children: ReactNode; color?: string }) {
+  return (
+    <span
+      className="tag"
+      style={
+        color
+          ? { background: `var(--mantine-color-${color}-light)`, color: `var(--mantine-color-${color}-light-color)` }
+          : undefined
+      }
+    >
+      {children}
+    </span>
+  );
+}
 
 export const kindColor = (kind: string) => KIND_COLORS[kind] ?? 'gray';
 
+// Pastel fill for calendar chips.
+export const chipStyle = (kind: string): CSSProperties =>
+  ({
+    '--chip-bg': `var(--mantine-color-${kindColor(kind)}-light)`,
+    '--chip-fg': `var(--mantine-color-${kindColor(kind)}-light-color)`,
+  }) as CSSProperties;
+
 export function KindBadge({ kind }: { kind: string }) {
-  const label = kind === 'graded' ? 'graded work' : kind === 'planner' ? 'planner' : kind;
+  const label = kind === 'graded' ? 'graded work' : kind;
   return (
     <Badge variant="light" color={kindColor(kind)} size="sm">
       {label}

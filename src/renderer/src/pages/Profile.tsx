@@ -4,7 +4,6 @@ import {
   Button,
   Card,
   Center,
-  Grid,
   Group,
   Modal,
   NumberInput,
@@ -20,42 +19,27 @@ import { useForm } from '@mantine/form';
 import { IconAlertTriangle, IconEye, IconMail } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { passwordProblems } from '@shared/validation';
-import { PageHeader, SectionCard } from '../components/ui';
+import { SectionCard } from '../components/ui';
 import { fromNow } from '../lib/format';
 import { useAction, useMe } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
 
-// G4: view and edit profile, change password, delete account.
-export function ProfilePage() {
+// G4 account settings and G3 notification settings, shown as Settings tabs.
+
+export function PrivacyPanel() {
   return (
-    <>
-      <PageHeader title="Profile and account" />
-      <Grid gap="lg">
-        <Grid.Col span={{ base: 12, lg: 7 }}>
-          <Stack gap="lg">
-            <ProfileForm />
-            <NotificationSettings />
-            <ChangePassword />
-          </Stack>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, lg: 5 }}>
-          <Stack gap="lg">
-            <SectionCard title="What classmates see">
-              <Alert variant="light" icon={<IconEye size={18} />}>
-                Your name and McGill email are shown to classmates only when you post or reply on a discussion board, add
-                a public group chat link, or join a study session. Your grades, notes and planner are private to you.
-              </Alert>
-            </SectionCard>
-            <DeleteAccount />
-          </Stack>
-        </Grid.Col>
-      </Grid>
-    </>
+    <SectionCard title="What classmates see">
+      <Alert variant="light" icon={<IconEye size={18} />}>
+        Your name, McGill email and goat are shown to classmates only when you post or reply on a discussion board,
+        add a public group chat link, or join a study session. There's no member list for your classes. Your grades,
+        notes, course record and planner are private to you.
+      </Alert>
+    </SectionCard>
   );
 }
 
 // G3: which notifications show on the desktop and go by email (in-app is always on).
-function NotificationSettings() {
+export function NotificationSettings() {
   const prefs = useQuery({ queryKey: ['notifications', 'prefs'], queryFn: () => rpc.notifications.prefs() });
   const outbox = useQuery({ queryKey: ['notifications', 'outbox'], queryFn: () => rpc.notifications.outbox() });
   const [showOutbox, setShowOutbox] = useState(false);
@@ -146,7 +130,7 @@ function NotificationSettings() {
   );
 }
 
-function ProfileForm() {
+export function ProfileForm() {
   const me = useMe();
   const form = useForm({
     initialValues: {
@@ -195,7 +179,7 @@ function ProfileForm() {
   );
 }
 
-function ChangePassword() {
+export function ChangePassword() {
   const form = useForm({
     initialValues: { currentPassword: '', newPassword: '', confirm: '' },
     validate: {
@@ -228,7 +212,7 @@ function ChangePassword() {
   );
 }
 
-function DeleteAccount() {
+export function DeleteAccount() {
   const [open, setOpen] = useState(false);
   const [password, setPassword] = useState('');
   const remove = useAction(() => rpc.profile.deleteAccount({ password }), { success: 'Your account and data were deleted.' });

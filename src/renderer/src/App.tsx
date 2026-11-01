@@ -1,28 +1,22 @@
-import { Center, createTheme, Loader, MantineProvider } from '@mantine/core';
+import { Center, Loader, MantineProvider } from '@mantine/core';
 import { DatesProvider } from '@mantine/dates';
 import { ModalsProvider } from '@mantine/modals';
 import { Notifications } from '@mantine/notifications';
 import { QueryCache, QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
-import { HashRouter, Navigate, Route, Routes } from 'react-router';
+import { HashRouter, Navigate, Route, Routes, useParams } from 'react-router';
 import { Layout } from './components/Layout';
 import { MeContext } from './lib/hooks';
 import { rpc, RpcError } from './lib/rpc';
-import { AcademicsPage } from './pages/Academics';
 import { ResetPassword, SignIn, SignUp } from './pages/Auth';
+import { CalculatorPage } from './pages/Calculator';
 import { CalendarPage } from './pages/Calendar';
 import { ClassPage } from './pages/ClassPage';
-import { ClassesPage } from './pages/Classes';
-import { Dashboard } from './pages/Dashboard';
-import { IntegrationsPage } from './pages/Integrations';
+import { CoursesPage } from './pages/Classes';
+import { Home } from './pages/Home';
 import { PlannerPage } from './pages/Planner';
-import { ProfilePage } from './pages/Profile';
-import { StudyModePage } from './pages/StudyMode';
-
-const theme = createTheme({
-  primaryColor: 'indigo',
-  defaultRadius: 'md',
-  fontFamily: 'Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
-});
+import { SessionSearchPage, SessionsPage } from './pages/Sessions';
+import { SettingsPage } from './pages/Settings';
+import { theme } from './theme';
 
 const queryClient: QueryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
@@ -59,20 +53,31 @@ function Root() {
     <MeContext.Provider value={me.data}>
       <Layout>
         <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/classes" element={<ClassesPage />} />
+          <Route path="/" element={<Home />} />
+          <Route path="/courses/:tab?" element={<CoursesPage />} />
+          <Route path="/classes" element={<Navigate to="/courses" replace />} />
           <Route path="/classes/:classId/:tab?" element={<ClassPage />} />
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/planner" element={<PlannerPage />} />
-          <Route path="/academics/:tab?" element={<AcademicsPage />} />
-          <Route path="/focus" element={<StudyModePage />} />
-          <Route path="/integrations" element={<IntegrationsPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/calculator" element={<CalculatorPage />} />
+          <Route path="/sessions" element={<SessionsPage />} />
+          <Route path="/sessions/search" element={<SessionSearchPage />} />
+          <Route path="/settings/:tab?" element={<SettingsPage />} />
+          {/* Older routes, still used by links in existing notifications. */}
+          <Route path="/academics/:tab?" element={<RedirectAcademics />} />
+          <Route path="/focus" element={<Navigate to="/settings/study-mode" replace />} />
+          <Route path="/profile" element={<Navigate to="/settings/account" replace />} />
+          <Route path="/integrations" element={<Navigate to="/settings/integrations" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>
     </MeContext.Provider>
   );
+}
+
+function RedirectAcademics() {
+  const { tab } = useParams();
+  return <Navigate to={tab === 'degree' ? '/courses/degree' : '/courses/record'} replace />;
 }
 
 export function App() {

@@ -1,58 +1,25 @@
 import { type ReactNode, useEffect } from 'react';
-import { AppShell, Avatar, Button, Group, Menu, NavLink, Paper, ScrollArea, Text, ThemeIcon, UnstyledButton } from '@mantine/core';
-import {
-  IconCalendar,
-  IconCertificate,
-  IconChecklist,
-  IconChevronUp,
-  IconFocus2,
-  IconHome,
-  IconLogout,
-  IconPlugConnected,
-  IconSchool,
-  IconUser,
-  IconUsersGroup,
-} from '@tabler/icons-react';
+import { ActionIcon, AppShell, Box, Group, Menu, Text, Tooltip, UnstyledButton } from '@mantine/core';
+import { IconChevronDown, IconFocus2, IconLogout, IconSettings, IconUser, IconX } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from 'react-router';
+import { goatFor } from '@shared/goat';
 import { fmtTime } from '../lib/format';
 import { useAction, useMe } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
+import { GoatAvatar, GoatSvg } from './Goat';
 import { NotificationBell } from './NotificationBell';
 
+// Top navigation from the wireframes: logo, pill tabs, then the student and their goat.
 const NAV = [
-  { to: '/', label: 'Home', icon: IconHome },
-  { to: '/classes', label: 'Classes', icon: IconSchool },
-  { to: '/calendar', label: 'Calendar', icon: IconCalendar },
-  { to: '/planner', label: 'Planner', icon: IconChecklist },
-  { to: '/academics', label: 'Academics', icon: IconCertificate },
-  { to: '/focus', label: 'Study mode', icon: IconFocus2 },
-  { to: '/integrations', label: 'Integrations', icon: IconPlugConnected },
+  { to: '/', label: 'Home', match: (p: string) => p === '/' },
+  { to: '/courses', label: 'Courses', match: (p: string) => p.startsWith('/courses') || p.startsWith('/classes') },
+  { to: '/calendar', label: 'Calendar', match: (p: string) => p.startsWith('/calendar') },
+  { to: '/planner', label: 'Planner', match: (p: string) => p.startsWith('/planner') },
+  { to: '/calculator', label: 'Calculator', match: (p: string) => p.startsWith('/calculator') },
+  { to: '/sessions', label: 'Study sessions', match: (p: string) => p.startsWith('/sessions') },
+  { to: '/settings', label: 'Settings', match: (p: string) => p.startsWith('/settings') },
 ];
-
-// ST1: shown while study mode is on.
-function StudyModeChip() {
-  const status = useQuery({ queryKey: ['studyMode', 'status'], queryFn: () => rpc.studyMode.status(), refetchInterval: 15_000 });
-  const stop = useAction(() => rpc.studyMode.stop(), { success: 'Study mode off' });
-  if (!status.data?.active) return null;
-  return (
-    <Paper withBorder p="xs" mx="xs" mb="sm" bg="var(--mantine-color-teal-light)">
-      <Group justify="space-between" wrap="nowrap" gap="xs">
-        <UnstyledButton component={Link} to="/focus" style={{ minWidth: 0 }}>
-          <Text size="xs" fw={700} c="teal">
-            Study mode on
-          </Text>
-          <Text size="xs" truncate>
-            {status.data.label} · until {fmtTime(status.data.until!)}
-          </Text>
-        </UnstyledButton>
-        <Button size="compact-xs" variant="white" color="teal" onClick={() => stop.mutate()}>
-          Stop
-        </Button>
-      </Group>
-    </Paper>
-  );
-}
 
 export const initials = (name: string) =>
   name
@@ -62,97 +29,110 @@ export const initials = (name: string) =>
     .slice(0, 2)
     .toUpperCase();
 
+export function Logo() {
+  return (
+    <Group gap={8} wrap="nowrap">
+      <Box w={38} h={38}>
+        <GoatSvg goat={{ hat: 'grad', eyes: 'goat', horns: 'classic', fur: 'white', background: 'mint' }} background={false} />
+      </Box>
+      <Text fw={700} fz={24} className="display" style={{ letterSpacing: -0.5 }}>
+        UniLink
+      </Text>
+    </Group>
+  );
+}
+
+// ST1: shown while study mode is on.
+function StudyModePill() {
+  const status = useQuery({ queryKey: ['studyMode', 'status'], queryFn: () => rpc.studyMode.status(), refetchInterval: 15_000 });
+  const stop = useAction(() => rpc.studyMode.stop(), { success: 'Study mode off' });
+  if (!status.data?.active) return null;
+  return (
+    <Group
+      gap={6}
+      wrap="nowrap"
+      px="sm"
+      py={4}
+      style={{ borderRadius: 999, background: 'var(--mantine-color-teal-light)', color: 'var(--mantine-color-teal-light-color)' }}
+    >
+      <IconFocus2 size={16} />
+      <UnstyledButton component={Link} to="/settings/study-mode">
+        <Text size="xs" fw={800}>
+          Study mode · until {fmtTime(status.data.until!)}
+        </Text>
+      </UnstyledButton>
+      <Tooltip label="Stop study mode">
+        <ActionIcon size="xs" variant="subtle" color="teal" onClick={() => stop.mutate()} aria-label="Stop study mode">
+          <IconX size={12} />
+        </ActionIcon>
+      </Tooltip>
+    </Group>
+  );
+}
+
 export function Layout({ children }: { children: ReactNode }) {
   const me = useMe();
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const classes = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
   const signOut = useAction(() => rpc.auth.signOut());
 
   // Clicking a desktop notification opens what it's about.
   useEffect(() => window.unilink.onNavigate((link) => navigate(link)), [navigate]);
 
-  const isActive = (to: string) => (to === '/' || to === '/classes' ? pathname === to : pathname.startsWith(to));
-
   return (
-    <AppShell navbar={{ width: 250, breakpoint: 0 }} padding="lg">
-      <AppShell.Navbar p="sm">
-        <AppShell.Section mb="md" px="xs" pt="xs">
-          <Group justify="space-between">
-            <Group gap="xs">
-              <ThemeIcon size="lg" radius="md" variant="gradient" gradient={{ from: 'indigo', to: 'red', deg: 135 }}>
-                <IconUsersGroup size={20} />
-              </ThemeIcon>
-              <Text fw={700} size="lg">
-                UniLink
-              </Text>
-            </Group>
-            <NotificationBell />
+    <AppShell header={{ height: 72 }} padding="lg">
+      <AppShell.Header px="lg" style={{ borderBottom: '2px solid var(--ul-ink)' }}>
+        <Group h="100%" justify="space-between" wrap="nowrap" gap="md">
+          <UnstyledButton component={Link} to="/" aria-label="UniLink home">
+            <Logo />
+          </UnstyledButton>
+
+          <Group gap={6} wrap="nowrap" component="nav">
+            {NAV.map((item) => (
+              <Link key={item.to} to={item.to} className="nav-pill" data-active={item.match(pathname) || undefined}>
+                {item.label}
+              </Link>
+            ))}
           </Group>
-        </AppShell.Section>
-        <StudyModeChip />
 
-        <AppShell.Section grow component={ScrollArea}>
-          {NAV.map(({ to, label, icon: Icon }) => (
-            <div key={to}>
-              <NavLink
-                component={Link}
-                to={to}
-                label={label}
-                active={isActive(to)}
-                leftSection={<Icon size={18} stroke={1.6} />}
-                style={{ borderRadius: 'var(--mantine-radius-md)' }}
-              />
-              {to === '/classes' &&
-                classes.data?.map((c) => (
-                  <NavLink
-                    key={c.id}
-                    component={Link}
-                    to={`/classes/${c.id}`}
-                    label={`${c.subject} ${c.number}`}
-                    description={c.term}
-                    active={pathname.startsWith(`/classes/${c.id}`)}
-                    pl={42}
-                    style={{ borderRadius: 'var(--mantine-radius-md)' }}
-                  />
-                ))}
-            </div>
-          ))}
-        </AppShell.Section>
-
-        <AppShell.Section>
-          <Menu position="top-start" width={220}>
-            <Menu.Target>
-              <UnstyledButton w="100%" p="xs" className="clickable" style={{ borderRadius: 'var(--mantine-radius-md)' }}>
-                <Group gap="sm" wrap="nowrap">
-                  <Avatar color="indigo" radius="xl">
-                    {initials(me.name)}
-                  </Avatar>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <Text size="sm" fw={500} truncate>
+          <Group gap="sm" wrap="nowrap">
+            <StudyModePill />
+            <NotificationBell />
+            <Menu position="bottom-end" width={220}>
+              <Menu.Target>
+                <UnstyledButton aria-label="Account menu">
+                  <Group gap={8} wrap="nowrap">
+                    <Text size="sm" fw={700} visibleFrom="xl">
                       {me.name}
                     </Text>
-                    <Text size="xs" c="dimmed" truncate>
-                      {me.email}
-                    </Text>
-                  </div>
-                  <IconChevronUp size={14} />
-                </Group>
-              </UnstyledButton>
-            </Menu.Target>
-            <Menu.Dropdown>
-              <Menu.Item component={Link} to="/profile" leftSection={<IconUser size={16} />}>
-                Profile and account
-              </Menu.Item>
-              <Menu.Item leftSection={<IconLogout size={16} />} onClick={() => signOut.mutate()}>
-                Sign out
-              </Menu.Item>
-            </Menu.Dropdown>
-          </Menu>
-        </AppShell.Section>
-      </AppShell.Navbar>
+                    <GoatAvatar goat={goatFor(me.id, me.avatar)} size={44} />
+                    <IconChevronDown size={14} />
+                  </Group>
+                </UnstyledButton>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Label>{me.email}</Menu.Label>
+                <Menu.Item component={Link} to="/settings/account" leftSection={<IconUser size={16} />}>
+                  Account
+                </Menu.Item>
+                <Menu.Item component={Link} to="/settings/goat" leftSection={<IconSettings size={16} />}>
+                  Customize your goat
+                </Menu.Item>
+                <Menu.Divider />
+                <Menu.Item leftSection={<IconLogout size={16} />} onClick={() => signOut.mutate()}>
+                  Sign out
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+          </Group>
+        </Group>
+      </AppShell.Header>
 
-      <AppShell.Main>{children}</AppShell.Main>
+      <AppShell.Main>
+        <Box maw={1400} mx="auto">
+          {children}
+        </Box>
+      </AppShell.Main>
     </AppShell>
   );
 }

@@ -17,24 +17,22 @@ import {
   Title,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { IconCheck, IconInfoCircle, IconUsersGroup, IconX } from '@tabler/icons-react';
+import { IconCheck, IconInfoCircle, IconX } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
 import { MCGILL_EMAIL, PASSWORD_RULES, passwordProblems } from '@shared/validation';
+import { GoatAvatar } from '../components/Goat';
+import { Logo } from '../components/Layout';
 import { useAction } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
 
 function AuthCard({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return (
-    <Center mih="100vh" p="md" bg="var(--mantine-color-gray-light)">
-      <Paper withBorder shadow="sm" p="xl" w={420} radius="lg">
-        <Group gap="xs" mb="lg">
-          <ThemeIcon size="lg" variant="gradient" gradient={{ from: 'indigo', to: 'red', deg: 135 }}>
-            <IconUsersGroup size={20} />
-          </ThemeIcon>
-          <Text fw={700} size="lg">
-            UniLink
-          </Text>
+    <Center mih="100vh" p="md">
+      <Paper className="sketch" shadow="sm" p="xl" w={440} radius="xl">
+        <Group justify="space-between" mb="lg">
+          <Logo />
+          <GoatAvatar goat={{ hat: 'grad', eyes: 'happy', horns: 'classic', fur: 'white', background: 'mint' }} size={72} />
         </Group>
         <Title order={3}>{title}</Title>
         <Text c="dimmed" size="sm" mb="lg">

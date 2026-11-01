@@ -226,15 +226,67 @@ describe('S4 discussion board', () => {
       visibility: 'selected',
       audienceEmails: [leo.email],
     });
-    expect((await leo.api.board.list({ classId, topic: null, search: '' })).map((p) => p.id)).toEqual([postId]);
-    expect(await ana.api.board.list({ classId, topic: null, search: '' })).toEqual([]);
+    const feed = { classIds: [classId], topics: [], since: null, search: '' };
+    expect((await leo.api.board.feed(feed)).map((p) => p.id)).toEqual([postId]);
+    expect(await ana.api.board.feed(feed)).toEqual([]);
     await expectCode(ana.api.board.get({ postId }), 'NOT_FOUND');
 
-    await leo.api.board.reply({ postId, body: 'Think about the recurrence' });
+    await leo.api.board.reply({ postId, parentId: null, body: 'Think about the recurrence' });
     const post = await maya.api.board.get({ postId });
     expect(post.replies.map((r) => r.authorName)).toEqual(['Leo']);
     expect(post.audience.map((a) => a.email)).toEqual([leo.email]);
-    expect(await leo.api.board.topics({ classId })).toEqual(['Assignment 2']);
+    expect(await leo.api.board.topics({ classId })).toContain('Assignment 2');
+  });
+
+  it('runs the home feed with filters, goat reactions and threaded replies', async () => {
+    const maya = await student('Maya');
+    const leo = await student('Leo');
+    const c251 = await comp251(maya.api);
+    const [m240] = await maya.api.catalogue.search({ query: 'MATH 240', term: 'Fall 2026', subject: null });
+    for (const s of [maya, leo]) for (const classId of [c251, m240.id]) await s.api.classes.join({ classId });
+
+    const post = (classId: number, topic: string, title: string) =>
+      leo.api.board.create({ classId, topic, title, body: '…', visibility: 'class', audienceEmails: [] });
+    const { id: hw } = await post(c251, 'Assignment', 'A2 is long');
+    await post(m240.id, 'Just yapping', 'Prof uses AI slides?');
+
+    const all = { classIds: null, topics: [], since: null, search: '' };
+    expect((await maya.api.board.feed(all)).map((p) => `${p.classLabel} ${p.topic}`)).toEqual([
+      'MATH 240 Just yapping',
+      'COMP 251 Assignment',
+    ]);
+    expect((await maya.api.board.feed({ ...all, topics: ['Assignment'] })).map((p) => p.id)).toEqual([hw]);
+    expect((await maya.api.board.feed({ ...all, classIds: [m240.id] })).length).toBe(1);
+    expect((await maya.api.board.feed({ ...all, search: 'long' })).map((p) => p.id)).toEqual([hw]);
+
+    // One goat per student, toggled.
+    await maya.api.board.react({ postId: hw });
+    await leo.api.board.react({ postId: hw });
+    await maya.api.board.react({ postId: hw });
+    await maya.api.board.react({ postId: hw });
+    expect((await maya.api.board.feed(all)).find((p) => p.id === hw)).toMatchObject({ goats: 2, goated: true });
+
+    // Replies to replies stay one level deep.
+    await maya.api.board.reply({ postId: hw, parentId: null, body: 'Agreed' });
+    const first = (await leo.api.board.get({ postId: hw })).replies[0];
+    await leo.api.board.reply({ postId: hw, parentId: first.id, body: 'Start early' });
+    const nested = (await leo.api.board.get({ postId: hw })).replies[1];
+    await maya.api.board.reply({ postId: hw, parentId: nested.id, body: 'Will do' });
+    await maya.api.board.reactReply({ replyId: first.id });
+    const thread = (await maya.api.board.get({ postId: hw })).replies;
+    expect(thread.map((r) => [r.body, r.parentId])).toEqual([
+      ['Agreed', null],
+      ['Start early', first.id],
+      ['Will do', first.id],
+    ]);
+    expect(thread[0]).toMatchObject({ goats: 1, goated: true });
+    expect((await maya.api.notifications.list()).items.map((n) => n.title)).toContain(
+      'Leo replied to your reply on "A2 is long"',
+    );
+
+    // Deleting the top reply removes its thread.
+    await maya.api.board.removeReply({ replyId: first.id });
+    expect((await leo.api.board.get({ postId: hw })).replies).toEqual([]);
   });
 });
 

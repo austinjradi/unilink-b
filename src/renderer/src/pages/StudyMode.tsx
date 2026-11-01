@@ -1,7 +1,7 @@
 import { Alert, Badge, Button, Card, Grid, Group, List, Stack, Switch, Text, ThemeIcon, Title } from '@mantine/core';
 import { IconBellOff, IconFocus2, IconInfoCircle } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { Empty, Loading, PageHeader, SectionCard } from '../components/ui';
+import { Empty, Loading, SectionCard } from '../components/ui';
 import { fmtDateTime, fmtTime } from '../lib/format';
 import { useAction } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
@@ -9,16 +9,15 @@ import { type Out, rpc } from '../lib/rpc';
 type Status = Out<typeof rpc.studyMode.status>;
 
 // ST1: study mode.
-export function StudyModePage() {
+export function StudyModePanel() {
   const status = useQuery({ queryKey: ['studyMode', 'status'], queryFn: () => rpc.studyMode.status(), refetchInterval: 15_000 });
   if (status.isPending || !status.data) return <Loading />;
 
   return (
     <>
-      <PageHeader
-        title="Study mode"
-        subtitle="Turns on by itself during your classes and study sessions, and holds back notifications until it's over."
-      />
+      <Text c="dimmed" mb="md">
+        Turns on by itself during your classes and study sessions, and holds back notifications until it's over.
+      </Text>
       <Grid gap="lg">
         <Grid.Col span={{ base: 12, lg: 7 }}>
           <Stack gap="lg">

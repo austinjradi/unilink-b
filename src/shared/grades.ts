@@ -47,6 +47,14 @@ export interface GradeSummary {
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
+// "Explore different scenarios": the final grade if everything left averages `average`%.
+export function finalIfRemainingAverages(items: GradedItem[], average: number): number {
+  const totalWeight = items.reduce((sum, i) => sum + i.weight, 0);
+  if (!totalWeight) return 0;
+  const earned = items.reduce((sum, i) => sum + (i.score == null ? (i.weight * average) / 100 : (i.weight * i.score) / 100), 0);
+  return round1((earned / totalWeight) * 100);
+}
+
 export function summarize(items: GradedItem[]): GradeSummary {
   const totalWeight = items.reduce((sum, i) => sum + i.weight, 0);
   const graded = items.filter((i) => i.score != null);

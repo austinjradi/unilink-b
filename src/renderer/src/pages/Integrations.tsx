@@ -2,13 +2,12 @@ import { useState } from 'react';
 import { Badge, Button, Card, Group, List, SimpleGrid, Stack, Text, ThemeIcon } from '@mantine/core';
 import { IconBook, IconBrandGoogle, IconDownload, IconSchool, IconUpload } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { PageHeader } from '../components/ui';
 import { useAction } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
 import { ClassSelect } from './Calendar';
 
 // G2: course catalogue, Google Calendar and myCourses.
-export function IntegrationsPage() {
+export function IntegrationsPanel() {
   const stats = useQuery({ queryKey: ['catalogue', 'stats'], queryFn: () => rpc.catalogue.stats() });
   const [importClass, setImportClass] = useState<number | null>(null);
   const exportIcs = useAction(() => rpc.calendar.exportIcs(), {
@@ -20,7 +19,9 @@ export function IntegrationsPage() {
 
   return (
     <>
-      <PageHeader title="Integrations" subtitle="Connect UniLink to the McGill and Google tools you already use." />
+      <Text c="dimmed" mb="md">
+        Connect UniLink to the McGill and Google tools you already use.
+      </Text>
       <SimpleGrid cols={{ base: 1, lg: 3 }} spacing="lg">
         <Card withBorder padding="lg">
           <Stack h="100%">

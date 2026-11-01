@@ -1,17 +1,50 @@
 import { useState } from 'react';
-import { ActionIcon, Button, Group, Menu, Modal, Select, Stack, Table, Text, Textarea, TextInput } from '@mantine/core';
+import {
+  ActionIcon,
+  Badge,
+  Box,
+  Button,
+  Card,
+  Checkbox,
+  Grid,
+  Group,
+  Menu,
+  Modal,
+  SegmentedControl,
+  Select,
+  Stack,
+  Table,
+  Text,
+  Textarea,
+  TextInput,
+  Title,
+  Tooltip,
+} from '@mantine/core';
 import { DateTimePicker } from '@mantine/dates';
 import { useForm } from '@mantine/form';
-import { IconChevronLeft, IconChevronRight, IconDownload, IconPencil, IconPlus, IconTrash, IconUpload } from '@tabler/icons-react';
+import {
+  IconArrowRight,
+  IconChevronLeft,
+  IconChevronRight,
+  IconDownload,
+  IconPencil,
+  IconPlus,
+  IconRefresh,
+  IconTrash,
+  IconUpload,
+} from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { addDays, eachDay, ymd } from '@shared/dates';
-import { Empty, KindBadge, kindColor, Loading, PageHeader, SectionCard } from '../components/ui';
+import { useNavigate } from 'react-router';
+import { addDays, CURRENT_TERM, eachDay, termRange, ymd } from '@shared/dates';
+import { chipStyle, Empty, KindBadge, kindColor, Loading, PageHeader } from '../components/ui';
 import { fmtDateTime, fmtTime, toDate } from '../lib/format';
 import { useAction } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
 
 type Deadline = Out<typeof rpc.calendar.deadlines>[number];
+type CalEvent = Out<typeof rpc.calendar.range>[number];
+type View = 'month' | 'week' | 'semester';
 
 const KINDS = [
   { value: 'assignment', label: 'Assignment' },
@@ -20,22 +53,22 @@ const KINDS = [
   { value: 'other', label: 'Other' },
 ];
 
-const mondayOf = (d: Date) => ymd(dayjs(d).subtract((d.getDay() + 6) % 7, 'day').toDate());
+const eventKind = (e: CalEvent) => (e.kind === 'deadline' ? e.detail : e.kind);
+const eventLabel = (e: CalEvent) => (e.kind === 'deadline' ? `Due: ${e.title}` : e.title);
+const mondayOf = (day: string) => {
+  const d = dayjs(day);
+  return ymd(d.subtract((d.day() + 6) % 7, 'day').toDate());
+};
 
-// A3: week view of everything with a date, plus manual deadlines. G2 import/export lives here too.
+// A3 in the layout of the wireframe (A2Team.pdf p. 7).
 export function CalendarPage() {
-  const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
-  const [editing, setEditing] = useState<Deadline | 'new' | null>(null);
-  const weekEnd = addDays(weekStart, 6);
+  const navigate = useNavigate();
   const today = ymd(new Date());
+  const [view, setView] = useState<View>('month');
+  const [cursor, setCursor] = useState(today);
+  const [editing, setEditing] = useState<Deadline | 'new' | null>(null);
+  const [showAll, setShowAll] = useState(false);
 
-  const events = useQuery({
-    queryKey: ['calendar', weekStart, weekEnd],
-    queryFn: () => rpc.calendar.range({ from: weekStart, to: weekEnd }),
-    placeholderData: keepPreviousData,
-  });
-  const deadlines = useQuery({ queryKey: ['calendar', 'deadlines'], queryFn: () => rpc.calendar.deadlines() });
-  const remove = useAction((id: number) => rpc.calendar.removeDeadline({ id }), { success: 'Deadline removed' });
   const exportIcs = useAction(() => rpc.calendar.exportIcs(), {
     success: (r) => (r ? `Exported ${r.count} events. Import the file into Google Calendar.` : ''),
   });
@@ -43,16 +76,26 @@ export function CalendarPage() {
     success: (r) => (r ? `Imported ${r.imported} deadlines${r.skipped ? ` (skipped ${r.skipped} past or duplicate)` : ''}` : ''),
   });
 
+  const step = (n: number) =>
+    setCursor(view === 'week' ? addDays(cursor, 7 * n) : ymd(dayjs(cursor).add(n, 'month').startOf('month').toDate()));
+  const title =
+    view === 'semester'
+      ? CURRENT_TERM
+      : view === 'week'
+        ? `${dayjs(mondayOf(cursor)).format('D MMM')} – ${dayjs(addDays(mondayOf(cursor), 6)).format('D MMM YYYY')}`
+        : dayjs(cursor).format('MMMM YYYY');
+
   return (
     <>
       <PageHeader
-        title="Calendar"
-        subtitle="Class times, deadlines, exams, study sessions and planned work in one place."
+        title="Calendar & Planner"
         actions={
           <>
             <Menu position="bottom-end">
               <Menu.Target>
-                <Button variant="default">Sync</Button>
+                <Button variant="default" leftSection={<IconRefresh size={16} />}>
+                  Sync
+                </Button>
               </Menu.Target>
               <Menu.Dropdown>
                 <Menu.Item leftSection={<IconDownload size={14} />} onClick={() => exportIcs.mutate()}>
@@ -63,111 +106,377 @@ export function CalendarPage() {
                 </Menu.Item>
               </Menu.Dropdown>
             </Menu>
-            <Button leftSection={<IconPlus size={16} />} onClick={() => setEditing('new')}>
-              Add deadline
-            </Button>
+            <Menu position="bottom-end">
+              <Menu.Target>
+                <Button size="md" leftSection={<IconPlus size={18} />}>
+                  Add event/assignment
+                </Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item onClick={() => setEditing('new')}>Deadline, exam or quiz</Menu.Item>
+                <Menu.Item onClick={() => navigate('/planner?new=1')}>Assignment to plan out</Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
           </>
         }
       />
 
-      <Group justify="space-between" mb="sm">
-        <Group gap="xs">
-          <ActionIcon variant="default" onClick={() => setWeekStart(addDays(weekStart, -7))} aria-label="Previous week">
-            <IconChevronLeft size={16} />
-          </ActionIcon>
-          <Button variant="default" size="xs" onClick={() => setWeekStart(mondayOf(new Date()))}>
-            This week
-          </Button>
-          <ActionIcon variant="default" onClick={() => setWeekStart(addDays(weekStart, 7))} aria-label="Next week">
-            <IconChevronRight size={16} />
-          </ActionIcon>
-        </Group>
-        <Text fw={600}>
-          {dayjs(weekStart).format('D MMM')} – {dayjs(weekEnd).format('D MMM YYYY')}
-        </Text>
-      </Group>
-
-      <div className="week-grid">
-        {eachDay(weekStart, weekEnd).map((day) => {
-          const dayEvents = events.data?.filter((e) => ymd(e.start) === day) ?? [];
-          return (
-            <div key={day} className="week-day" data-today={day === today || undefined}>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-                {dayjs(day).format('ddd')}
-              </Text>
-              <Text fw={700} mb="xs">
-                {dayjs(day).format('D')}
-              </Text>
-              {dayEvents.map((e) => (
-                <div
-                  key={e.key}
-                  className="event"
-                  data-done={e.done || undefined}
-                  style={{ ['--event-color' as string]: `var(--mantine-color-${kindColor(e.kind === 'deadline' ? e.detail : e.kind)}-6)` }}
-                  title={[e.title, e.classLabel, e.location].filter(Boolean).join('\n')}
-                >
-                  <Text size="xs" fw={600} lineClamp={2}>
-                    {e.kind === 'deadline' ? `Due: ${e.title}` : e.title}
-                  </Text>
-                  <Text size="xs" c="dimmed">
-                    {e.allDay ? e.detail : e.end ? `${fmtTime(e.start)}–${fmtTime(e.end)}` : fmtTime(e.start)}
-                    {e.classLabel && e.classLabel !== e.title ? ` · ${e.classLabel}` : ''}
-                  </Text>
-                </div>
-              ))}
-            </div>
-          );
-        })}
-      </div>
-
-      <Group gap="md" mt="sm">
-        {['class', 'session', 'task', 'assignment', 'exam', 'quiz', 'graded'].map((k) => (
-          <KindBadge key={k} kind={k} />
-        ))}
-      </Group>
-
-      <Stack mt="xl">
-        <SectionCard title="Your deadlines">
-          <Text size="sm" c="dimmed" mb="sm">
-            Graded work from each class's Grades tab and planner due dates appear on the calendar automatically. Add
-            anything else here.
-          </Text>
-          {deadlines.isPending ? (
-            <Loading />
-          ) : deadlines.data?.length ? (
-            <Table verticalSpacing="xs">
-              <Table.Tbody>
-                {deadlines.data.map((d) => (
-                  <Table.Tr key={d.id} opacity={d.dueAt < new Date() ? 0.5 : 1}>
-                    <Table.Td fw={500}>{d.title}</Table.Td>
-                    <Table.Td>{d.classLabel ?? '—'}</Table.Td>
-                    <Table.Td>
-                      <KindBadge kind={d.kind} />
-                    </Table.Td>
-                    <Table.Td>{fmtDateTime(d.dueAt)}</Table.Td>
-                    <Table.Td>
-                      <Group gap={4} justify="flex-end" wrap="nowrap">
-                        <ActionIcon variant="subtle" onClick={() => setEditing(d)} aria-label="Edit">
-                          <IconPencil size={16} />
-                        </ActionIcon>
-                        <ActionIcon variant="subtle" color="red" onClick={() => remove.mutate(d.id)} aria-label="Delete">
-                          <IconTrash size={16} />
-                        </ActionIcon>
-                      </Group>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          ) : (
-            <Empty>No deadlines added yet.</Empty>
-          )}
-        </SectionCard>
-      </Stack>
+      <Grid gap="lg" columns={24}>
+        <Grid.Col span={{ base: 24, lg: 17 }}>
+          <Card padding="md">
+            <Group justify="space-between" mb="md">
+              <Group gap={4}>
+                {view !== 'semester' && (
+                  <ActionIcon variant="subtle" onClick={() => step(-1)} aria-label="Previous">
+                    <IconChevronLeft size={20} />
+                  </ActionIcon>
+                )}
+                <Title order={3} miw={190} ta="center">
+                  {title}
+                </Title>
+                {view !== 'semester' && (
+                  <ActionIcon variant="subtle" onClick={() => step(1)} aria-label="Next">
+                    <IconChevronRight size={20} />
+                  </ActionIcon>
+                )}
+                {view !== 'semester' && cursor !== today && (
+                  <Button size="compact-xs" variant="subtle" onClick={() => setCursor(today)}>
+                    Today
+                  </Button>
+                )}
+              </Group>
+              <SegmentedControl
+                size="xs"
+                value={view}
+                onChange={(v) => setView(v as View)}
+                data={[
+                  { value: 'month', label: 'Month' },
+                  { value: 'week', label: 'Week' },
+                  { value: 'semester', label: 'Semester' },
+                ]}
+              />
+            </Group>
+            {view === 'month' && <MonthView cursor={cursor} today={today} />}
+            {view === 'week' && <WeekView start={mondayOf(cursor)} today={today} />}
+            {view === 'semester' && <SemesterView />}
+          </Card>
+        </Grid.Col>
+        <Grid.Col span={{ base: 24, lg: 7 }}>
+          <Upcoming onViewAll={() => setShowAll(true)} />
+        </Grid.Col>
+        <Grid.Col span={24}>
+          <TodayList today={today} />
+        </Grid.Col>
+      </Grid>
 
       <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing === 'new' ? 'Add deadline' : 'Edit deadline'}>
         {editing && <DeadlineForm key={editing === 'new' ? 'new' : editing.id} existing={editing === 'new' ? null : editing} onDone={() => setEditing(null)} />}
       </Modal>
+      <Modal opened={showAll} onClose={() => setShowAll(false)} title="All your deadlines" size="xl">
+        <AllDeadlines onEdit={(d) => setEditing(d)} />
+      </Modal>
+    </>
+  );
+}
+
+function useRange(from: string, to: string) {
+  return useQuery({
+    queryKey: ['calendar', from, to],
+    queryFn: () => rpc.calendar.range({ from, to }),
+    placeholderData: keepPreviousData,
+  });
+}
+
+function MonthView({ cursor, today }: { cursor: string; today: string }) {
+  const month = dayjs(cursor).month();
+  const start = mondayOf(ymd(dayjs(cursor).startOf('month').toDate()));
+  const end = addDays(mondayOf(ymd(dayjs(cursor).endOf('month').toDate())), 6);
+  const days = eachDay(start, end);
+  const events = useRange(start, end);
+
+  return (
+    <>
+      <div className="month-grid" style={{ borderTop: 'none', borderLeft: 'none' }}>
+        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
+          <Text key={d} size="xs" fw={800} c="dimmed" tt="uppercase" pb={4} pl={6}>
+            {d}
+          </Text>
+        ))}
+      </div>
+      <div className="month-grid">
+        {days.map((day) => {
+          const dayEvents = (events.data ?? []).filter((e) => ymd(e.start) === day && e.kind !== 'class');
+          const classes = (events.data ?? []).filter((e) => ymd(e.start) === day && e.kind === 'class').length;
+          return (
+            <div key={day} className="month-cell" data-outside={dayjs(day).month() !== month || undefined} data-today={day === today || undefined}>
+              <Group justify="space-between" gap={2}>
+                <Text size="sm" fw={700} className="day-number">
+                  {dayjs(day).date()}
+                </Text>
+                {classes > 0 && (
+                  <Tooltip label={`${classes} class${classes === 1 ? '' : 'es'}`}>
+                    <Box w={7} h={7} style={{ borderRadius: 7, background: 'var(--mantine-color-periwinkle-4)' }} />
+                  </Tooltip>
+                )}
+              </Group>
+              {dayEvents.slice(0, 3).map((e) => (
+                <Tooltip key={e.key} label={[eventLabel(e), e.classLabel, e.end ? `${fmtTime(e.start)}–${fmtTime(e.end)}` : !e.allDay && fmtTime(e.start)].filter(Boolean).join(' · ')}>
+                  <span className="chip" style={chipStyle(eventKind(e))} data-done={e.done || undefined}>
+                    {e.kind === 'deadline' ? e.title : e.title.split(' · ')[0]}
+                  </span>
+                </Tooltip>
+              ))}
+              {dayEvents.length > 3 && (
+                <Text size="xs" c="dimmed" fw={700} mt={2}>
+                  +{dayEvents.length - 3} more
+                </Text>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <Group gap="xs" mt="sm">
+        {['session', 'task', 'assignment', 'exam', 'quiz', 'graded'].map((k) => (
+          <KindBadge key={k} kind={k} />
+        ))}
+        <Text size="xs" c="dimmed">
+          · dot = class times
+        </Text>
+      </Group>
+    </>
+  );
+}
+
+function WeekView({ start, today }: { start: string; today: string }) {
+  const end = addDays(start, 6);
+  const events = useRange(start, end);
+  return (
+    <div className="week-grid">
+      {eachDay(start, end).map((day) => (
+        <div key={day} className="week-day" data-today={day === today || undefined}>
+          <Text size="xs" c="dimmed" tt="uppercase" fw={800}>
+            {dayjs(day).format('ddd')}
+          </Text>
+          <Text fw={700} mb="xs">
+            {dayjs(day).format('D')}
+          </Text>
+          {(events.data ?? [])
+            .filter((e) => ymd(e.start) === day)
+            .map((e) => (
+              <div
+                key={e.key}
+                className="event"
+                data-done={e.done || undefined}
+                style={{ ['--event-color' as string]: `var(--mantine-color-${kindColor(eventKind(e))}-6)` }}
+              >
+                <Text size="xs" fw={700} lineClamp={2}>
+                  {eventLabel(e)}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {e.allDay ? e.detail : e.end ? `${fmtTime(e.start)}–${fmtTime(e.end)}` : fmtTime(e.start)}
+                </Text>
+              </div>
+            ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// The whole term at a glance: deadlines, exams and sessions week by week.
+function SemesterView() {
+  const { start, end } = termRange(CURRENT_TERM);
+  const events = useRange(start, end);
+  if (events.isPending) return <Loading />;
+  const items = (events.data ?? []).filter((e) => e.kind === 'deadline' || e.kind === 'session');
+  const weeks = [...new Set(items.map((e) => mondayOf(ymd(e.start))))].sort();
+  if (!weeks.length) return <Empty>No deadlines or study sessions this term yet.</Empty>;
+
+  return (
+    <Stack gap="sm">
+      {weeks.map((week) => (
+        <Group key={week} align="flex-start" wrap="nowrap" gap="md">
+          <Text size="sm" fw={800} w={110} style={{ flex: 'none' }}>
+            Week of {dayjs(week).format('MMM D')}
+          </Text>
+          <Group gap={6}>
+            {items
+              .filter((e) => mondayOf(ymd(e.start)) === week)
+              .map((e) => (
+                <Tooltip key={e.key} label={`${fmtDateTime(e.start)}${e.classLabel ? ` · ${e.classLabel}` : ''}`}>
+                  <span className="chip" style={{ ...chipStyle(eventKind(e)), display: 'inline-block', marginTop: 0 }} data-done={e.done || undefined}>
+                    {e.classLabel && e.classLabel !== e.title ? `${e.classLabel}: ` : ''}
+                    {e.title}
+                  </span>
+                </Tooltip>
+              ))}
+          </Group>
+        </Group>
+      ))}
+    </Stack>
+  );
+}
+
+function Upcoming({ onViewAll }: { onViewAll: () => void }) {
+  const upcoming = useQuery({ queryKey: ['calendar', 'upcoming', 7], queryFn: () => rpc.calendar.upcoming({ days: 7 }) });
+  const sessions = useQuery({ queryKey: ['studySessions', 'mine'], queryFn: () => rpc.studySessions.mine() });
+  const remove = useAction((id: number) => rpc.calendar.removeDeadline({ id }), { success: 'Deadline removed' });
+
+  const soon = dayjs().add(7, 'day');
+  const items = [
+    ...(upcoming.data ?? []).map((e) => ({ key: e.key, title: e.title, sub: e.classLabel, when: e.start, end: null as Date | null, kind: eventKind(e), deadlineId: e.deadlineId })),
+    ...(sessions.data ?? [])
+      .filter((s) => s.myStatus === 'going' && dayjs(s.startsAt).isBefore(soon))
+      .map((s) => ({ key: `s${s.id}`, title: s.title, sub: s.classLabel, when: s.startsAt, end: s.endsAt, kind: 'session', deadlineId: null })),
+  ].sort((a, b) => a.when.getTime() - b.when.getTime());
+
+  return (
+    <Card padding={0} h="100%">
+      <Text fw={800} size="lg" className="display" px="md" py="sm" style={{ borderBottom: '1.5px solid var(--ul-border)' }}>
+        Upcoming (next 7 days)
+      </Text>
+      {upcoming.isPending ? (
+        <Loading />
+      ) : items.length ? (
+        items.map((i) => (
+          <Group key={i.key} px="md" py="sm" wrap="nowrap" align="flex-start" style={{ borderBottom: '1.5px solid var(--ul-border)' }}>
+            <Box mt={6} w={9} h={9} style={{ flex: 'none', borderRadius: 9, background: `var(--mantine-color-${kindColor(i.kind)}-4)` }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Text fw={700} size="sm" lineClamp={2}>
+                {i.title}
+              </Text>
+              {i.sub && (
+                <Text size="xs" c="dimmed">
+                  {i.sub}
+                </Text>
+              )}
+              <Text size="xs" mt={2}>
+                {dayjs(i.when).format('ddd, MMM D · HH:mm')}
+                {i.end && `–${fmtTime(i.end)}`}
+              </Text>
+            </div>
+            {i.deadlineId != null && (
+              <ActionIcon variant="subtle" color="gray" onClick={() => remove.mutate(i.deadlineId!)} aria-label={`Delete ${i.title}`}>
+                <IconTrash size={16} />
+              </ActionIcon>
+            )}
+          </Group>
+        ))
+      ) : (
+        <Empty>Nothing in the next 7 days.</Empty>
+      )}
+      <Box p="sm">
+        <Button variant="default" fullWidth rightSection={<IconArrowRight size={16} />} onClick={onViewAll}>
+          View all deadlines
+        </Button>
+      </Box>
+    </Card>
+  );
+}
+
+const PILL: Record<string, string> = { class: 'Lecture', session: 'Study', task: 'Task', deadline: 'Due' };
+
+function TodayList({ today }: { today: string }) {
+  const events = useRange(today, today);
+  const setTask = useAction((v: { id: number; done: boolean }) => rpc.planner.setDone({ taskId: v.id, done: v.done }));
+  const setDeadline = useAction((v: { id: number; done: boolean }) => rpc.calendar.setDeadlineDone(v));
+
+  const duration = (e: CalEvent) => {
+    if (!e.end) return null;
+    const mins = Math.round((e.end.getTime() - e.start.getTime()) / 60_000);
+    return mins >= 60 ? `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ''}` : `${mins}m`;
+  };
+
+  return (
+    <Card padding={0}>
+      <Text fw={800} size="lg" className="display" px="md" py="sm" style={{ borderBottom: '1.5px solid var(--ul-border)', background: 'var(--ul-soft)' }}>
+        Today · {dayjs(today).format('ddd, MMM D')}
+      </Text>
+      {events.isPending ? (
+        <Loading />
+      ) : events.data?.length ? (
+        events.data.map((e) => {
+          const taskId = e.kind === 'task' ? Number(e.key.slice(5)) : null;
+          return (
+            <Group key={e.key} px="md" py="sm" wrap="nowrap" style={{ borderBottom: '1.5px solid var(--ul-border)' }}>
+              <Checkbox
+                disabled={taskId == null && e.deadlineId == null}
+                checked={e.done}
+                onChange={(ev) =>
+                  taskId != null
+                    ? setTask.mutate({ id: taskId, done: ev.currentTarget.checked })
+                    : setDeadline.mutate({ id: e.deadlineId!, done: ev.currentTarget.checked })
+                }
+                aria-label={`Done: ${e.title}`}
+              />
+              <div style={{ width: 64 }}>
+                <Text size="sm" fw={800}>
+                  {e.allDay ? 'Any time' : fmtTime(e.start)}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {e.allDay ? e.detail : duration(e)}
+                </Text>
+              </div>
+              <Box w={9} h={9} style={{ flex: 'none', borderRadius: 9, background: `var(--mantine-color-${kindColor(eventKind(e))}-4)` }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Text fw={700} td={e.done ? 'line-through' : undefined}>
+                  {eventLabel(e)}
+                </Text>
+                {(e.location || (e.classLabel && e.classLabel !== e.title)) && (
+                  <Text size="xs" c="dimmed">
+                    {[e.classLabel !== e.title && e.classLabel, e.location].filter(Boolean).join(' · ')}
+                  </Text>
+                )}
+              </div>
+              <Badge variant="outline" color={kindColor(eventKind(e))} size="lg">
+                {PILL[e.kind] ?? e.kind}
+              </Badge>
+            </Group>
+          );
+        })
+      ) : (
+        <Empty>Nothing on today. Add class times from each course's Overview tab.</Empty>
+      )}
+    </Card>
+  );
+}
+
+function AllDeadlines({ onEdit }: { onEdit: (d: Deadline) => void }) {
+  const deadlines = useQuery({ queryKey: ['calendar', 'deadlines'], queryFn: () => rpc.calendar.deadlines() });
+  const remove = useAction((id: number) => rpc.calendar.removeDeadline({ id }), { success: 'Deadline removed' });
+  if (deadlines.isPending) return <Loading />;
+  if (!deadlines.data?.length) return <Empty>No deadlines added yet.</Empty>;
+  return (
+    <>
+      <Text size="sm" c="dimmed" mb="sm">
+        Graded work from each course's Grades tab and planner due dates show on the calendar automatically.
+      </Text>
+      <Table verticalSpacing="xs">
+        <Table.Tbody>
+          {deadlines.data.map((d) => (
+            <Table.Tr key={d.id} opacity={d.completedAt || d.dueAt < new Date() ? 0.5 : 1}>
+              <Table.Td fw={600} td={d.completedAt ? 'line-through' : undefined}>
+                {d.title}
+              </Table.Td>
+              <Table.Td>{d.classLabel ?? '—'}</Table.Td>
+              <Table.Td>
+                <KindBadge kind={d.kind} />
+              </Table.Td>
+              <Table.Td>{fmtDateTime(d.dueAt)}</Table.Td>
+              <Table.Td>
+                <Group gap={4} justify="flex-end" wrap="nowrap">
+                  <ActionIcon variant="subtle" onClick={() => onEdit(d)} aria-label="Edit">
+                    <IconPencil size={16} />
+                  </ActionIcon>
+                  <ActionIcon variant="subtle" color="red" onClick={() => remove.mutate(d.id)} aria-label="Delete">
+                    <IconTrash size={16} />
+                  </ActionIcon>
+                </Group>
+              </Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
     </>
   );
 }
@@ -201,9 +510,10 @@ function DeadlineForm({ existing, onDone }: { existing: Deadline | null; onDone:
     },
   });
   const save = useAction(
-    (v: typeof form.values) => {
+    async (v: typeof form.values) => {
       const fields = { ...v, dueAt: toDate(v.dueAt)! };
-      return existing ? rpc.calendar.updateDeadline({ id: existing.id, ...fields }) : rpc.calendar.addDeadline(fields);
+      if (existing) await rpc.calendar.updateDeadline({ id: existing.id, ...fields });
+      else await rpc.calendar.addDeadline(fields);
     },
     { success: 'Deadline saved', onSuccess: onDone },
   );

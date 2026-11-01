@@ -186,7 +186,7 @@ export async function backgroundTick(ctx: Context, state: TickState) {
       body: status.active
         ? `Until ${fmtClock(status.until!)}.${settings.silenceNotifications ? ' Notifications are held until it ends.' : ''}`
         : 'Notifications are back on.',
-      link: '/focus',
+      link: '/settings/study-mode',
     });
   }
 
