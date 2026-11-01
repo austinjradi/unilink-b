@@ -78,12 +78,21 @@ npm run preview    # serve dist/ at http://localhost:4173
 npm run db:generate  # create a migration after editing src/main/db/schema.ts
 ```
 
-Every visitor starts with three demo classmates in COMP 251-001 and MATH 240-001 (Fall 2026), listed on the
-sign-in screen with the password `unilink-demo1`. Sign up with any `@mail.mcgill.ca` address to get your own
-account, then join **COMP 251-001** to see the section's shared course details, class times, grading scheme and
-quiz deadline, a resolved question with an accepted answer, links classmates have vouched for, and an open
-study session with one spot left. Alex's invite-only "Midterm review" session doesn't show up until you enter
-its code, `ALEXMT`. **Reset demo data** under the demo list wipes everything saved in the browser and starts over.
+Every visitor starts in a busy Fall 2026 term: about 130 demo classmates spread over the catalogue's sections,
+and around 30 sections with shared course details, class times, grading schemes and deadlines, a discussion
+board with answered and open questions, group chats classmates vouch for (and one hidden after reports), and
+study sessions: open, full with a waitlist, online, invite-only, and some already over. Everything lives in
+`db/demoContent.ts`; `db/demo.ts` turns it into rows, with dates relative to the first visit.
+
+Three classmates are listed on the sign-in screen with the password `unilink-demo1` (every demo classmate
+uses it). Signing in as one of them shows a student mid-term: five classes, a course record going back a year
+and a degree program (A1–A2), marks on each section's scheme (A4), assignments broken into planned tasks
+(ST2), to-dos (ST3), private deadlines, and notifications about replies and accepted answers (G3).
+
+Or sign up with any `@mail.mcgill.ca` address and join a section, **COMP 251-001** for the most going on.
+Alex's invite-only "Midterm review" session there doesn't show up until you enter its code, `ALEXMT`.
+**Reset demo data** under the demo list wipes everything saved in the browser and starts over. Browsers that
+already had an older, smaller demo get the new classmates and sections added on their next visit.
 
 To see the social features from both sides, open a second tab, sign out there and sign in as another
 classmate. The tabs keep each other up to date.
