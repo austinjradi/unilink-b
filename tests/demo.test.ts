@@ -46,4 +46,19 @@ describe('demo data', () => {
     seedDemoData(db);
     expect(rows(db, schema.posts) + rows(db, schema.enrollments) + rows(db, schema.notifications)).toBe(before);
   });
+
+  it('links the plans of a version 2 demo to their graded items', () => {
+    const db = openDatabase(new SQL.Database());
+    seedDemoData(db);
+    const linked = () => db.select().from(schema.plannerAssignments).all().filter((a) => a.assessmentId != null).length;
+    const plans = rows(db, schema.plannerAssignments);
+    expect(linked()).toBe(plans);
+
+    // What a browser that loaded version 2 has: the same plans, unlinked.
+    db.update(schema.plannerAssignments).set({ assessmentId: null }).run();
+    db.update(schema.appState).set({ value: '2' }).where(eq(schema.appState.key, 'demo_seed')).run();
+    seedDemoData(db);
+    expect(linked()).toBe(plans);
+    expect(rows(db, schema.posts)).toBe(Object.values(SECTIONS).reduce((n, s) => n + (s.posts?.length ?? 0), 0) + 3);
+  });
 });

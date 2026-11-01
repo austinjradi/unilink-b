@@ -86,8 +86,10 @@ export const demoEmail = (name: string) =>
     .join('.')}@mail.mcgill.ca`;
 
 // Bumped when demo content is added; browsers with an older demo get the new part on next load.
+// 2: the classmates and sections in demoContent.ts. 3: their planned assignments follow the
+// section's graded items.
 const SEED_KEY = 'demo_seed';
-const SEED_VERSION = '2';
+const SEED_VERSION = '3';
 const HOUR = 3_600_000;
 
 function hash(password: string) {
@@ -120,11 +122,15 @@ function seededRandom(seed: number) {
 export function seedDemoData(db: DB) {
   const marker = db.select({ value: appState.value }).from(appState).where(eq(appState.key, SEED_KEY)).get()?.value;
   if (marker === SEED_VERSION) return;
-  // Databases from before the marker already have the first three classmates.
-  const fresh = !marker && (db.select({ n: count() }).from(users).get()?.n ?? 0) === 0;
-  const passwordHash = hash(DEMO_PASSWORD);
-  if (fresh) seedFirstClassmates(db, passwordHash);
-  seedSections(db, passwordHash);
+  if (marker === '2') {
+    linkSeededPlans(db);
+  } else {
+    // Databases from before the marker already have the first three classmates.
+    const fresh = !marker && (db.select({ n: count() }).from(users).get()?.n ?? 0) === 0;
+    const passwordHash = hash(DEMO_PASSWORD);
+    if (fresh) seedFirstClassmates(db, passwordHash);
+    seedSections(db, passwordHash);
+  }
   db.insert(appState)
     .values({ key: SEED_KEY, value: SEED_VERSION })
     .onConflictDoUpdate({ target: appState.key, set: { value: SEED_VERSION } })
@@ -334,6 +340,29 @@ export function quietClassmates(): ClassmateSeed[] {
     quiet.push({ key: `quiet-${quiet.length}`, name, pronouns: rand() < 0.6 ? pick(PRONOUNS.slice(0, 3)) : '', faculty, gradYear: 2027 + Math.floor(rand() * 4), track });
   }
   return quiet;
+}
+
+// Version 2 of the demo seeded the sign-in accounts' plans without saying which graded item
+// each one is for; link them so they follow it like plans made in the app.
+function linkSeededPlans(db: DB) {
+  for (const [key, seed] of Object.entries(CORE)) {
+    const user = db.select({ id: users.id }).from(users).where(eq(users.email, CORE_EMAILS[key])).get();
+    if (!user) continue;
+    for (const plan of seed.plans) {
+      const assignment = db
+        .select()
+        .from(plannerAssignments)
+        .where(and(eq(plannerAssignments.userId, user.id), eq(plannerAssignments.title, plan.title), isNull(plannerAssignments.assessmentId)))
+        .get();
+      if (!assignment?.classId || !plan.follows) continue;
+      const source = db
+        .select({ id: assessments.id })
+        .from(assessments)
+        .where(and(eq(assessments.classId, assignment.classId), eq(assessments.name, plan.follows)))
+        .get();
+      if (source) db.update(plannerAssignments).set({ assessmentId: source.id }).where(eq(plannerAssignments.id, assignment.id)).run();
+    }
+  }
 }
 
 const m = (key: string, params?: Message['params']): Message => ({ key, params });
