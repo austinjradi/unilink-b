@@ -1,9 +1,14 @@
+import { execFile, execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { promisify } from 'node:util';
+import { app, BrowserWindow, dialog, ipcMain, Notification, shell } from 'electron';
 import { openDatabase } from './db/client';
 import { seedDemoData } from './db/demo';
 import { type Context, dispatch, type Platform } from './rpc/core';
 import { appRouter } from './rpc/router';
+import { backgroundTick, initialTickState } from './services/studyMode';
+
+const execFileAsync = promisify(execFile);
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -53,7 +58,41 @@ const platform: Platform = {
     const error = await shell.openPath(path);
     if (error) throw new Error(error);
   },
+  showNotification({ title, body, link }) {
+    if (!Notification.isSupported()) return;
+    const n = new Notification({ title, body });
+    n.on('click', () => {
+      if (!mainWindow) return;
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      if (link) mainWindow.webContents.send('navigate', link);
+    });
+    n.show();
+  },
+  systemDndSupported: () => GNOME,
+  async setSystemDnd(on) {
+    if (!GNOME) return false;
+    try {
+      if (on) {
+        bannersBefore ??= (await execFileAsync('gsettings', ['get', DND_SCHEMA, 'show-banners'])).stdout.trim();
+        await execFileAsync('gsettings', ['set', DND_SCHEMA, 'show-banners', 'false']);
+      } else if (bannersBefore != null) {
+        await execFileAsync('gsettings', ['set', DND_SCHEMA, 'show-banners', bannersBefore]);
+        bannersBefore = null;
+      }
+      return true;
+    } catch (err) {
+      console.error('[study mode] could not change Do Not Disturb:', err);
+      return false;
+    }
+  },
 };
+
+// ST1: GNOME's Do Not Disturb is the "show-banners" setting. Other desktops don't offer an API.
+const GNOME = process.platform === 'linux' && /gnome/i.test(process.env.XDG_CURRENT_DESKTOP ?? '');
+const DND_SCHEMA = 'org.gnome.desktop.notifications';
+let bannersBefore: string | null = null;
 
 app.whenReady().then(() => {
   // Packaged builds ship migrations as an extra resource; from source they sit in the repo root.
@@ -82,6 +121,22 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+
+  // G3 reminders, ST1 study mode switching and desktop notifications.
+  const tickState = initialTickState();
+  const tick = () => backgroundTick(ctx, tickState).catch((err) => console.error('[tick] failed:', err));
+  setTimeout(tick, 3_000);
+  setInterval(tick, 30_000);
+});
+
+// Never leave Do Not Disturb switched on after UniLink quits.
+app.on('will-quit', () => {
+  if (bannersBefore == null) return;
+  try {
+    execFileSync('gsettings', ['set', DND_SCHEMA, 'show-banners', bannersBefore]);
+  } catch (err) {
+    console.error('[study mode] could not restore Do Not Disturb:', err);
+  }
 });
 
 app.on('window-all-closed', () => {

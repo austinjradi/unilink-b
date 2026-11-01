@@ -4,7 +4,8 @@ import { parseChatLink } from '@shared/links';
 import type { DB } from '../db/client';
 import { chatLinkFlags, chatLinks, users } from '../db/schema';
 import { AppError, idSchema, procedure } from '../rpc/core';
-import { notFound, requireMember } from './access';
+import { classLabel, notFound, requireMember } from './access';
+import { notify } from './notifications';
 
 // S2: group chat links per class.
 
@@ -112,11 +113,24 @@ export const linksRouter = {
   flag: procedure(z.object({ linkId: idSchema, reason: z.enum(FLAG_REASONS) }), ({ linkId, reason }, ctx) => {
     const link = visibleLink(ctx.db, ctx.userId, linkId);
     if (link.ownerId === ctx.userId) throw new AppError('You can edit or remove your own link instead.', 'FORBIDDEN');
+    const isNew = !ctx.db
+      .select({ linkId: chatLinkFlags.linkId })
+      .from(chatLinkFlags)
+      .where(and(eq(chatLinkFlags.linkId, linkId), eq(chatLinkFlags.userId, ctx.userId)))
+      .get();
     ctx.db
       .insert(chatLinkFlags)
       .values({ linkId, userId: ctx.userId, reason })
       .onConflictDoUpdate({ target: [chatLinkFlags.linkId, chatLinkFlags.userId], set: { reason } })
       .run();
+    if (isNew) {
+      notify(ctx.db, link.ownerId, {
+        type: 'link-flagged',
+        title: `Your ${link.platform} link in ${classLabel(ctx.db, link.classId) ?? 'a class'} was reported`,
+        body: `Reason: ${reason}. Check it still works, or update it to clear the reports.`,
+        link: `/classes/${link.classId}/chats`,
+      });
+    }
   }),
 
   unflag: procedure(z.object({ linkId: idSchema }), ({ linkId }, ctx) => {

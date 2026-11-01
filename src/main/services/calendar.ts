@@ -36,6 +36,8 @@ export type CalendarEvent = {
   classLabel: string | null;
   location: string;
   done: boolean;
+  // Set for the student's own deadlines, which can be checked off (ST3).
+  deadlineId: number | null;
 };
 
 const ymdSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -91,6 +93,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
         classLabel: labelOf(m.classId),
         location: m.location,
         done: false,
+        deadlineId: null,
       });
     }
   }
@@ -110,7 +113,8 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
       allDay: false,
       classLabel: labelOf(d.classId),
       location: '',
-      done: false,
+      done: d.completedAt != null,
+      deadlineId: d.id,
     });
   }
 
@@ -130,6 +134,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
       classLabel: labelOf(a.classId),
       location: '',
       done: a.score != null,
+      deadlineId: null,
     });
   }
 
@@ -149,6 +154,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
       classLabel: labelOf(p.classId),
       location: '',
       done: false,
+      deadlineId: null,
     });
   }
 
@@ -175,6 +181,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
       classLabel: labelOf(classId),
       location: '',
       done: task.doneAt != null,
+      deadlineId: null,
     });
   }
 
@@ -206,6 +213,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
       classLabel: labelOf(s.classId),
       location: s.location,
       done: false,
+      deadlineId: null,
     });
   }
 
@@ -264,6 +272,16 @@ export const calendarRouter = {
     ownDeadline(ctx.db, ctx.userId, id);
     if (fields.classId) requireMember(ctx.db, ctx.userId, fields.classId);
     ctx.db.update(deadlines).set(fields).where(eq(deadlines.id, id)).run();
+  }),
+
+  // ST3: checked off from the to-do list.
+  setDeadlineDone: procedure(z.object({ id: idSchema, done: z.boolean() }), ({ id, done }, ctx) => {
+    ownDeadline(ctx.db, ctx.userId, id);
+    ctx.db
+      .update(deadlines)
+      .set({ completedAt: done ? ctx.now() : null })
+      .where(eq(deadlines.id, id))
+      .run();
   }),
 
   removeDeadline: procedure(z.object({ id: idSchema }), ({ id }, ctx) => {

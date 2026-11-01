@@ -5,6 +5,7 @@ import { postAudience, posts, replies, users } from '../db/schema';
 import { AppError, idSchema, nonEmpty, procedure } from '../rpc/core';
 import { notFound, requireMember } from './access';
 import { enrolledUsersByEmail } from './classes';
+import { notify } from './notifications';
 
 // S4: Ed-style discussion board. Posts have a topic and replies, and are visible
 // to the whole class or only to selected classmates.
@@ -154,8 +155,17 @@ export const boardRouter = {
   }),
 
   reply: procedure(z.object({ postId: idSchema, body: nonEmpty('Reply', 5000) }), ({ postId, body }, ctx) => {
-    visiblePost(ctx.db, ctx.userId, postId);
+    const post = visiblePost(ctx.db, ctx.userId, postId);
     ctx.db.insert(replies).values({ postId, body, authorId: ctx.userId }).run();
+    if (post.authorId !== ctx.userId) {
+      const replier = ctx.db.select({ name: users.name }).from(users).where(eq(users.id, ctx.userId)).get()?.name;
+      notify(ctx.db, post.authorId, {
+        type: 'reply',
+        title: `${replier ?? 'A classmate'} replied to "${post.title}"`,
+        body: body.length > 140 ? `${body.slice(0, 140)}…` : body,
+        link: `/classes/${post.classId}/discussion?post=${postId}`,
+      });
+    }
   }),
 
   removeReply: procedure(z.object({ replyId: idSchema }), ({ replyId }, ctx) => {

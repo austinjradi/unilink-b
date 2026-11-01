@@ -27,6 +27,11 @@ export interface Platform {
   chooseFile(options: { title: string; filters?: FileFilter[] }): Promise<string | null>;
   chooseSaveLocation(options: { title: string; defaultPath: string; filters?: FileFilter[] }): Promise<string | null>;
   openPath(path: string): Promise<void>;
+  // G3: an OS notification; clicking it opens `link` in the app.
+  showNotification(n: { title: string; body: string; link: string | null }): void;
+  // ST1: system-wide Do Not Disturb. Only GNOME exposes this; elsewhere it's unsupported.
+  systemDndSupported(): boolean;
+  setSystemDnd(on: boolean): Promise<boolean>;
 }
 
 export interface Context {

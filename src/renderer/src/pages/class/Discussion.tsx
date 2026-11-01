@@ -24,6 +24,7 @@ import { useDebouncedValue } from '@mantine/hooks';
 import { modals } from '@mantine/modals';
 import { IconLock, IconMessage, IconMessages, IconPencil, IconPlus, IconSearch, IconTrash } from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router';
 import { Empty, Loading, SectionCard } from '../../components/ui';
 import { fromNow } from '../../lib/format';
 import { useAction } from '../../lib/hooks';
@@ -36,7 +37,10 @@ export function Discussion({ classId }: { classId: number }) {
   const [topic, setTopic] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [debounced] = useDebouncedValue(search, 200);
-  const [openPost, setOpenPost] = useState<number | null>(null);
+  // The open post lives in the URL (?post=12) so notification links can open it.
+  const [params, setParams] = useSearchParams();
+  const openPost = Number(params.get('post')) || null;
+  const setOpenPost = (id: number | null) => setParams(id ? { post: String(id) } : {}, { replace: true });
   const [composing, setComposing] = useState<PostDetail | 'new' | null>(null);
 
   const topics = useQuery({ queryKey: ['board', 'topics', classId], queryFn: () => rpc.board.topics({ classId }) });

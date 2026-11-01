@@ -1,9 +1,11 @@
-import type { ReactNode } from 'react';
-import { AppShell, Avatar, Group, Menu, NavLink, ScrollArea, Text, ThemeIcon, UnstyledButton } from '@mantine/core';
+import { type ReactNode, useEffect } from 'react';
+import { AppShell, Avatar, Button, Group, Menu, NavLink, Paper, ScrollArea, Text, ThemeIcon, UnstyledButton } from '@mantine/core';
 import {
   IconCalendar,
+  IconCertificate,
   IconChecklist,
   IconChevronUp,
+  IconFocus2,
   IconHome,
   IconLogout,
   IconPlugConnected,
@@ -12,17 +14,45 @@ import {
   IconUsersGroup,
 } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { Link, useLocation } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
+import { fmtTime } from '../lib/format';
 import { useAction, useMe } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
+import { NotificationBell } from './NotificationBell';
 
 const NAV = [
   { to: '/', label: 'Home', icon: IconHome },
   { to: '/classes', label: 'Classes', icon: IconSchool },
   { to: '/calendar', label: 'Calendar', icon: IconCalendar },
   { to: '/planner', label: 'Planner', icon: IconChecklist },
+  { to: '/academics', label: 'Academics', icon: IconCertificate },
+  { to: '/focus', label: 'Study mode', icon: IconFocus2 },
   { to: '/integrations', label: 'Integrations', icon: IconPlugConnected },
 ];
+
+// ST1: shown while study mode is on.
+function StudyModeChip() {
+  const status = useQuery({ queryKey: ['studyMode', 'status'], queryFn: () => rpc.studyMode.status(), refetchInterval: 15_000 });
+  const stop = useAction(() => rpc.studyMode.stop(), { success: 'Study mode off' });
+  if (!status.data?.active) return null;
+  return (
+    <Paper withBorder p="xs" mx="xs" mb="sm" bg="var(--mantine-color-teal-light)">
+      <Group justify="space-between" wrap="nowrap" gap="xs">
+        <UnstyledButton component={Link} to="/focus" style={{ minWidth: 0 }}>
+          <Text size="xs" fw={700} c="teal">
+            Study mode on
+          </Text>
+          <Text size="xs" truncate>
+            {status.data.label} · until {fmtTime(status.data.until!)}
+          </Text>
+        </UnstyledButton>
+        <Button size="compact-xs" variant="white" color="teal" onClick={() => stop.mutate()}>
+          Stop
+        </Button>
+      </Group>
+    </Paper>
+  );
+}
 
 export const initials = (name: string) =>
   name
@@ -35,24 +65,32 @@ export const initials = (name: string) =>
 export function Layout({ children }: { children: ReactNode }) {
   const me = useMe();
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const classes = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
   const signOut = useAction(() => rpc.auth.signOut());
 
-  const isActive = (to: string) => (to === '/' ? pathname === '/' : pathname === to);
+  // Clicking a desktop notification opens what it's about.
+  useEffect(() => window.unilink.onNavigate((link) => navigate(link)), [navigate]);
+
+  const isActive = (to: string) => (to === '/' || to === '/classes' ? pathname === to : pathname.startsWith(to));
 
   return (
     <AppShell navbar={{ width: 250, breakpoint: 0 }} padding="lg">
       <AppShell.Navbar p="sm">
         <AppShell.Section mb="md" px="xs" pt="xs">
-          <Group gap="xs">
-            <ThemeIcon size="lg" radius="md" variant="gradient" gradient={{ from: 'indigo', to: 'red', deg: 135 }}>
-              <IconUsersGroup size={20} />
-            </ThemeIcon>
-            <Text fw={700} size="lg">
-              UniLink
-            </Text>
+          <Group justify="space-between">
+            <Group gap="xs">
+              <ThemeIcon size="lg" radius="md" variant="gradient" gradient={{ from: 'indigo', to: 'red', deg: 135 }}>
+                <IconUsersGroup size={20} />
+              </ThemeIcon>
+              <Text fw={700} size="lg">
+                UniLink
+              </Text>
+            </Group>
+            <NotificationBell />
           </Group>
         </AppShell.Section>
+        <StudyModeChip />
 
         <AppShell.Section grow component={ScrollArea}>
           {NAV.map(({ to, label, icon: Icon }) => (

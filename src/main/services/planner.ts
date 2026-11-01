@@ -137,7 +137,7 @@ export function replan(ctx: Context & { userId: number }, assignmentId: number, 
 // an assignment is re-planned when an open task is left on a past day, or sits on a
 // day that's now over the study budget (e.g. after joining a study session).
 // Past-due assignments are left alone.
-function reconcile(ctx: AuthedContext) {
+export function reconcile(ctx: AuthedContext) {
   const today = ymd(ctx.now());
   const open = ctx.db
     .select({
@@ -228,21 +228,6 @@ export const plannerRouter = {
         overloaded: open.some((t) => t.scheduledFor >= today && (load.get(t.scheduledFor) ?? 0) > budget),
       };
     });
-  }),
-
-  // Open tasks for today, including ones left over from a past-due assignment.
-  today: procedure(z.void(), (_input, ctx) => {
-    reconcile(ctx);
-    const today = ymd(ctx.now());
-    return ctx.db
-      .select({ task: plannerTasks, assignmentTitle: plannerAssignments.title })
-      .from(plannerTasks)
-      .innerJoin(plannerAssignments, eq(plannerTasks.assignmentId, plannerAssignments.id))
-      .where(and(eq(plannerAssignments.userId, ctx.userId), lte(plannerTasks.scheduledFor, today)))
-      .orderBy(asc(plannerTasks.scheduledFor), asc(plannerTasks.position))
-      .all()
-      .filter((r) => !r.task.doneAt || r.task.scheduledFor === today)
-      .map((r) => ({ ...r.task, assignmentTitle: r.assignmentTitle }));
   }),
 
   chooseAttachment: procedure(z.void(), async (_input, ctx) => {

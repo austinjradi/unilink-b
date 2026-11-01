@@ -5,12 +5,16 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type DB } from '../src/main/db/client';
 import { type Context, dispatch, type RpcClient } from '../src/main/rpc/core';
 import { type AppRouter, appRouter } from '../src/main/rpc/router';
+import { sweepReminders } from '../src/main/services/notifications';
+import { backgroundTick, initialTickState } from '../src/main/services/studyMode';
 
 const migrations = fileURLToPath(new URL('../drizzle', import.meta.url));
 const PASSWORD = 'correct-horse1';
 
 let db: DB;
 let clock: Date;
+let shown: string[]; // desktop notifications
+let dndCalls: boolean[];
 
 class CallError extends Error {
   constructor(
@@ -43,6 +47,12 @@ function newContext(): Context {
       chooseFile: async () => null,
       chooseSaveLocation: async () => null,
       openPath: async () => {},
+      showNotification: (n) => shown.push(n.title),
+      systemDndSupported: () => true,
+      setSystemDnd: async (on) => {
+        dndCalls.push(on);
+        return true;
+      },
     },
     isDev: true,
     filesDir: join(tmpdir(), 'unilink-test-files'), // only created if a test stores an attachment
@@ -51,10 +61,11 @@ function newContext(): Context {
 }
 
 async function student(name: string) {
-  const api = clientFor(newContext());
+  const ctx = newContext();
+  const api = clientFor(ctx);
   const email = `${name.toLowerCase()}@mail.mcgill.ca`;
   const user = await api.auth.signUp({ name, email, password: PASSWORD });
-  return { api, user, email };
+  return { api, user, email, ctx };
 }
 
 async function comp251(api: RpcClient<AppRouter>) {
@@ -67,6 +78,8 @@ const expectCode = (promise: Promise<unknown>, code: string) => expect(promise).
 beforeEach(() => {
   db = openDatabase(':memory:', migrations);
   clock = new Date(2026, 9, 5, 9, 0); // Monday 5 October 2026, 9:00
+  shown = [];
+  dndCalls = [];
 });
 
 describe('G4 accounts', () => {
@@ -308,5 +321,189 @@ describe('ST2 assignment planner', () => {
     const [plan] = await api.planner.list();
     expect(plan.tasks.map((t) => t.scheduledFor)).toEqual(['2026-10-05', '2026-10-07', '2026-10-07']);
     expect(plan.overloaded).toBe(false);
+  });
+});
+
+describe('A1–A2 course record and degree plan', () => {
+  it('imports current classes and checks the record against a program', async () => {
+    const { api } = await student('Maya');
+    await api.classes.join({ classId: await comp251(api) });
+    expect(await api.record.importClasses()).toEqual({ added: 1 });
+    expect(await api.record.importClasses()).toEqual({ added: 0 });
+
+    await api.record.add({ code: 'comp250', title: '', credits: 3, term: 'Winter 2026', status: 'completed', grade: 'A' });
+    await expectCode(
+      api.record.add({ code: 'COMP 250', title: '', credits: 3, term: 'Winter 2026', status: 'planned', grade: null }),
+      'CONFLICT',
+    );
+    expect((await api.record.list()).map((r) => `${r.code} ${r.status}`).sort()).toEqual([
+      'COMP 250 completed',
+      'COMP 251 in-progress',
+    ]);
+
+    expect(await api.degree.evaluate()).toBeNull();
+    await api.degree.select({ programId: 'sample-cs-major' });
+    const { evaluation } = (await api.degree.evaluate())!;
+    const core = evaluation.groups[0].courses;
+    expect(core.find((c) => c.code === 'COMP 251')?.state).toBe('in-progress');
+    expect(core.find((c) => c.code === 'COMP 330')?.state).toBe('missing');
+    expect(evaluation.missingCredits).toBe(84);
+  });
+});
+
+describe('ST3 to-do list', () => {
+  it("shows today's planned work and own tasks first, with progress", async () => {
+    const { api } = await student('Maya');
+    await api.planner.create({
+      title: 'Problem set 3',
+      classId: null,
+      dueAt: new Date(2026, 9, 8, 23, 59),
+      notes: '',
+      bufferDays: 1,
+      tasks: ['Problem 1', 'Problem 2', 'Problem 3'].map((title) => ({ title, minutes: 60 })),
+      attachmentPath: null,
+    });
+    await api.todos.add({ title: 'Email the TA', dueDate: null, classId: null });
+    await api.todos.add({ title: 'Buy a calculator', dueDate: '2026-10-09', classId: null });
+
+    let { today, later } = await api.todos.today();
+    expect(today.map((t) => t.title)).toEqual(['Problem 1', 'Email the TA']);
+    expect(today[0].progress).toEqual({ done: 0, total: 3 });
+    expect(later.map((t) => t.title)).toEqual(['Buy a calculator']);
+
+    await api.planner.setDone({ taskId: today[0].id, done: true });
+    await api.todos.setDone({ id: today[1].id, done: true });
+    ({ today } = await api.todos.today());
+    expect(today.map((t) => [t.title, t.done])).toEqual([
+      ['Problem 1', true],
+      ['Email the TA', true],
+    ]);
+    expect(today[0].progress).toEqual({ done: 1, total: 3 });
+  });
+
+  it('checks off deadlines', async () => {
+    const { api } = await student('Maya');
+    await api.calendar.addDeadline({ classId: null, kind: 'quiz', title: 'Quiz 2', dueAt: new Date(2026, 9, 7, 12), notes: '' });
+    const [deadline] = await api.calendar.upcoming({ days: 7 });
+    await api.calendar.setDeadlineDone({ id: deadline.deadlineId!, done: true });
+    expect(await api.calendar.upcoming({ days: 7 })).toEqual([]);
+  });
+});
+
+describe('G3 notifications', () => {
+  it('notifies about invitations and replies, emailing by preference', async () => {
+    const maya = await student('Maya');
+    const leo = await student('Leo');
+    const classId = await comp251(maya.api);
+    for (const s of [maya, leo]) await s.api.classes.join({ classId });
+
+    const { id: sessionId } = await maya.api.studySessions.create({
+      classId,
+      title: 'Midterm review',
+      description: '',
+      location: 'Trottier 3120',
+      startsAt: new Date(2026, 9, 7, 18),
+      endsAt: new Date(2026, 9, 7, 20),
+      capacity: null,
+    });
+    await maya.api.studySessions.invite({ sessionId, emails: [leo.email] });
+    const { id: postId } = await maya.api.board.create({
+      classId,
+      topic: 'Assignment 2',
+      title: 'Q3 hint?',
+      body: 'Stuck on 3b',
+      visibility: 'class',
+      audienceEmails: [],
+    });
+    await leo.api.board.reply({ postId, body: 'Think about the recurrence' });
+    await maya.api.board.reply({ postId, body: 'Thanks!' }); // replying to yourself: no notification
+
+    expect((await leo.api.notifications.list()).items.map((n) => n.title)).toEqual([
+      'Maya invited you to "Midterm review"',
+    ]);
+    const mine = await maya.api.notifications.list();
+    expect(mine.items.map((n) => n.title)).toEqual(['Leo replied to "Q3 hint?"']);
+    expect(mine.unread).toBe(1);
+
+    // Invitations are emailed by default; replies aren't until switched on.
+    expect((await leo.api.notifications.outbox()).map((e) => e.subject)).toEqual([
+      'UniLink: Maya invited you to "Midterm review"',
+    ]);
+    expect(await maya.api.notifications.outbox()).toEqual([]);
+    await maya.api.notifications.setPref({ type: 'reply', desktop: false, email: true });
+    await leo.api.board.reply({ postId, body: 'Or draw the recursion tree' });
+    expect((await maya.api.notifications.outbox()).length).toBe(1);
+
+    await maya.api.notifications.markAllRead();
+    expect((await maya.api.notifications.list()).unread).toBe(0);
+  });
+
+  it('reminds about a deadline once', async () => {
+    const { api, ctx, user } = await student('Maya');
+    await api.calendar.addDeadline({ classId: null, kind: 'assignment', title: 'Essay', dueAt: new Date(2026, 9, 6, 8), notes: '' });
+    const authed = { ...ctx, userId: user.id };
+    sweepReminders(authed);
+    sweepReminders(authed);
+    expect((await api.notifications.list()).items.map((n) => n.title)).toEqual(['Essay is due tomorrow at 08:00']);
+  });
+});
+
+describe('ST1 study mode', () => {
+  it('turns on for class, holds notifications, and uses Do Not Disturb', async () => {
+    const maya = await student('Maya');
+    const leo = await student('Leo');
+    const classId = await comp251(maya.api);
+    for (const s of [maya, leo]) await s.api.classes.join({ classId });
+    await maya.api.courses.saveMeetings({
+      classId,
+      meetings: [{ weekday: 1, startTime: '10:05', endTime: '11:25', location: 'Leacock 132' }],
+    });
+    await maya.api.studyMode.updateSettings({ autoForClasses: true, autoForSessions: true, silenceNotifications: true, systemDnd: true });
+
+    const state = initialTickState();
+    await backgroundTick(maya.ctx, state);
+    expect(state.studyActive).toBe(false);
+
+    clock = new Date(2026, 9, 5, 10, 30); // in class
+    await backgroundTick(maya.ctx, state);
+    expect(state.studyActive).toBe(true);
+    expect(dndCalls).toEqual([true]);
+    expect(shown).toEqual(['Study mode on: COMP 251']);
+
+    // An invitation arriving mid-class waits.
+    const { id: sessionId } = await leo.api.studySessions.create({
+      classId,
+      title: 'Review',
+      description: '',
+      location: 'Library',
+      startsAt: new Date(2026, 9, 7, 18),
+      endsAt: new Date(2026, 9, 7, 20),
+      capacity: null,
+    });
+    await leo.api.studySessions.invite({ sessionId, emails: [maya.email] });
+    await backgroundTick(maya.ctx, state);
+    expect(shown).toHaveLength(1);
+
+    // Switching it off by hand releases what was held and stays off for this class.
+    await maya.api.studyMode.stop();
+    await backgroundTick(maya.ctx, state);
+    expect(state.studyActive).toBe(false);
+    expect(dndCalls).toEqual([true, false]);
+    expect(shown.slice(1)).toEqual(['Leo invited you to "Review"', 'Study mode off']);
+    expect((await maya.api.studyMode.status()).pausedWindow?.label).toBe('COMP 251');
+
+    // Per-class opt-out: next Monday's class leaves study mode off.
+    await maya.api.studyMode.setClassAuto({ classId, enabled: false });
+    clock = new Date(2026, 9, 12, 10, 30);
+    await backgroundTick(maya.ctx, state);
+    expect(state.studyActive).toBe(false);
+  });
+
+  it('runs focus sessions started by hand', async () => {
+    const { api } = await student('Maya');
+    await api.studyMode.start({ minutes: 50 });
+    expect(await api.studyMode.status()).toMatchObject({ active: true, reason: 'manual', until: new Date(2026, 9, 5, 9, 50) });
+    await api.studyMode.stop();
+    expect((await api.studyMode.status()).active).toBe(false);
   });
 });

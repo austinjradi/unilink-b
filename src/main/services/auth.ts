@@ -7,6 +7,7 @@ import type { DB } from '../db/client';
 import { DEMO_PASSWORD, DEMO_USERS } from '../db/demo';
 import { appState, authSessions, passwordResets, users } from '../db/schema';
 import { AppError, type Context, nonEmpty, procedure, publicProcedure } from '../rpc/core';
+import { sendEmail } from './notifications';
 import { deleteUserFiles } from './planner';
 
 // G4: sign up, log in/out, password reset, profile, delete account.
@@ -141,6 +142,12 @@ export const authRouter = {
       .insert(passwordResets)
       .values({ userId: user.id, codeHash: sha256(code), expiresAt: new Date(ctx.now().getTime() + RESET_TTL_MS) })
       .run();
+    sendEmail(ctx.db, {
+      userId: user.id,
+      to: user.email,
+      subject: 'Your UniLink password reset code',
+      body: `Your code is ${code}. It expires in 15 minutes. If you didn't ask to reset your password, ignore this email.`,
+    });
     return { devCode: ctx.isDev ? code : null };
   }),
 

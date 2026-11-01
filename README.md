@@ -3,7 +3,8 @@
 A desktop app for McGill students: find your classes and classmates, share group chats, host study sessions,
 discuss course topics, and keep deadlines, grades and assignment plans in one place.
 
-It implements the ten in-scope ("green") features from the UniLink requirements board:
+It implements the ten in-scope ("green") features from the UniLink requirements board, plus the five
+"if time allows" ("yellow") ones listed further down:
 
 | ID  | Feature                                 | Where in the app                                  | Code                                          |
 | --- | --------------------------------------- | ------------------------------------------------- | --------------------------------------------- |
@@ -17,6 +18,16 @@ It implements the ten in-scope ("green") features from the UniLink requirements 
 | G2  | Integrations                            | Integrations page; Calendar → Sync                | `shared/ics.ts`, `db/catalogue.ts`            |
 | G4  | Account sign-up and login               | Sign-in screens; Profile                          | `services/auth.ts`, `pages/Auth.tsx`          |
 | ST2 | Assignment planner                      | Planner; Home                                     | `shared/planner.ts`, `services/planner.ts`    |
+
+The yellow features, with what couldn't be fully built:
+
+| ID  | Feature                              | Where in the app                         | Code                                          | Limits |
+| --- | ------------------------------------ | ---------------------------------------- | --------------------------------------------- | ------ |
+| A1  | Course, credit and grade tracking    | Academics → Course record                | `shared/academics.ts`, `services/academics.ts` | None |
+| A2  | Degree requirements and planning     | Academics → Degree plan                  | `shared/degree.ts`, `db/programs.ts`          | **Sample programs only**: no McGill program data source exists yet |
+| G3  | Notifications / email                | Bell in the sidebar; Profile → Notifications | `services/notifications.ts`              | **Email isn't delivered**: no mail server, so emails wait in an outbox |
+| ST1 | Study mode                           | Study mode page; sidebar chip            | `shared/studyMode.ts`, `services/studyMode.ts` | **Can't block websites**; runs only while the app is open; system Do Not Disturb on GNOME only |
+| ST3 | To-do list                           | Home (first thing you see)               | `services/todos.ts`, `pages/Dashboard.tsx`    | None |
 
 ## Getting started
 
@@ -82,6 +93,7 @@ src/
     db/            schema.ts (all tables), client.ts (open + migrate), catalogue + demo seed data
     rpc/           core.ts (procedure/dispatch helpers), router.ts (the whole API)
     services/      one file per feature area; each exports a router of procedures
+                   (studyMode.ts also holds the 30-second background tick for reminders and study mode)
   preload/         exposes window.unilink.call(path, input), and nothing else
   renderer/src/    React app: pages/, components/, lib/rpc.ts (typed client)
   shared/          pure logic used by both sides: grades, planner, links, ics, validation, dates
@@ -118,12 +130,26 @@ so the services can be tested without Electron.
 | G4.1 | Password requirements? | 8+ characters with at least one letter and one number |
 | G4.5–6 | Which profile info? | Name, email (read-only), program, year, and daily study time for the planner |
 | ST2 | What is "free time"? | A daily study budget (default 120 min) minus other planned tasks and study sessions you're going to |
+| A1 | Which grades count? | McGill letter grades count in the GPA (J counts as 0). P/S earn credits without GPA; F, J, U and W earn nothing |
+| A2 | What counts toward a program? | Required courses plus "choose N credits" groups need C or better. Everything else that earns credit counts as electives |
+| G3 | Which features notify? | Session invites, cancellations and start reminders; replies to your posts; reports on your links; deadlines within 24 h; a morning task summary; study mode on/off. Each can go to desktop and/or email |
+| ST1 | When does study mode turn on? | During class times and study sessions you're going to (toggle each, plus per class), or a focus session started by hand. Stopping it skips the current class or session only |
+| ST3 | What's "today"? | Planned work scheduled up to today, plus your own to-dos due today, overdue or undated. Upcoming deadlines come next, and your own can be checked off |
 
 ## Not built yet
 
 - **A shared server.** Data is stored locally, so classmates are only shared between accounts on the
   same machine. The RPC layer is the seam: move `services/` behind an HTTP API and point `lib/rpc.ts` at it.
-- **Email (G3).** Password reset codes are shown on screen in dev builds instead of being emailed.
+- **Email delivery (G3).** Emails (notifications, password reset codes) are written to an `outbox` table and
+  can be viewed under Profile → Notifications → Email outbox. Sending them needs a mail server (SMTP or an
+  email API) with credentials, which belongs on a backend, not in a desktop app. Dev builds also show reset
+  codes on screen.
+- **Website blocking (ST1).** Not possible from the app itself: blocking sites in a browser needs admin rights
+  (editing the hosts file or a firewall) or a browser extension. The planned route is a small extension
+  that asks UniLink whether study mode is on. Study mode also only runs while UniLink is open, and
+  system-wide Do Not Disturb exists only on GNOME. Windows and macOS don't let apps turn on Focus.
+- **Program data (A2).** The three programs in `db/programs.ts` are illustrative samples, not official McGill
+  requirements. Like the course catalogue, real data needs an eCalendar import.
 - **Live integrations (G2).** Google Calendar and myCourses use `.ics` export/import. The course catalogue
   is a built-in sample (`db/catalogue.ts`), not the full McGill eCalendar.
 - **Packaging.** Add electron-builder (or Forge), and ship `drizzle/` as an extra resource; the main process

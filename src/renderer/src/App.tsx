@@ -7,6 +7,7 @@ import { HashRouter, Navigate, Route, Routes } from 'react-router';
 import { Layout } from './components/Layout';
 import { MeContext } from './lib/hooks';
 import { rpc, RpcError } from './lib/rpc';
+import { AcademicsPage } from './pages/Academics';
 import { ResetPassword, SignIn, SignUp } from './pages/Auth';
 import { CalendarPage } from './pages/Calendar';
 import { ClassPage } from './pages/ClassPage';
@@ -15,6 +16,7 @@ import { Dashboard } from './pages/Dashboard';
 import { IntegrationsPage } from './pages/Integrations';
 import { PlannerPage } from './pages/Planner';
 import { ProfilePage } from './pages/Profile';
+import { StudyModePage } from './pages/StudyMode';
 
 const theme = createTheme({
   primaryColor: 'indigo',
@@ -62,6 +64,8 @@ function Root() {
           <Route path="/classes/:classId/:tab?" element={<ClassPage />} />
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/planner" element={<PlannerPage />} />
+          <Route path="/academics/:tab?" element={<AcademicsPage />} />
+          <Route path="/focus" element={<StudyModePage />} />
           <Route path="/integrations" element={<IntegrationsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

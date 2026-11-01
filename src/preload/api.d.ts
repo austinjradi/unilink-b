@@ -4,6 +4,8 @@ declare global {
   interface Window {
     unilink: {
       call: (path: string, input: unknown) => Promise<RpcResult>;
+      // Returns an unsubscribe function.
+      onNavigate: (callback: (link: string) => void) => () => void;
     };
   }
 }

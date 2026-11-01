@@ -1,4 +1,5 @@
 import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import type { NotificationPrefs } from '@shared/notifications';
 
 const id = () => integer('id').primaryKey({ autoIncrement: true });
 const timestamp = (name: string) => integer(name, { mode: 'timestamp_ms' });
@@ -23,6 +24,10 @@ export const users = sqliteTable('users', {
   year: integer('year'),
   // Daily study budget the assignment planner (ST2) schedules work into.
   studyMinutesPerDay: integer('study_minutes_per_day').notNull().default(120),
+  // A2: the program the student is working towards (an id from db/programs.ts).
+  degreeProgramId: text('degree_program_id'),
+  // G3: per-type channel choices; missing types use the defaults in shared/notifications.ts.
+  notificationPrefs: text('notification_prefs', { mode: 'json' }).$type<NotificationPrefs>(),
   createdAt: createdAt(),
 });
 
@@ -213,6 +218,8 @@ export const deadlines = sqliteTable(
     title: text('title').notNull(),
     dueAt: timestamp('due_at').notNull(),
     notes: text('notes').notNull().default(''),
+    // ST3: checked off from the to-do list.
+    completedAt: timestamp('completed_at'),
     createdAt: createdAt(),
   },
   (t) => [index('deadlines_user_due_idx').on(t.userId, t.dueAt)],
@@ -231,6 +238,8 @@ export const courseInfo = sqliteTable(
     location: text('location').notNull().default(''),
     notes: text('notes').notNull().default(''),
     targetGrade: text('target_grade').notNull().default('A'),
+    // ST1: whether this class's meetings switch study mode on.
+    studyModeAuto: integer('study_mode_auto', { mode: 'boolean' }).notNull().default(true),
   },
   (t) => [primaryKey({ columns: [t.userId, t.classId] })],
 );
@@ -282,3 +291,84 @@ export const plannerTasks = sqliteTable(
   },
   (t) => [index('planner_tasks_assignment_idx').on(t.assignmentId)],
 );
+
+// --- A1 Course, credit and grade record (A2 checks it against a program) -------------
+
+export const courseRecords = sqliteTable(
+  'course_records',
+  {
+    id: id(),
+    userId: userRef(),
+    code: text('code').notNull(), // "COMP 251"
+    title: text('title').notNull().default(''),
+    credits: real('credits').notNull(),
+    term: text('term').notNull(), // "Fall 2026"
+    status: text('status', { enum: ['completed', 'in-progress', 'planned'] }).notNull(),
+    grade: text('grade'), // McGill letter grade or P/S/U/W/J, once completed
+    createdAt: createdAt(),
+  },
+  (t) => [index('course_records_user_idx').on(t.userId)],
+);
+
+// --- ST3 To-do list ------------------------------------------------------------------
+
+export const todos = sqliteTable(
+  'todos',
+  {
+    id: id(),
+    userId: userRef(),
+    title: text('title').notNull(),
+    dueDate: text('due_date'), // "YYYY-MM-DD", or null for "anytime"
+    classId: integer('class_id').references(() => classes.id, { onDelete: 'set null' }),
+    doneAt: timestamp('done_at'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('todos_user_idx').on(t.userId)],
+);
+
+// --- G3 Notifications ----------------------------------------------------------------
+
+export const notifications = sqliteTable(
+  'notifications',
+  {
+    id: id(),
+    userId: userRef(),
+    type: text('type').notNull(),
+    title: text('title').notNull(),
+    body: text('body').notNull().default(''),
+    link: text('link'), // app route to open, e.g. "/classes/3/sessions"
+    // Reminders carry a key so the same reminder is never created twice.
+    dedupeKey: text('dedupe_key'),
+    createdAt: createdAt(),
+    readAt: timestamp('read_at'),
+    // Shown as a desktop notification (or deliberately skipped).
+    deliveredAt: timestamp('delivered_at'),
+  },
+  (t) => [uniqueIndex('notifications_dedupe_idx').on(t.userId, t.dedupeKey), index('notifications_user_idx').on(t.userId, t.createdAt)],
+);
+
+// Emails the app would send. There's no mail server yet, so they wait here (see README).
+export const outbox = sqliteTable('outbox', {
+  id: id(),
+  userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  toEmail: text('to_email').notNull(),
+  subject: text('subject').notNull(),
+  body: text('body').notNull(),
+  createdAt: createdAt(),
+});
+
+// --- ST1 Study mode --------------------------------------------------------------------
+
+export const studyModeSettings = sqliteTable('study_mode_settings', {
+  userId: integer('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  autoForClasses: integer('auto_for_classes', { mode: 'boolean' }).notNull().default(true),
+  autoForSessions: integer('auto_for_sessions', { mode: 'boolean' }).notNull().default(true),
+  silenceNotifications: integer('silence_notifications', { mode: 'boolean' }).notNull().default(true),
+  systemDnd: integer('system_dnd', { mode: 'boolean' }).notNull().default(false),
+  // A focus session started by hand.
+  manualUntil: timestamp('manual_until'),
+  // Study mode was switched off by hand during an automatic window; stay off until then.
+  pausedUntil: timestamp('paused_until'),
+});

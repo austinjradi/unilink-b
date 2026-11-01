@@ -35,7 +35,16 @@ export function atTime(day: string, time: string): Date {
   return date;
 }
 
-export const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// "23:59" and "Tue 3 Nov, 23:59", for notification text written in the main process.
+export const fmtClock = (date: Date) => `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+
+export function fmtWhen(date: Date): string {
+  return `${WEEKDAYS[date.getDay()].slice(0, 3)} ${date.getDate()} ${SHORT_MONTHS[date.getMonth()]}, ${fmtClock(date)}`;
+}
+
+export const WEEKDAYS =['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export const TERMS = ['Fall 2026', 'Winter 2027'] as const;
 export const CURRENT_TERM = TERMS[0];

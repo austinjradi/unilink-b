@@ -3,8 +3,10 @@ import { z } from 'zod';
 import type { DB } from '../db/client';
 import { classes, courses, studySessionMembers, studySessions, users } from '../db/schema';
 import { AppError, idSchema, nonEmpty, procedure } from '../rpc/core';
-import { notFound, requireMember } from './access';
+import { fmtWhen } from '@shared/dates';
+import { classLabel, notFound, requireMember } from './access';
 import { enrolledUsersByEmail } from './classes';
+import { notify } from './notifications';
 
 // S3: host, join and invite classmates to study sessions.
 
@@ -133,8 +135,22 @@ export const studySessionsRouter = {
   }),
 
   cancel: procedure(z.object({ sessionId: idSchema }), ({ sessionId }, ctx) => {
-    hostedSession(ctx.db, ctx.userId, sessionId);
+    const session = hostedSession(ctx.db, ctx.userId, sessionId);
     ctx.db.update(studySessions).set({ cancelledAt: ctx.now() }).where(eq(studySessions.id, sessionId)).run();
+    const members = ctx.db
+      .select({ userId: studySessionMembers.userId })
+      .from(studySessionMembers)
+      .where(eq(studySessionMembers.sessionId, sessionId))
+      .all();
+    for (const m of members) {
+      if (m.userId === ctx.userId) continue;
+      notify(ctx.db, m.userId, {
+        type: 'session-cancelled',
+        title: `"${session.title}" was cancelled`,
+        body: `${classLabel(ctx.db, session.classId) ?? ''} · was planned for ${fmtWhen(session.startsAt)}`,
+        link: `/classes/${session.classId}/sessions`,
+      });
+    }
   }),
 
   // S3.3: also how an invitation is accepted.
@@ -182,6 +198,15 @@ export const studySessionsRouter = {
           .insert(studySessionMembers)
           .values(fresh.map((u) => ({ sessionId, userId: u.id, status: 'invited' as const, invitedById: ctx.userId })))
           .run();
+        const inviter = ctx.db.select({ name: users.name }).from(users).where(eq(users.id, ctx.userId)).get()?.name;
+        for (const u of fresh) {
+          notify(ctx.db, u.id, {
+            type: 'session-invite',
+            title: `${inviter ?? 'A classmate'} invited you to "${session.title}"`,
+            body: `${classLabel(ctx.db, session.classId) ?? ''} · ${fmtWhen(session.startsAt)} · ${session.location}`,
+            link: `/classes/${session.classId}/sessions`,
+          });
+        }
       }
       return { invited: fresh.length, alreadyIn: invitees.length - fresh.length };
     },
