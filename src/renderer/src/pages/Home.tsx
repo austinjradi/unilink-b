@@ -198,9 +198,16 @@ function Deadlines() {
                   {label == null ? t('today') : t('{{count}} d. left', { count: label })}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <Text size="sm" fw={700} lineClamp={2}>
+                  <Anchor
+                    component={Link}
+                    to={e.classId ? `/classes/${e.classId}/${e.detail === 'graded' ? 'grades' : ''}` : '/calendar'}
+                    size="sm"
+                    fw={700}
+                    c="var(--mantine-color-text)"
+                    lineClamp={2}
+                  >
                     {e.title}
-                  </Text>
+                  </Anchor>
                   <Text size="xs" c="dimmed">
                     {e.classLabel && `${e.classLabel} · `}
                     {fmtDateTime(e.start)}

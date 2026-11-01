@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActionIcon, Button, Grid, Group, Select, Stack, Text, Textarea, TextInput } from '@mantine/core';
+import { ActionIcon, Box, Button, Grid, Group, Select, Stack, Text, Textarea, TextInput, UnstyledButton } from '@mantine/core';
 import { TimeInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { modals } from '@mantine/modals';
@@ -7,7 +7,7 @@ import { IconPlus, IconTrash, IconUsers } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
 import dayjs from 'dayjs';
-import { Empty, Loading, SectionCard } from '../../components/ui';
+import { Empty, kindColor, Loading, SectionCard } from '../../components/ui';
 import { fromNow } from '../../lib/format';
 import { useAction } from '../../lib/hooks';
 import { type Out, rpc } from '../../lib/rpc';
@@ -50,7 +50,10 @@ export function Overview({ classId, cls }: { classId: number; cls: Out<typeof rp
         </Stack>
       </Grid.Col>
       <Grid.Col span={{ base: 12, lg: 5 }}>
-        <MembershipCard cls={cls} />
+        <Stack gap="lg">
+          <ComingUp classId={classId} />
+          <MembershipCard cls={cls} />
+        </Stack>
       </Grid.Col>
     </Grid>
   );
@@ -181,6 +184,55 @@ function ClassTimes({ classId, code, initial, editor }: { classId: number; code:
           </Group>
         )}
       </Stack>
+    </SectionCard>
+  );
+}
+
+// What's next in this class: its deadlines and graded work (A3/A5) and study sessions (S3).
+function ComingUp({ classId }: { classId: number }) {
+  const navigate = useNavigate();
+  const due = useQuery({ queryKey: ['calendar', 'upcoming', 60], queryFn: () => rpc.calendar.upcoming({ days: 60 }) });
+  const sessions = useQuery({ queryKey: ['studySessions', classId], queryFn: () => rpc.studySessions.list({ classId }) });
+  if (due.isPending || sessions.isPending) return null;
+  const items = [
+    ...(due.data ?? [])
+      .filter((e) => e.classId === classId)
+      .map((e) => ({ key: e.key, title: e.title, when: e.start, kind: e.detail, to: e.detail === 'graded' ? 'grades' : null })),
+    ...(sessions.data ?? []).map((s) => ({ key: `s${s.id}`, title: s.title, when: s.startsAt, kind: 'session', to: 'sessions' })),
+  ]
+    .sort((a, b) => a.when.getTime() - b.when.getTime())
+    .slice(0, 6);
+
+  return (
+    <SectionCard title={t('Coming up')}>
+      {items.length ? (
+        <Stack gap={4}>
+          {items.map((i) => (
+            <UnstyledButton
+              key={i.key}
+              className="clickable"
+              px={6}
+              py={4}
+              style={{ borderRadius: 8 }}
+              onClick={() => navigate(i.to ? `/classes/${classId}/${i.to}` : '/calendar')}
+            >
+              <Group gap="sm" wrap="nowrap">
+                <Box w={9} h={9} style={{ flex: 'none', borderRadius: 9, background: `var(--mantine-color-${kindColor(i.kind)}-4)` }} />
+                <Text size="sm" fw={700} style={{ flex: 1, minWidth: 0 }} truncate>
+                  {i.title}
+                </Text>
+                <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+                  {dayjs(i.when).format(t('ddd, MMM D · HH:mm'))}
+                </Text>
+              </Group>
+            </UnstyledButton>
+          ))}
+        </Stack>
+      ) : (
+        <Text size="sm" c="dimmed">
+          {t('Nothing due and no study sessions planned yet.')}
+        </Text>
+      )}
     </SectionCard>
   );
 }
