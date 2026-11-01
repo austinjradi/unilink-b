@@ -156,16 +156,6 @@ describe('G4 accounts', () => {
     expect(await api.notifications.outbox()).toEqual([]); // nothing was emailed
   });
 
-  it('changes the McGill email with the password', async () => {
-    const maya = await student('Maya');
-    const leo = await student('Leo');
-    await expectCode(maya.api.profile.changeEmail({ email: 'maya.c@mcgill.ca', password: 'not my password' }), 'BAD_INPUT');
-    await expectCode(maya.api.profile.changeEmail({ email: leo.email, password: PASSWORD }), 'CONFLICT');
-    await maya.api.profile.changeEmail({ email: 'maya.c@mcgill.ca', password: PASSWORD });
-    await maya.api.auth.signOut();
-    await maya.api.auth.signIn({ email: 'maya.c@mcgill.ca', password: PASSWORD });
-  });
-
   it('deletes the account, optionally leaving answers up without a name', async () => {
     const { classId, people } = await classmates('Maya', 'Leo', 'Ana');
     const [maya, leo, ana] = people;

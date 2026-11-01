@@ -22,7 +22,7 @@ import { SectionCard } from '../components/ui';
 import { useAction, useMe } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
 import { IntegrationsPanel } from './Integrations';
-import { ChangeEmail, ChangePassword, DeleteAccount, NotificationSettings, PrivacyPanel, ProfileForm, RecoveryCode } from './Profile';
+import { ChangePassword, DeleteAccount, NotificationSettings, PrivacyPanel, ProfileForm } from './Profile';
 import { StudyTimeForm } from './Planner';
 import { LanguageSwitch } from '../components/LanguageSwitch';
 import { t, tx } from '../lib/i18n';
@@ -74,9 +74,7 @@ export function SettingsPage() {
             <SectionCard title={t('Free study time')}>
               <StudyTimeForm />
             </SectionCard>
-            <ChangeEmail />
             <ChangePassword />
-            <RecoveryCode />
             <DeleteAccount />
           </Stack>
         </Tabs.Panel>

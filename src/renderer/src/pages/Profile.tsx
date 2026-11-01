@@ -20,7 +20,6 @@ import { useForm } from '@mantine/form';
 import { IconAlertTriangle, IconEye, IconMail } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { FACULTIES, passwordProblems, PRONOUNS } from '@shared/validation';
-import { RecoveryCodeNotice } from './Auth';
 import { SectionCard } from '../components/ui';
 import { fromNow } from '../lib/format';
 import { useAction, useMe } from '../lib/hooks';
@@ -177,65 +176,6 @@ export function ProfileForm() {
           </Group>
         </Stack>
       </form>
-    </SectionCard>
-  );
-}
-
-// G4.6: the McGill email can change (e.g. @mcgill.ca after becoming staff); your password confirms it.
-export function ChangeEmail() {
-  const me = useMe();
-  const form = useForm({ initialValues: { email: me.email, password: '' } });
-  const save = useAction((v: typeof form.values) => rpc.profile.changeEmail(v), {
-    success: 'Email changed. Sign in with it from now on.',
-    onSuccess: (user) => form.setValues({ email: user.email, password: '' }),
-  });
-  return (
-    <SectionCard title={t('McGill email')}>
-      <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
-        <Group grow align="flex-end">
-          <TextInput label={t('Email')} {...form.getInputProps('email')} />
-          <PasswordInput label={t('Current password')} {...form.getInputProps('password')} />
-          <Button type="submit" variant="default" disabled={form.values.email.trim().toLowerCase() === me.email || !form.values.password} loading={save.isPending}>
-            {t('Change email')}
-          </Button>
-        </Group>
-      </form>
-    </SectionCard>
-  );
-}
-
-// G4.4: the recovery code is the only way back in without your password.
-export function RecoveryCode() {
-  const [password, setPassword] = useState('');
-  const [code, setCode] = useState<string | null>(null);
-  const make = useAction(() => rpc.profile.newRecoveryCode({ password }), {
-    onSuccess: (r) => {
-      setCode(r.recoveryCode);
-      setPassword('');
-    },
-  });
-  return (
-    <SectionCard title={t('Recovery code')}>
-      <Text size="sm" c="dimmed" mb="sm">
-        {t("If you forget your password, your recovery code lets you set a new one. UniLink doesn't send reset emails. Lost it? Make a new one; the old one stops working.")}
-      </Text>
-      {code ? (
-        <RecoveryCodeNotice code={code} />
-      ) : (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            make.mutate();
-          }}
-        >
-          <Group align="flex-end">
-            <PasswordInput label={t('Current password')} value={password} onChange={(e) => setPassword(e.currentTarget.value)} w={260} />
-            <Button type="submit" variant="default" disabled={!password} loading={make.isPending}>
-              {t('Make a new recovery code')}
-            </Button>
-          </Group>
-        </form>
-      )}
     </SectionCard>
   );
 }

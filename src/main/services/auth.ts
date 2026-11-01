@@ -251,21 +251,6 @@ export const profileRouter = {
     },
   ),
 
-  changeEmail: procedure(z.object({ email, password: z.string() }), async ({ email, password }, ctx) => {
-    const user = await requirePassword(ctx.db, ctx.userId, password);
-    if (email === user.email) return publicUser(user);
-    if (ctx.db.select({ id: users.id }).from(users).where(eq(users.email, email)).get()) {
-      throw new AppError('Another account already uses that email.', 'CONFLICT');
-    }
-    return publicUser(ctx.db.update(users).set({ email }).where(eq(users.id, ctx.userId)).returning().get());
-  }),
-
-  // A lost or used-up recovery code can be replaced while signed in.
-  newRecoveryCode: procedure(z.object({ password: z.string() }), async ({ password }, ctx) => {
-    await requirePassword(ctx.db, ctx.userId, password);
-    return { recoveryCode: issueRecoveryCode(ctx.db, ctx.userId) };
-  }),
-
   // G4.7: cascades remove the rest (enrollments, marks, plans, to-dos, notifications…).
   deleteAccount: procedure(z.object({ password: z.string(), keepPosts: z.boolean() }), async ({ password, keepPosts }, ctx) => {
     await requirePassword(ctx.db, ctx.userId, password);
