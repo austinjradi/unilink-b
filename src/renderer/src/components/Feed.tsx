@@ -255,12 +255,13 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
   const [topics, setTopics] = useState<string[]>([]);
   const [since, setSince] = useState<Since>(null);
   const [unresolved, setUnresolved] = useState(false);
+  const [sort, setSort] = useState<'new' | 'top'>('new');
   const [composing, setComposing] = useState<PostDetail | 'new' | null>(null);
 
   const classes = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
   const allTopics = useQuery({ queryKey: ['board', 'topics', classId ?? null], queryFn: () => rpc.board.topics({ classId: classId ?? null }) });
   const feed = useQuery({
-    queryKey: ['board', 'feed', classId ?? null, classIds, topics, since, debounced, unresolved],
+    queryKey: ['board', 'feed', classId ?? null, classIds, topics, since, debounced, unresolved, sort],
     queryFn: () =>
       rpc.board.feed({
         classIds: classId ? [classId] : classIds.length ? classIds.map(Number) : null,
@@ -268,6 +269,7 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
         since,
         search: debounced,
         unresolved,
+        sort,
       }),
     placeholderData: keepPreviousData,
   });
@@ -339,9 +341,21 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
         <Grid.Col span={{ base: 24, lg: left ? 13 : 18 }}>
           <Group justify="space-between" mb="md">
             <Title order={3}>{classId ? t('Discussion') : t('Class discussions')}</Title>
-            <Button leftSection={<IconPlus size={16} />} onClick={() => setComposing('new')} disabled={!classes.data?.length}>
-              {t('New post')}
-            </Button>
+            <Group gap="sm">
+              <SegmentedControl
+                size="xs"
+                value={sort}
+                onChange={(v) => setSort(v as 'new' | 'top')}
+                data={[
+                  { value: 'new', label: t('Newest') },
+                  { value: 'top', label: t('Most 🐐') },
+                ]}
+                aria-label={t('Sort posts')}
+              />
+              <Button leftSection={<IconPlus size={16} />} onClick={() => setComposing('new')} disabled={!classes.data?.length}>
+                {t('New post')}
+              </Button>
+            </Group>
           </Group>
           {feed.isPending ? (
             <Loading />

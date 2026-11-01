@@ -103,8 +103,10 @@ export const boardRouter = {
       search: z.string().trim().max(100),
       // Only questions nobody has answered yet.
       unresolved: z.boolean().default(false),
+      // Newest first, or the posts with the most 🐐 first.
+      sort: z.enum(['new', 'top']).default('new'),
     }),
-    ({ classIds, topics, since, search, unresolved }, ctx) => {
+    ({ classIds, topics, since, search, unresolved, sort }, ctx) => {
       const mine = myClassIds(ctx.db, ctx.userId);
       const ids = classIds ? classIds.filter((id) => mine.includes(id)) : mine;
       if (classIds?.length === 1 && !ids.length) requireMember(ctx.db, ctx.userId, classIds[0]);
@@ -118,6 +120,7 @@ export const boardRouter = {
             ? new Date(now.getTime() - (since === 'week' ? 7 : 30) * 86_400_000)
             : null;
       const term = `%${search}%`;
+      const goats = sql<number>`(select count(*) from ${postReactions} where ${postReactions.postId} = ${posts.id})`.mapWith(Number);
 
       return ctx.db
         .select({
@@ -135,7 +138,7 @@ export const boardRouter = {
           editedAt: posts.editedAt,
           ...authorColumns,
           replyCount: sql<number>`(select count(*) from ${replies} where ${replies.postId} = ${posts.id})`.mapWith(Number),
-          goats: sql<number>`(select count(*) from ${postReactions} where ${postReactions.postId} = ${posts.id})`.mapWith(Number),
+          goats,
           goated: sql<number>`(select count(*) from ${postReactions} where ${postReactions.postId} = ${posts.id} and ${postReactions.userId} = ${ctx.userId})`.mapWith(Boolean),
         })
         .from(posts)
@@ -152,7 +155,7 @@ export const boardRouter = {
             unresolved ? and(eq(posts.kind, 'question'), isNull(posts.acceptedReplyId), isNull(posts.deletedAt)) : undefined,
           ),
         )
-        .orderBy(desc(posts.createdAt), desc(posts.id))
+        .orderBy(...(sort === 'top' ? [desc(goats)] : []), desc(posts.createdAt), desc(posts.id))
         .limit(100)
         .all()
         .map(withGoat);
