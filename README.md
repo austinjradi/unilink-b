@@ -44,13 +44,17 @@ The yellow features, with what couldn't be fully built:
 
 The interface follows the team's wireframes in `A2Team.pdf`:
 
-- **Top navigation:** pill tabs, and your goat avatar on the right.
+- **Top navigation:** pill tabs, and your goat avatar on the right. On phones the tabs move into a menu.
 - **Goat mascot:** customizable under Settings → Goat (`components/Goat.tsx`, `shared/goat.ts`).
 - **Home:** today's tasks and deadline countdowns on the left, a cross-class discussion feed with 🐐
   reactions in the middle, and filters on the right.
-- **Threads:** one list of replies, with the accepted answer pinned first.
+- **Threads:** one list of replies, with the accepted answer pinned first. A classmate's name opens their
+  profile card; the feed sorts by newest or most 🐐.
 - **Grade Calculator:** a "You need at least X%" bubble and a scenarios table.
-- **Calendar & Planner:** Month, Week and Semester views.
+- **Calendar & Planner:** Month, Week and Semester views. Pick any day to list everything on it; on phones
+  the month shows a coloured dot per event.
+- **Courses:** each class card shows the next lecture, the next thing due and unanswered questions; a class's
+  Overview lists what's coming up in it.
 - **Group chat links:** cards with Open/Report buttons.
 - **Study Sessions:** your upcoming sessions, plus a search page.
 - **Study Mode:** its own tab, with a pill in the top bar while it's on.
@@ -222,6 +226,7 @@ both versions.
 | G4.7 | What happens to shared things when you delete your account? | Everything you created is deleted | Your data is deleted; you can choose to **leave your posts and replies up without your name** ("Former student"). Class times, deadlines and schemes you added to a section stay with it. Sessions you host pass to the next person going |
 | ST2 | What is "free time"? | One daily study budget (default 120 min) minus other tasks and sessions | **Free minutes per weekday** (default 90 Mon–Thu, 60 Fri, 180 weekends) minus other tasks and sessions you're going to |
 | ST2 | How is work spread? | Evenly over the days before the deadline, 1 buffer day | **As early as possible** (each task on the first day with room), **2 buffer days** by default. Missed tasks move to the next free time |
+| ST2 | "If a deadline moves, the plan adjusts": which deadline? | The plan's own due date, changed by hand | A plan can **start from a class deadline or graded item** and then **follows it**: when a classmate moves the shared date, the plan takes it, re-plans and notifies you. Picking your own date stops following. A plan due the same day as its class deadline is listed once |
 
 The yellow features (A1, A2, G3, ST1, ST3) keep version A's decisions, adjusted where they touch the above:
 notifications cover waitlist spots, host hand-offs, session changes, accepted answers and hidden links instead of
@@ -239,9 +244,10 @@ invitations and individual reports; study mode follows the section's shared clas
 | Unlisted weight | `shared/grades.ts` |
 | Passphrases, recovery codes, deletion | `shared/validation.ts`, `services/auth.ts`, `services/access.ts` (`formerStudentId`) |
 | Free time per weekday, front-loaded plans | `shared/planner.ts`, `services/planner.ts` |
+| Plans that follow a class deadline | `services/planner.ts` (`followMovedDeadlines`), `services/calendar.ts` (`collect`) |
 
-The database changes are migrations `0004_version_b` (new tables and columns) and `0005_version_b_cleanup`
-(columns and tables B no longer uses).
+The database changes are migrations `0004_version_b` (new tables and columns), `0005_version_b_cleanup`
+(columns and tables B no longer uses) and `0006_planner_follows_deadlines` (what a plan follows).
 
 ## Not built yet
 
