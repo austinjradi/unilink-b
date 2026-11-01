@@ -52,6 +52,8 @@
   "Did a reply answer your question? Accept it so classmates find it first.": "Une réponse a réglé votre question? Acceptez-la pour que vos camarades la trouvent en premier.",
   "Doesn't contain your name from your email": "Ne contient pas le nom de votre courriel",
   "Dress up your goat": "Habillez votre chèvre",
+  "Earlier sessions ({{count}})_one": "Séances passées ({{count}})",
+  "Earlier sessions ({{count}})_other": "Séances passées ({{count}})",
   "Education": "Éducation",
   "Email changed. Sign in with it from now on.": "Courriel changé. Utilisez-le désormais pour vous connecter.",
   "Engineering": "Génie",
@@ -258,6 +260,8 @@
   "{{count}} people are already going. Pick a limit of at least that._other": "{{count}} personnes participent déjà. Choisissez une limite d’au moins ce nombre.",
   "{{count}} unanswered questions_one": "{{count}} question sans réponse",
   "{{count}} unanswered questions_other": "{{count}} questions sans réponse",
+  "{{count}} went_one": "{{count}} participant",
+  "{{count}} went_other": "{{count}} participants",
   "{{hours}} h a week": "{{hours}} h par semaine",
   "{{level}}-level": "Niveau {{level}}",
   "{{name}} already shared this chat in {{class}}.": "{{name}} a déjà partagé ce groupe dans {{class}}."

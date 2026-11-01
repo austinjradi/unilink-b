@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises';
-import { and, asc, eq, gte, inArray, isNull, like, ne, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, like, lt, ne, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { goatFor } from '@shared/goat';
 import { buildCalendar } from '@shared/ics';
@@ -237,6 +237,28 @@ export const studySessionsRouter = {
       .from(studySessions)
       .where(and(eq(studySessions.classId, classId), gte(studySessions.endsAt, ctx.now())))
       .orderBy(asc(studySessions.startsAt))
+      .all()
+      .filter((s) => canSee(ctx.db, ctx.userId, s));
+    return describe(ctx.db, ctx.userId, rows);
+  }),
+
+  // S3.2: the section's sessions from the last month that are over, newest first.
+  past: procedure(z.object({ classId: idSchema }), ({ classId }, ctx) => {
+    requireMember(ctx.db, ctx.userId, classId);
+    const now = ctx.now();
+    const rows = ctx.db
+      .select()
+      .from(studySessions)
+      .where(
+        and(
+          eq(studySessions.classId, classId),
+          lt(studySessions.endsAt, now),
+          gte(studySessions.endsAt, new Date(now.getTime() - 30 * 86_400_000)),
+          isNull(studySessions.cancelledAt),
+        ),
+      )
+      .orderBy(desc(studySessions.startsAt))
+      .limit(20)
       .all()
       .filter((s) => canSee(ctx.db, ctx.userId, s));
     return describe(ctx.db, ctx.userId, rows);
