@@ -129,6 +129,39 @@ h3,
   min-width: 0;
 }
 
+.month-cell,
+.week-day {
+  cursor: pointer;
+}
+
+.month-cell:hover {
+  background: var(--mantine-color-default-hover);
+}
+
+.month-cell[data-selected],
+.week-day[data-selected] {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: -2px;
+}
+
+.dots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 7px;
+  background: var(--chip-fg);
+}
+
+.dot[data-done] {
+  opacity: 0.4;
+}
+
 .month-cell[data-outside] {
   background: var(--ul-recess);
 }
@@ -250,5 +283,21 @@ h3,
 @media (max-width: 760px) {
   .header-logo .display {
     display: none;
+  }
+}
+
+/* Phones: shorter month cells, and the week as a list of days. */
+@media (max-width: 640px) {
+  .month-cell {
+    min-height: 58px;
+    padding: 3px 4px;
+  }
+
+  .week-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .week-day {
+    min-height: 0;
   }
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type KeyboardEvent, useState } from 'react';
 import {
   ActionIcon,
   Badge,
@@ -22,6 +22,7 @@ import {
 } from '@mantine/core';
 import { DateTimePicker } from '@mantine/dates';
 import { useForm } from '@mantine/form';
+import { useMediaQuery } from '@mantine/hooks';
 import {
   IconArrowRight,
   IconChevronLeft,
@@ -67,6 +68,13 @@ export function CalendarPage() {
   const today = ymd(new Date());
   const [view, setView] = useState<View>('month');
   const [cursor, setCursor] = useState(today);
+  // The day listed under the calendar: today, or whichever day was picked in it.
+  const [selected, setSelected] = useState(today);
+  const pick = (day: string) => {
+    setSelected(day);
+    // When the list sits below the calendar (narrow windows), bring it into view.
+    if (window.innerWidth < 1200) document.getElementById('day-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   const [editing, setEditing] = useState<Deadline | 'new' | null>(null);
   const [showAll, setShowAll] = useState(false);
 
@@ -145,7 +153,14 @@ export function CalendarPage() {
                   </ActionIcon>
                 )}
                 {view !== 'semester' && cursor !== today && (
-                  <Button size="compact-xs" variant="subtle" onClick={() => setCursor(today)}>
+                  <Button
+                    size="compact-xs"
+                    variant="subtle"
+                    onClick={() => {
+                      setCursor(today);
+                      setSelected(today);
+                    }}
+                  >
                     {t('Today')}
                   </Button>
                 )}
@@ -161,8 +176,8 @@ export function CalendarPage() {
                 ]}
               />
             </Group>
-            {view === 'month' && <MonthView cursor={cursor} today={today} />}
-            {view === 'week' && <WeekView start={mondayOf(cursor)} today={today} />}
+            {view === 'month' && <MonthView cursor={cursor} today={today} selected={selected} onSelect={pick} />}
+            {view === 'week' && <WeekView start={mondayOf(cursor)} today={today} selected={selected} onSelect={pick} />}
             {view === 'semester' && <SemesterView />}
           </Card>
         </Grid.Col>
@@ -170,7 +185,7 @@ export function CalendarPage() {
           <Upcoming onViewAll={() => setShowAll(true)} />
         </Grid.Col>
         <Grid.Col span={24}>
-          <TodayList today={today} />
+          <DayList day={selected} today={today} />
         </Grid.Col>
       </Grid>
 
@@ -192,7 +207,25 @@ function useRange(from: string, to: string) {
   });
 }
 
-function MonthView({ cursor, today }: { cursor: string; today: string }) {
+type DayPicker = { today: string; selected: string; onSelect: (day: string) => void };
+
+// Days are buttons: picking one lists everything on it under the calendar.
+const dayButton = (day: string, onSelect: (day: string) => void) => ({
+  role: 'button',
+  tabIndex: 0,
+  'aria-label': dayjs(day).format(t('dddd, MMMM D')),
+  onClick: () => onSelect(day),
+  onKeyDown: (e: KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onSelect(day);
+    }
+  },
+});
+
+function MonthView({ cursor, today, selected, onSelect }: { cursor: string } & DayPicker) {
+  // On phones the chips are too narrow to read, so each event is a coloured dot instead.
+  const phone = useMediaQuery('(max-width: 640px)');
   const month = dayjs(cursor).month();
   const start = mondayOf(ymd(dayjs(cursor).startOf('month').toDate()));
   const end = addDays(mondayOf(ymd(dayjs(cursor).endOf('month').toDate())), 6);
@@ -213,7 +246,14 @@ function MonthView({ cursor, today }: { cursor: string; today: string }) {
           const dayEvents = (events.data ?? []).filter((e) => ymd(e.start) === day && e.kind !== 'class');
           const classes = (events.data ?? []).filter((e) => ymd(e.start) === day && e.kind === 'class').length;
           return (
-            <div key={day} className="month-cell" data-outside={dayjs(day).month() !== month || undefined} data-today={day === today || undefined}>
+            <div
+              key={day}
+              className="month-cell"
+              data-outside={dayjs(day).month() !== month || undefined}
+              data-today={day === today || undefined}
+              data-selected={day === selected || undefined}
+              {...dayButton(day, onSelect)}
+            >
               <Group justify="space-between" gap={2}>
                 <Text size="sm" fw={700} className="day-number">
                   {dayjs(day).date()}
@@ -224,14 +264,22 @@ function MonthView({ cursor, today }: { cursor: string; today: string }) {
                   </Tooltip>
                 )}
               </Group>
-              {dayEvents.slice(0, 3).map((e) => (
-                <Tooltip key={e.key} label={[eventLabel(e), e.classLabel, e.end ? `${fmtTime(e.start)}–${fmtTime(e.end)}` : !e.allDay && fmtTime(e.start)].filter(Boolean).join(' · ')}>
-                  <span className="chip" style={chipStyle(eventKind(e))} data-done={e.done || undefined}>
-                    {e.kind === 'deadline' ? e.title : e.title.split(' · ')[0]}
-                  </span>
-                </Tooltip>
-              ))}
-              {dayEvents.length > 3 && (
+              {phone ? (
+                <div className="dots">
+                  {dayEvents.slice(0, 8).map((e) => (
+                    <span key={e.key} className="dot" style={chipStyle(eventKind(e))} data-done={e.done || undefined} />
+                  ))}
+                </div>
+              ) : (
+                dayEvents.slice(0, 3).map((e) => (
+                  <Tooltip key={e.key} label={[eventLabel(e), e.classLabel, e.end ? `${fmtTime(e.start)}–${fmtTime(e.end)}` : !e.allDay && fmtTime(e.start)].filter(Boolean).join(' · ')}>
+                    <span className="chip" style={chipStyle(eventKind(e))} data-done={e.done || undefined}>
+                      {e.kind === 'deadline' ? e.title : e.title.split(' · ')[0]}
+                    </span>
+                  </Tooltip>
+                ))
+              )}
+              {!phone && dayEvents.length > 3 && (
                 <Text size="xs" c="dimmed" fw={700} mt={2}>
                   {t('+{{count}} more', { count: dayEvents.length - 3 })}
                 </Text>
@@ -252,13 +300,13 @@ function MonthView({ cursor, today }: { cursor: string; today: string }) {
   );
 }
 
-function WeekView({ start, today }: { start: string; today: string }) {
+function WeekView({ start, today, selected, onSelect }: { start: string } & DayPicker) {
   const end = addDays(start, 6);
   const events = useRange(start, end);
   return (
     <div className="week-grid">
       {eachDay(start, end).map((day) => (
-        <div key={day} className="week-day" data-today={day === today || undefined}>
+        <div key={day} className="week-day" data-today={day === today || undefined} data-selected={day === selected || undefined} {...dayButton(day, onSelect)}>
           <Text size="xs" c="dimmed" tt="uppercase" fw={800}>
             {dayjs(day).format('ddd')}
           </Text>
@@ -382,8 +430,8 @@ function Upcoming({ onViewAll }: { onViewAll: () => void }) {
 
 const PILL: Record<string, string> = { class: tx('Lecture'), session: tx('Study'), task: tx('Task'), deadline: tx('Due') };
 
-function TodayList({ today }: { today: string }) {
-  const events = useRange(today, today);
+function DayList({ day, today }: { day: string; today: string }) {
+  const events = useRange(day, day);
   const setTask = useAction((v: { id: number; done: boolean }) => rpc.planner.setDone({ taskId: v.id, done: v.done }));
   const setDeadline = useAction((v: { id: number; done: boolean }) => rpc.calendar.setDeadlineDone(v));
 
@@ -394,9 +442,9 @@ function TodayList({ today }: { today: string }) {
   };
 
   return (
-    <Card padding={0}>
+    <Card padding={0} id="day-list" style={{ scrollMarginTop: 90 }}>
       <Text fw={800} size="lg" className="display" px="md" py="sm" style={{ borderBottom: '1.5px solid var(--ul-border)', background: 'var(--ul-soft)' }}>
-        {t('Today')} · {dayjs(today).format(t('ddd, MMM D'))}
+        {day === today ? `${t('Today')} · ${dayjs(day).format(t('ddd, MMM D'))}` : dayjs(day).format(t('dddd, MMMM D'))}
       </Text>
       {events.isPending ? (
         <Loading />
@@ -434,14 +482,14 @@ function TodayList({ today }: { today: string }) {
                   </Text>
                 )}
               </div>
-              <Badge variant="outline" color={kindColor(eventKind(e))} size="lg">
+              <Badge variant="outline" color={kindColor(eventKind(e))} size="lg" visibleFrom="xs">
                 {t(PILL[e.kind] ?? e.kind)}
               </Badge>
             </Group>
           );
         })
       ) : (
-        <Empty>{t("Nothing on today. Add class times from each course's Overview tab.")}</Empty>
+        <Empty>{day === today ? t("Nothing on today. Add class times from each course's Overview tab.") : t('Nothing on this day.')}</Empty>
       )}
     </Card>
   );

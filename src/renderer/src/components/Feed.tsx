@@ -105,7 +105,8 @@ function PostCard({ post, onOpen }: { post: FeedPost; onOpen: () => void }) {
       <Group align="flex-start" wrap="nowrap" gap="md">
         <GoatAvatar goat={post.authorGoat} size={56} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Group justify="space-between" wrap="nowrap" gap="xs">
+          {/* The tags drop below the name on narrow screens instead of running off the card. */}
+          <Group justify="space-between" gap="xs" style={{ rowGap: 4 }}>
             <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
               <Text fw={700} truncate>
                 {post.deletedAt ? t('Deleted post') : authorName(post)}
@@ -114,7 +115,7 @@ function PostCard({ post, onOpen }: { post: FeedPost; onOpen: () => void }) {
                 {fromNow(post.createdAt)}
               </Text>
             </Group>
-            <Group gap={6} wrap="nowrap">
+            <Group gap={6}>
               {post.visibility === 'selected' && (
                 <Tooltip label={t('Only visible to selected classmates')}>
                   <IconLock size={14} />
@@ -452,7 +453,7 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
       <Group align="flex-start" wrap="nowrap" gap="md">
         <GoatAvatar goat={p.authorGoat} size={64} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Group justify="space-between" wrap="nowrap">
+          <Group justify="space-between" gap="xs" style={{ rowGap: 4 }}>
             <Group gap="xs">
               <Text fw={700}>{p.deletedAt ? t('Deleted post') : authorName(p)}</Text>
               <Text size="sm" c="dimmed">
@@ -460,7 +461,7 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
                 {p.editedAt && ` · ${t('edited')}`}
               </Text>
             </Group>
-            <Group gap={6} wrap="nowrap">
+            <Group gap={6}>
               <Tag>{p.classLabel}</Tag>
               <TopicTag topic={p.topic} />
               <KindTag post={p} />

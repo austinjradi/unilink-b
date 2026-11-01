@@ -14,6 +14,7 @@ import {
   NumberInput,
   Progress,
   SegmentedControl,
+  Select,
   Stack,
   Text,
   Textarea,
@@ -343,6 +344,20 @@ function NewAssignmentForm({ onDone }: { onDone: () => void }) {
       ? Array.from({ length: Math.max(1, v.parts) }, (_, i) => ({ title: `${v.partLabel.trim() || t('Part')} ${i + 1}`, minutes: v.partMinutes }))
       : v.custom.filter((task) => task.title.trim());
 
+  // Most assignments are already on the calendar (a class deadline or a graded item), so
+  // the form can start from one of them.
+  const upcoming = useQuery({ queryKey: ['calendar', 'upcoming', 60], queryFn: () => rpc.calendar.upcoming({ days: 60 }) });
+  const sources = (upcoming.data ?? []).filter((e) => e.detail !== 'planner');
+  const startFrom = (key: string | null) => {
+    const source = sources.find((e) => e.key === key);
+    if (!source) return;
+    form.setValues({
+      title: source.detail === 'graded' ? source.title.replace(/ \([\d.]+%\)$/, '') : source.title,
+      classId: source.classId,
+      dueAt: source.start,
+    });
+  };
+
   const choose = useAction(() => rpc.planner.chooseAttachment(), { onSuccess: (file) => file && setAttachment(file) });
   const create = useAction(
     () =>
@@ -364,6 +379,17 @@ function NewAssignmentForm({ onDone }: { onDone: () => void }) {
   return (
     <form onSubmit={form.onSubmit(() => create.mutate())}>
       <Stack>
+        {sources.length > 0 && (
+          <Select
+            label={t('Start from a deadline')}
+            description={t('Fills in the name, class and due date')}
+            placeholder={t('Optional')}
+            searchable
+            clearable
+            data={sources.map((e) => ({ value: e.key, label: [e.title, e.classLabel, dayjs(e.start).format(t('ddd, MMM D'))].filter(Boolean).join(' · ') }))}
+            onChange={startFrom}
+          />
+        )}
         <TextInput label={t('Assignment')} placeholder={t('Problem set 3')} data-autofocus {...form.getInputProps('title')} />
         <Group grow align="flex-start">
           <ClassSelect value={v.classId} onChange={(id) => form.setFieldValue('classId', id)} />

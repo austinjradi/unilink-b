@@ -39,6 +39,7 @@ export type CalendarEvent = {
   start: Date;
   end: Date | null;
   allDay: boolean;
+  classId: number | null;
   classLabel: string | null;
   location: string;
   done: boolean;
@@ -123,6 +124,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
         start: atTime(day, m.startTime),
         end: atTime(day, m.endTime),
         allDay: false,
+        classId: m.classId,
         classLabel: labelOf(m.classId),
         location: m.location,
         done: false,
@@ -141,6 +143,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
       start: d.dueAt,
       end: null,
       allDay: false,
+      classId: d.classId,
       classLabel: labelOf(d.classId),
       location: '',
       done: d.done,
@@ -161,6 +164,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
       start: a.dueAt,
       end: null,
       allDay: false,
+      classId: a.classId,
       classLabel: labelOf(a.classId),
       location: '',
       done: a.score != null,
@@ -169,11 +173,15 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
     });
   }
 
+  // An assignment planned out (ST2) is usually one the section already lists: when a class
+  // deadline or graded item is due the same day in the same class, it isn't listed twice.
+  const listed = new Set(events.filter((e) => e.kind === 'deadline' && e.classId != null).map((e) => `${e.classId}|${ymd(e.start)}`));
   for (const p of db
     .select()
     .from(plannerAssignments)
     .where(and(eq(plannerAssignments.userId, userId), gte(plannerAssignments.dueAt, from), lt(plannerAssignments.dueAt, to)))
     .all()) {
+    if (p.classId != null && listed.has(`${p.classId}|${ymd(p.dueAt)}`)) continue;
     events.push({
       key: `planner-${p.id}`,
       kind: 'deadline',
@@ -182,6 +190,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
       start: p.dueAt,
       end: null,
       allDay: false,
+      classId: p.classId,
       classLabel: labelOf(p.classId),
       location: '',
       done: false,
@@ -210,6 +219,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
       start: parseYmd(task.scheduledFor),
       end: null,
       allDay: true,
+      classId,
       classLabel: labelOf(classId),
       location: '',
       done: task.doneAt != null,
@@ -243,6 +253,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
       start: s.startsAt,
       end: s.endsAt,
       allDay: false,
+      classId: s.classId,
       classLabel: labelOf(s.classId),
       location: s.location,
       done: false,
