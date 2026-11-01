@@ -107,6 +107,10 @@ h3,
   background: var(--mantine-color-yellow-light);
 }
 
+.author-link:hover {
+  text-decoration: underline;
+}
+
 .thread {
   border-left: 2px solid var(--ul-border);
   padding-left: var(--mantine-spacing-md);

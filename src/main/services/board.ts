@@ -63,12 +63,28 @@ function audienceOf(db: DB, postId: number) {
     .all();
 }
 
-const authorColumns = { authorId: users.id, authorName: users.name, authorEmail: users.email, authorAvatar: users.avatar };
+// S1/G4.5: what classmates see about someone once they post or reply.
+const authorColumns = {
+  authorId: users.id,
+  authorName: users.name,
+  authorEmail: users.email,
+  authorAvatar: users.avatar,
+  authorPronouns: users.pronouns,
+  authorFaculty: users.faculty,
+  authorGradYear: users.gradYear,
+};
 
-// Former students (deleted accounts) are shown without a name, email or goat outfit.
-const withGoat = <T extends { authorId: number; authorAvatar: unknown; authorEmail: string }>({ authorAvatar, ...row }: T) => {
+type AuthorRow = { authorId: number; authorAvatar: unknown; authorEmail: string; authorPronouns: string; authorFaculty: string; authorGradYear: number | null };
+
+// Former students (deleted accounts) are shown without a name, email, profile or goat outfit.
+const withGoat = <T extends AuthorRow>({ authorAvatar, ...row }: T) => {
   const former = row.authorEmail === FORMER_STUDENT_EMAIL;
-  return { ...row, authorEmail: former ? '' : row.authorEmail, formerStudent: former, authorGoat: goatFor(row.authorId, former ? null : (authorAvatar as never)) };
+  return {
+    ...row,
+    ...(former ? { authorEmail: '', authorPronouns: '', authorFaculty: '', authorGradYear: null } : {}),
+    formerStudent: former,
+    authorGoat: goatFor(row.authorId, former ? null : (authorAvatar as never)),
+  };
 };
 
 export const boardRouter = {
@@ -167,7 +183,15 @@ export const boardRouter = {
           .where(inArray(replyReactions.replyId, replyRows.map((r) => r.id)))
           .all()
       : [];
-    const author = withGoat({ authorId: post.authorId, authorName: writer?.name ?? '', authorEmail: writer?.email ?? FORMER_STUDENT_EMAIL, authorAvatar: writer?.avatar });
+    const author = withGoat({
+      authorId: post.authorId,
+      authorName: writer?.name ?? '',
+      authorEmail: writer?.email ?? FORMER_STUDENT_EMAIL,
+      authorAvatar: writer?.avatar,
+      authorPronouns: writer?.pronouns ?? '',
+      authorFaculty: writer?.faculty ?? '',
+      authorGradYear: writer?.gradYear ?? null,
+    });
 
     return {
       ...post,

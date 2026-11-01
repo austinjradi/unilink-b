@@ -1,6 +1,7 @@
 import { type ReactNode, useState } from 'react';
 import {
   ActionIcon,
+  Anchor,
   Button,
   Card,
   Chip,
@@ -10,6 +11,7 @@ import {
   Grid,
   Group,
   Modal,
+  Popover,
   SegmentedControl,
   Select,
   Stack,
@@ -19,6 +21,7 @@ import {
   TextInput,
   Title,
   Tooltip,
+  UnstyledButton,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useDebouncedValue } from '@mantine/hooks';
@@ -84,7 +87,51 @@ function ReactionBar({
   );
 }
 
-const authorName = (p: { formerStudent: boolean; authorName: string }) => (p.formerStudent ? t('Former student') : p.authorName);
+type Author = Pick<FeedPost, 'authorName' | 'authorEmail' | 'authorPronouns' | 'authorFaculty' | 'authorGradYear' | 'formerStudent' | 'authorGoat'>;
+
+// G4.5 "view profile": a classmate's name opens what they share once they've posted (S1).
+function AuthorName({ who, size }: { who: Author; size?: 'sm' }) {
+  if (who.formerStudent) {
+    return (
+      <Text fw={700} size={size}>
+        {t('Former student')}
+      </Text>
+    );
+  }
+  return (
+    <Popover position="bottom-start" shadow="md" width={280}>
+      <Popover.Target>
+        <UnstyledButton style={{ minWidth: 0 }}>
+          <Text fw={700} size={size} truncate className="author-link">
+            {who.authorName}
+          </Text>
+        </UnstyledButton>
+      </Popover.Target>
+      <Popover.Dropdown>
+        <Group wrap="nowrap" align="flex-start" gap="sm">
+          <GoatAvatar goat={who.authorGoat} size={56} />
+          <div style={{ minWidth: 0 }}>
+            <Text fw={800}>{who.authorName}</Text>
+            {who.authorPronouns && (
+              <Text size="xs" c="dimmed">
+                {who.authorPronouns}
+              </Text>
+            )}
+            {who.authorFaculty && <Text size="sm">{t(who.authorFaculty)}</Text>}
+            {who.authorGradYear && (
+              <Text size="sm">
+                {t('Expected graduation')} {who.authorGradYear}
+              </Text>
+            )}
+            <Anchor href={`mailto:${who.authorEmail}`} size="sm" style={{ wordBreak: 'break-all' }}>
+              {who.authorEmail}
+            </Anchor>
+          </div>
+        </Group>
+      </Popover.Dropdown>
+    </Popover>
+  );
+}
 
 // "Question · Answered" / "Question · Unanswered" / "Note".
 function KindTag({ post }: { post: { kind: string; acceptedReplyId: number | null; deletedAt: Date | null } }) {
@@ -108,9 +155,7 @@ function PostCard({ post, onOpen }: { post: FeedPost; onOpen: () => void }) {
           {/* The tags drop below the name on narrow screens instead of running off the card. */}
           <Group justify="space-between" gap="xs" style={{ rowGap: 4 }}>
             <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
-              <Text fw={700} truncate>
-                {post.deletedAt ? t('Deleted post') : authorName(post)}
-              </Text>
+              {post.deletedAt ? <Text fw={700}>{t('Deleted post')}</Text> : <AuthorName who={post} />}
               <Text size="sm" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
                 {fromNow(post.createdAt)}
               </Text>
@@ -126,9 +171,11 @@ function PostCard({ post, onOpen }: { post: FeedPost; onOpen: () => void }) {
               <KindTag post={post} />
             </Group>
           </Group>
-          <Text fw={800} size="lg" mt={4} className="clickable" onClick={onOpen} style={{ borderRadius: 6 }} c={post.deletedAt ? 'dimmed' : undefined}>
-            {post.deletedAt ? t('The author deleted this post. Its replies are still here.') : post.title}
-          </Text>
+          <UnstyledButton display="block" mt={4} className="clickable" onClick={onOpen} style={{ borderRadius: 6 }}>
+            <Text fw={800} size="lg" c={post.deletedAt ? 'dimmed' : undefined}>
+              {post.deletedAt ? t('The author deleted this post. Its replies are still here.') : post.title}
+            </Text>
+          </UnstyledButton>
           {!post.deletedAt && (
             <Text size="sm" mt={4} lineClamp={4} style={{ whiteSpace: 'pre-wrap' }}>
               {post.body}
@@ -400,9 +447,7 @@ function ReplyItem({ reply, postId, canAccept }: { reply: Reply; postId: number;
         <GoatAvatar goat={reply.authorGoat} size={44} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <Group gap="xs">
-            <Text fw={700} size="sm">
-              {authorName(reply)}
-            </Text>
+            <AuthorName who={reply} size="sm" />
             <Text size="xs" c="dimmed">
               {fromNow(reply.createdAt)}
             </Text>
@@ -462,7 +507,7 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
         <div style={{ flex: 1, minWidth: 0 }}>
           <Group justify="space-between" gap="xs" style={{ rowGap: 4 }}>
             <Group gap="xs">
-              <Text fw={700}>{p.deletedAt ? t('Deleted post') : authorName(p)}</Text>
+              {p.deletedAt ? <Text fw={700}>{t('Deleted post')}</Text> : <AuthorName who={p} />}
               <Text size="sm" c="dimmed">
                 {fromNow(p.createdAt)}
                 {p.editedAt && ` · ${t('edited')}`}
