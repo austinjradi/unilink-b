@@ -15,6 +15,7 @@ import {
   Progress,
   SegmentedControl,
   Select,
+  SimpleGrid,
   Stack,
   Text,
   Textarea,
@@ -147,7 +148,7 @@ export function StudyTimeForm({ onDone }: { onDone?: () => void }) {
       <Text size="sm" c="dimmed">
         {t('Minutes you can study on each day of the week. Study sessions you join count toward them.')}
       </Text>
-      <Group gap="xs" grow>
+      <SimpleGrid cols={{ base: 4, xs: 7 }} spacing="xs">
         {[1, 2, 3, 4, 5, 6, 0].map((day) => (
           <NumberInput
             key={day}
@@ -160,7 +161,7 @@ export function StudyTimeForm({ onDone }: { onDone?: () => void }) {
             onChange={(v) => setMinutes((m) => m.map((x, i) => (i === day ? Number(v) || 0 : x)))}
           />
         ))}
-      </Group>
+      </SimpleGrid>
       <Group justify="space-between">
         <Text size="sm">{t('{{hours}} h a week', { hours: Math.round(total / 6) / 10 })}</Text>
         <Button onClick={() => save.mutate()} loading={save.isPending}>
@@ -296,9 +297,10 @@ function TaskRow({ task, dueDay }: { task: Task; dueDay: string }) {
   const remove = useAction(() => rpc.planner.removeTask({ taskId: task.id }));
 
   return (
-    <Group gap="sm" wrap="nowrap" pl="xs">
+    // On narrow screens the minutes, day and delete wrap under the task instead of squeezing it.
+    <Group gap="sm" pl="xs" style={{ rowGap: 4 }}>
       <Checkbox checked={!!task.doneAt} onChange={(e) => setDone.mutate(e.currentTarget.checked)} aria-label={t('Done')} />
-      <Text size="sm" style={{ flex: 1 }} td={task.doneAt ? 'line-through' : undefined} c={task.doneAt ? 'dimmed' : undefined}>
+      <Text size="sm" style={{ flex: '1 1 160px' }} td={task.doneAt ? 'line-through' : undefined} c={task.doneAt ? 'dimmed' : undefined}>
         {task.title}
       </Text>
       {task.pinned && (

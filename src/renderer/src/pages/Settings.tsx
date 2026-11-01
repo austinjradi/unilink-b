@@ -14,6 +14,7 @@ import {
   UnstyledButton,
   useMantineColorScheme,
 } from '@mantine/core';
+import { useMediaQuery } from '@mantine/hooks';
 import { IconCheck, IconLogout } from '@tabler/icons-react';
 import { useNavigate, useParams } from 'react-router';
 import { GOAT_LABELS, GOAT_OPTIONS, type GoatConfig, type GoatPart, goatFor } from '@shared/goat';
@@ -42,10 +43,18 @@ export function SettingsPage() {
   const navigate = useNavigate();
   const tab = TABS.some((tabItem) => tabItem.value === params.tab) ? params.tab! : 'general';
   const signOut = useAction(() => rpc.auth.signOut());
+  // Phones: the sections become a row of tabs above the content (sign out stays in the account menu).
+  const narrow = useMediaQuery('(max-width: 48em)');
 
   return (
-    <Tabs value={tab} onChange={(v) => navigate(`/settings/${v}`)} orientation="vertical" variant="pills" radius="lg" keepMounted={false}>
-      <Box w={220} pr="lg" mr="lg" style={{ borderRight: '2px solid var(--ul-rule)', minHeight: 'calc(100vh - 140px)' }}>
+    <Tabs value={tab} onChange={(v) => navigate(`/settings/${v}`)} orientation={narrow ? 'horizontal' : 'vertical'} variant="pills" radius="lg" keepMounted={false}>
+      <Box
+        w={narrow ? undefined : 220}
+        pr={narrow ? 0 : 'lg'}
+        mr={narrow ? 0 : 'lg'}
+        mb={narrow ? 'lg' : 0}
+        style={narrow ? undefined : { borderRight: '2px solid var(--ul-rule)', minHeight: 'calc(100vh - 140px)' }}
+      >
         <Title order={1} fz={34} mb="lg">
           {t('Settings')}
         </Title>
@@ -56,9 +65,11 @@ export function SettingsPage() {
             </Tabs.Tab>
           ))}
         </Tabs.List>
-        <Button mt="xl" variant="subtle" color="gray" leftSection={<IconLogout size={16} />} onClick={() => signOut.mutate()}>
-          {t('Sign out')}
-        </Button>
+        {!narrow && (
+          <Button mt="xl" variant="subtle" color="gray" leftSection={<IconLogout size={16} />} onClick={() => signOut.mutate()}>
+            {t('Sign out')}
+          </Button>
+        )}
       </Box>
 
       <Box style={{ flex: 1, minWidth: 0 }}>
