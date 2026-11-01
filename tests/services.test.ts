@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
@@ -341,6 +342,25 @@ describe('S3 study sessions', () => {
     // …and the last person leaving cancels it.
     await ana.api.studySessions.leave({ sessionId });
     expect((await leo.api.studySessions.list({ classId }))[0].cancelledAt).not.toBeNull();
+  });
+
+  it('adds a session to your calendar as an .ics file, with the link only for people going', async () => {
+    const {
+      classId,
+      people: [maya, jonah],
+    } = await classmates('Maya', 'Jonah');
+    const { id } = await maya.api.studySessions.create({
+      classId,
+      ...session({ format: 'online', location: '', meetingUrl: 'https://mcgill.zoom.us/j/555' }),
+    });
+    await expectCode(jonah.api.studySessions.exportIcs({ sessionId: id }), 'BAD_INPUT');
+
+    const file = join(tmpdir(), `unilink-session-${id}.ics`);
+    maya.ctx.platform.chooseSaveLocation = async () => file;
+    await maya.api.studySessions.exportIcs({ sessionId: id });
+    const ics = await readFile(file, 'utf8');
+    expect(ics).toContain('SUMMARY:Midterm review');
+    expect(ics).toContain('https://mcgill.zoom.us/j/555');
   });
 
   it('keeps invite-only sessions to people with the code', async () => {

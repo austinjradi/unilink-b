@@ -1,6 +1,8 @@
+import { writeFile } from 'node:fs/promises';
 import { and, asc, eq, gte, inArray, isNull, like, ne, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { goatFor } from '@shared/goat';
+import { buildCalendar } from '@shared/ics';
 import { randomInt } from '../crypto';
 import type { DB } from '../db/client';
 import { classes, courses, enrollments, studySessionMembers, studySessions, users } from '../db/schema';
@@ -349,6 +351,36 @@ export const studySessionsRouter = {
     requireMember(ctx.db, ctx.userId, session.classId);
     if (!canSee(ctx.db, ctx.userId, session)) notFound('study session');
     return joinSession(ctx, session);
+  }),
+
+  // G2: one session as an .ics file for Google Calendar (or any calendar app), for people
+  // going or waiting. The meeting link goes in only for people going, as on the page.
+  exportIcs: procedure(z.object({ sessionId: idSchema }), async ({ sessionId }, ctx) => {
+    const session = getSession(ctx.db, sessionId);
+    const status = membership(ctx.db, sessionId, ctx.userId)?.status;
+    if (!status || session.cancelledAt) throw new AppError('Join the session to add it to your calendar.');
+    const target = await ctx.platform.chooseSaveLocation({
+      title: 'Add to calendar',
+      defaultPath: 'study-session.ics',
+      filters: [{ name: 'iCalendar', extensions: ['ics'] }],
+    });
+    if (!target) return null;
+    const link = status === 'going' ? session.meetingUrl : '';
+    const ics = buildCalendar(
+      [
+        {
+          uid: `session-${session.id}@unilink`,
+          title: session.title,
+          start: session.startsAt,
+          end: session.endsAt,
+          location: session.format === 'online' ? link : session.location,
+          description: [classLabel(ctx.db, session.classId), session.description, link].filter(Boolean).join('\n\n'),
+        },
+      ],
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+    );
+    await writeFile(target, ics, 'utf8');
+    return { path: target };
   }),
 
   // S3.4: the invite code works for open and invite-only sessions alike.

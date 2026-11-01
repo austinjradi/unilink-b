@@ -24,7 +24,7 @@ import {
 import { DateTimePicker } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { modals } from '@mantine/modals';
-import { IconClock, IconKey, IconLock, IconMapPin, IconMessageDots, IconVideo } from '@tabler/icons-react';
+import { IconCalendarPlus, IconClock, IconKey, IconLock, IconMapPin, IconMessageDots, IconVideo } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import dayjs from 'dayjs';
@@ -157,6 +157,9 @@ export function SessionDetails({ session: s, onEdit, onClose }: { session: Sessi
     onSuccess: onClose,
   });
   const cancel = useAction(() => rpc.studySessions.cancel({ sessionId: s.id }), { success: 'Session cancelled', onSuccess: onClose });
+  const addToCalendar = useAction(() => rpc.studySessions.exportIcs({ sessionId: s.id }), {
+    success: (r) => (r ? t('Saved. Open the file to add the session to Google Calendar or another calendar app.') : ''),
+  });
 
   const confirmCancel = () =>
     modals.openConfirmModal({
@@ -275,6 +278,11 @@ export function SessionDetails({ session: s, onEdit, onClose }: { session: Sessi
                 {s.myStatus === 'waitlisted' ? t('Leave waitlist') : t('Leave')}
               </Button>
             )
+          )}
+          {s.myStatus && (
+            <Button variant="subtle" leftSection={<IconCalendarPlus size={16} />} onClick={() => addToCalendar.mutate()} loading={addToCalendar.isPending}>
+              {t('Add to calendar')}
+            </Button>
           )}
         </Group>
       )}
