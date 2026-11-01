@@ -688,7 +688,7 @@ function PostForm({
           />
         </Group>
         <TextInput label={t('Title')} data-autofocus {...form.getInputProps('title')} />
-        <Textarea label={t('Post')} autosize minRows={5} {...form.getInputProps('body')} />
+        <Textarea label={t('Post')} description={t('Put code between `backticks`.')} autosize minRows={5} {...form.getInputProps('body')} />
         {!existing && (
           <>
             <SegmentedControl

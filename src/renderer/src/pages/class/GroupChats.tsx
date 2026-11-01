@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Badge, Button, Card, Collapse, Divider, Group, Menu, Modal, Select, Stack, Text, TextInput, ThemeIcon, Title } from '@mantine/core';
+import { Badge, Button, Card, Collapse, CopyButton, Divider, Group, Menu, Modal, Select, Stack, Text, TextInput, ThemeIcon, Title } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { modals } from '@mantine/modals';
 import {
@@ -11,6 +11,7 @@ import {
   IconChevronDown,
   IconChevronUp,
   IconCircleCheck,
+  IconCopy,
   IconDots,
   IconExternalLink,
   IconLink,
@@ -200,6 +201,14 @@ function LinkCard({ link, classLabel, onEdit }: { link: ChatLink; classLabel: st
           <Button component="a" href={link.url} target="_blank" color="periwinkle" variant="light" leftSection={<IconExternalLink size={16} />}>
             {t('Open link')}
           </Button>
+          {/* To pass the chat on to a classmate outside UniLink. */}
+          <CopyButton value={link.url}>
+            {({ copied, copy }) => (
+              <Button variant="default" color={copied ? 'teal' : undefined} leftSection={copied ? <IconCircleCheck size={16} /> : <IconCopy size={16} />} onClick={copy}>
+                {copied ? t('Copied') : t('Copy')}
+              </Button>
+            )}
+          </CopyButton>
           {link.mine ? (
             <Menu position="bottom-end">
               <Menu.Target>
