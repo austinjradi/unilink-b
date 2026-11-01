@@ -23,7 +23,7 @@ It implements the ten in-scope ("green") features from the UniLink requirements 
 | S2  | Group chat links                        | Class page → Group chats                          | `services/links.ts`, `class/GroupChats.tsx`   |
 | S3  | Study session creation and invitations  | Class page → Study sessions; Home                 | `services/studySessions.ts`                   |
 | S4  | Peer discussion board                   | Class page → Discussion                           | `services/board.ts`, `class/Discussion.tsx`   |
-| A3  | Dates and deadlines                     | Calendar; class times on class page → Overview    | `services/calendar.ts`, `pages/Calendar.tsx`  |
+| A3  | Dates and deadlines                     | Calendar (and its Key dates view); class times on class page → Overview | `services/calendar.ts`, `pages/Calendar.tsx`, `shared/keyDates.ts` |
 | A4  | Grade calculator                        | Class page → Grades                               | `shared/grades.ts`, `class/Grades.tsx`        |
 | A5  | Course info and grading scheme          | Class page → Overview and Grades                  | `services/courses.ts`                         |
 | G2  | Integrations                            | Integrations page; Calendar → Sync                | `shared/ics.ts`, `db/catalogue.ts`            |
@@ -51,7 +51,7 @@ The interface follows the team's wireframes in `A2Team.pdf`:
 - **Threads:** one list of replies, with the accepted answer pinned first. A classmate's name opens their
   profile card; the feed sorts by newest or most 🐐.
 - **Grade Calculator:** a "You need at least X%" bubble and a scenarios table.
-- **Calendar & Planner:** Month, Week and Semester views. Pick any day to list everything on it; on phones
+- **Calendar & Planner:** Month, Week, Semester and Key dates views. Pick any day to list everything on it; on phones
   the month shows a coloured dot per event.
 - **Courses:** each class card shows the next lecture, the next thing due and unanswered questions; a class's
   Overview lists what's coming up in it.
@@ -216,6 +216,7 @@ both versions.
 | S4 | Post types and topics | Free-form "type" with suggestions (Assignment, Midterm, Just yapping…) | Posts are a **question or a note**, under a **fixed topic list** (Lectures, Assignments, Exams, Labs and tutorials, Logistics, Off-topic) |
 | S4 | Replies | Threaded, one level of replies to replies | **One flat list.** Whoever asked can **accept an answer**: it's pinned first, the question shows as answered, and the feed can filter to unanswered questions |
 | S4 | Deleting a post | Deletes its replies too | A post **with replies is blanked** and the thread stays; one without replies is removed |
+| A3 | Term key dates and final exams? | Not included | **Built in** (`shared/keyDates.ts`): McGill's 2026–27 key dates (classes start and end, add/drop, withdrawal with and without refund, reading breaks, exam period) on everyone's calendar, deadlines among them on Home; a **sample final exam schedule** per course, with your own finals on your calendar and each class page |
 | A3 | Whose class times and deadlines? | Personal: each student enters their own | **Shared with the section**: one person enters the lecture times or a class deadline and everyone sees it. Deadlines with no class stay private; each student checks deadlines off separately; only whoever added a deadline can edit it |
 | A5 | Whose course details? | Personal ("only you see these") | Professor, email, office hours and room are **shared, wiki-style** (anyone in the section edits; "edited by Priya 2 days ago"). Notes stay private |
 | A4/A5 | Whose grading scheme? | Personal, with your scores | The scheme is **shared by the section**; **marks are private**. A component can't be removed once a classmate has a mark on it, and the scheme can't add up to more than 100% |
@@ -258,6 +259,9 @@ The database changes are migrations `0004_version_b` (new tables and columns), `
   Settings → Notifications → Email outbox. (Password resets don't need email in version B.)
 - **Website blocking (ST1).** Needs a browser extension that asks UniLink whether study mode is on. Study mode
   only runs while a UniLink tab is open.
+- **Official exam schedule (A3).** Key dates follow McGill's published 2026–27 dates (the Winter add/drop and
+  withdrawal dates weren't out yet and are marked approximate). The final exam schedule is a sample; the real
+  one is published per course during the term and would need an import, like the catalogue.
 - **Program data (A2).** The three programs in `db/programs.ts` are illustrative samples, not official McGill
   requirements. Like the course catalogue, real data needs an eCalendar import.
 - **Live integrations (G2).** Google Calendar and myCourses use `.ics` export/import. The course catalogue

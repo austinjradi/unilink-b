@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { addDays, atTime, eachDay, parseYmd, termRange, ymd } from '@shared/dates';
 import { translate } from '@shared/i18n';
 import { buildCalendar, type IcsEvent, parseCalendar } from '@shared/ics';
+import { finalExamFor, KEY_DATES } from '@shared/keyDates';
 import type { DB } from '../db/client';
 import {
   classes,
@@ -32,8 +33,10 @@ export const DEADLINE_KINDS = ['assignment', 'exam', 'quiz', 'other'] as const;
 
 export type CalendarEvent = {
   key: string;
-  kind: 'class' | 'deadline' | 'session' | 'task';
-  // For deadlines: assignment/exam/quiz/other, or "graded"/"planner" when they come from A5/ST2.
+  // "key": the term's key dates that aren't deadlines (classes start, reading break, exams).
+  kind: 'class' | 'deadline' | 'session' | 'task' | 'key';
+  // For deadlines: assignment/exam/quiz/other, or "graded"/"planner" when they come from A5/ST2,
+  // "final" for final exams and "key" for the term's key deadlines (add/drop, withdrawal).
   detail: string;
   title: string;
   start: Date;
@@ -107,6 +110,7 @@ export function visibleDeadlines(db: DB, userId: number, from?: Date, to?: Date)
 
 function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] {
   const label = labels(db);
+  const locale = db.select({ locale: users.locale }).from(users).where(eq(users.id, userId)).get()?.locale ?? 'en';
   const labelOf = (id: number | null) => (id == null ? null : (label.get(id) ?? null));
   const events: CalendarEvent[] = [];
 
@@ -149,6 +153,50 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
       done: d.done,
       deadlineId: d.id,
       addedBy: d.addedBy,
+    });
+  }
+
+  // A3: the term's key dates, for everyone. Deadlines are due at 23:59; breaks and periods
+  // cover each of their days.
+  const firstDay = ymd(from);
+  const lastDay = ymd(new Date(to.getTime() - 1));
+  for (const k of KEY_DATES) {
+    const title = translate(locale, k.title);
+    const blank = { end: null, classId: null, classLabel: null, location: '', done: false, deadlineId: null, addedBy: null };
+    if (k.type === 'deadline') {
+      if (k.date < firstDay || k.date > lastDay) continue;
+      events.push({ ...blank, key: `key-${k.term}-${k.date}`, kind: 'deadline', detail: 'key', title, start: atTime(k.date, '23:59'), allDay: false });
+      continue;
+    }
+    for (const day of eachDay(k.date < firstDay ? firstDay : k.date, (k.end ?? k.date) > lastDay ? lastDay : (k.end ?? k.date))) {
+      events.push({ ...blank, key: `key-${k.term}-${k.date}-${day}`, kind: 'key', detail: k.type, title, start: parseYmd(day), allDay: true });
+    }
+  }
+
+  // Final exams of the student's classes, from the exam schedule.
+  for (const c of db
+    .select({ id: classes.id, term: classes.term, subject: courses.subject, number: courses.number })
+    .from(enrollments)
+    .innerJoin(classes, eq(enrollments.classId, classes.id))
+    .innerJoin(courses, eq(classes.courseId, courses.id))
+    .where(eq(enrollments.userId, userId))
+    .all()) {
+    const exam = finalExamFor(`${c.subject} ${c.number}`, c.term);
+    if (!exam || exam.date < firstDay || exam.date > lastDay) continue;
+    events.push({
+      key: `final-${c.id}`,
+      kind: 'deadline',
+      detail: 'final',
+      title: translate(locale, '{{course}} final exam', { course: exam.course }),
+      start: atTime(exam.date, exam.start),
+      end: atTime(exam.date, exam.end),
+      allDay: false,
+      classId: c.id,
+      classLabel: labelOf(c.id),
+      location: exam.location,
+      done: false,
+      deadlineId: null,
+      addedBy: null,
     });
   }
 

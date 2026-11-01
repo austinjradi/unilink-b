@@ -50,6 +50,7 @@ export function collectKeys() {
   const goatLabels = shared('goat.ts').match(/GOAT_LABELS[^{]*\{([^}]+)\}/)[1];
   for (const m of goatLabels.matchAll(/:\s*'([^']+)'/g)) add(m[1]);
   for (const m of shared('academics.ts').matchAll(/^\s+[A-Z]: '([^']+)',$/gm)) add(m[1]);
+  for (const m of shared('keyDates.ts').matchAll(/title: '([^']+)'/g)) add(m[1]);
   const goat = shared('goat.ts');
   for (const list of ['fur', 'background']) {
     const values = goat.match(new RegExp(`${list}: \\[([^\\]]+)\\]`))[1].match(/'([^']+)'/g).map(unquote);

@@ -7,6 +7,7 @@ import { IconPlus, IconTrash, IconUsers } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
 import dayjs from 'dayjs';
+import { finalExamFor } from '@shared/keyDates';
 import { Empty, kindColor, Loading, SectionCard } from '../../components/ui';
 import { fromNow } from '../../lib/format';
 import { useAction } from '../../lib/hooks';
@@ -51,7 +52,7 @@ export function Overview({ classId, cls }: { classId: number; cls: Out<typeof rp
       </Grid.Col>
       <Grid.Col span={{ base: 12, lg: 5 }}>
         <Stack gap="lg">
-          <ComingUp classId={classId} />
+          <ComingUp classId={classId} exam={finalExamFor(`${cls.subject} ${cls.number}`, cls.term)} />
           <MembershipCard cls={cls} />
         </Stack>
       </Grid.Col>
@@ -189,14 +190,14 @@ function ClassTimes({ classId, code, initial, editor }: { classId: number; code:
 }
 
 // What's next in this class: its deadlines and graded work (A3/A5) and study sessions (S3).
-function ComingUp({ classId }: { classId: number }) {
+function ComingUp({ classId, exam }: { classId: number; exam: ReturnType<typeof finalExamFor> }) {
   const navigate = useNavigate();
   const due = useQuery({ queryKey: ['calendar', 'upcoming', 60], queryFn: () => rpc.calendar.upcoming({ days: 60 }) });
   const sessions = useQuery({ queryKey: ['studySessions', classId], queryFn: () => rpc.studySessions.list({ classId }) });
   if (due.isPending || sessions.isPending) return null;
   const items = [
     ...(due.data ?? [])
-      .filter((e) => e.classId === classId)
+      .filter((e) => e.classId === classId && e.detail !== 'final')
       .map((e) => ({ key: e.key, title: e.title, when: e.start, kind: e.detail, to: e.detail === 'graded' ? 'grades' : null })),
     ...(sessions.data ?? []).map((s) => ({ key: `s${s.id}`, title: s.title, when: s.startsAt, kind: 'session', to: 'sessions' })),
   ]
@@ -232,6 +233,20 @@ function ComingUp({ classId }: { classId: number }) {
         <Text size="sm" c="dimmed">
           {t('Nothing due and no study sessions planned yet.')}
         </Text>
+      )}
+      {/* A3: from the exam schedule (Calendar → Key dates). */}
+      {exam && (
+        <UnstyledButton className="clickable" px={6} py={4} mt={6} style={{ borderRadius: 8 }} onClick={() => navigate('/calendar')}>
+          <Group gap="sm" wrap="nowrap">
+            <Box w={9} h={9} style={{ flex: 'none', borderRadius: 9, background: 'var(--mantine-color-red-4)' }} />
+            <Text size="sm" fw={800} style={{ flex: 1, minWidth: 0 }} truncate>
+              {t('Final exam')} · {exam.location}
+            </Text>
+            <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+              {dayjs(exam.date).format(t('ddd, MMM D'))} · {exam.start}
+            </Text>
+          </Group>
+        </UnstyledButton>
       )}
     </SectionCard>
   );

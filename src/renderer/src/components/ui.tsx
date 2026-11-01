@@ -120,6 +120,8 @@ const KIND_LABELS: Record<string, string> = {
   other: tx('other'),
   graded: tx('graded work'),
   planner: tx('planner'),
+  final: tx('final exam'),
+  key: tx('key date'),
 };
 
 export function KindBadge({ kind }: { kind: string }) {

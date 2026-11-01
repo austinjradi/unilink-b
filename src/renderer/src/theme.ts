@@ -88,4 +88,8 @@ export const KIND_COLORS: Record<string, string> = {
   other: 'gray',
   graded: 'pink',
   planner: 'orange',
+  final: 'red',
+  key: 'yellow',
+  break: 'yellow',
+  milestone: 'yellow',
 };

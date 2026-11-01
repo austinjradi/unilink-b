@@ -1,3 +1,5 @@
+import { teachingPeriod } from './keyDates';
+
 // Calendar days are handled as local "YYYY-MM-DD" strings so they compare and
 // sort lexically and never drift across time zones.
 
@@ -49,8 +51,11 @@ export const WEEKDAYS =['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 
 export const TERMS = ['Fall 2026', 'Winter 2027'] as const;
 export const CURRENT_TERM = TERMS[0];
 
-// Approximate McGill teaching periods, used to bound recurring class times.
+// McGill teaching periods, used to bound recurring class times: from the key dates when
+// they're known (shared/keyDates.ts), otherwise approximate.
 export function termRange(term: string): { start: string; end: string } {
+  const known = teachingPeriod(term);
+  if (known) return known;
   const [season, yearText] = term.split(' ');
   const year = Number(yearText);
   switch (season) {

@@ -1,6 +1,7 @@
 import { type KeyboardEvent, useState } from 'react';
 import {
   ActionIcon,
+  Alert,
   Badge,
   Box,
   Button,
@@ -24,6 +25,7 @@ import { DateTimePicker } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { useMediaQuery } from '@mantine/hooks';
 import {
+  IconAlertTriangle,
   IconArrowRight,
   IconChevronLeft,
   IconChevronRight,
@@ -31,13 +33,15 @@ import {
   IconPencil,
   IconPlus,
   IconRefresh,
+  IconSearch,
   IconTrash,
   IconUpload,
 } from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router';
-import { addDays, CURRENT_TERM, eachDay, termRange, ymd } from '@shared/dates';
+import { addDays, CURRENT_TERM, eachDay, TERMS, ymd } from '@shared/dates';
+import { EXAM_SCHEDULE_TERMS, FINAL_EXAMS, keyDatesFor, termWithExams } from '@shared/keyDates';
 import { chipStyle, Empty, KindBadge, kindColor, Loading, PageHeader } from '../components/ui';
 import { fmtDateTime, fmtTime, toDate } from '../lib/format';
 import { useAction } from '../lib/hooks';
@@ -46,7 +50,7 @@ import { t, term, tx } from '../lib/i18n';
 
 type Deadline = Out<typeof rpc.calendar.deadlines>[number];
 type CalEvent = Out<typeof rpc.calendar.range>[number];
-type View = 'month' | 'week' | 'semester';
+type View = 'month' | 'week' | 'semester' | 'key';
 
 const KINDS = [
   { value: 'assignment', label: tx('Assignment') },
@@ -56,7 +60,8 @@ const KINDS = [
 ];
 
 const eventKind = (e: CalEvent) => (e.kind === 'deadline' ? e.detail : e.kind);
-const eventLabel = (e: CalEvent) => (e.kind === 'deadline' ? t('Due: {{title}}', { title: e.title }) : e.title);
+// Final exams and the term's key deadlines read fine on their own; other deadlines get "Due:".
+const eventLabel = (e: CalEvent) => (e.kind === 'deadline' && e.detail !== 'final' && e.detail !== 'key' ? t('Due: {{title}}', { title: e.title }) : e.title);
 const mondayOf = (day: string) => {
   const d = dayjs(day);
   return ymd(d.subtract((d.day() + 6) % 7, 'day').toDate());
@@ -92,7 +97,7 @@ export function CalendarPage() {
   const step = (n: number) =>
     setCursor(view === 'week' ? addDays(cursor, 7 * n) : ymd(dayjs(cursor).add(n, 'month').startOf('month').toDate()));
   const title =
-    view === 'semester'
+    view === 'semester' || view === 'key'
       ? term(CURRENT_TERM)
       : view === 'week'
         ? `${dayjs(mondayOf(cursor)).format('D MMM')} – ${dayjs(addDays(mondayOf(cursor), 6)).format('D MMM YYYY')}`
@@ -139,20 +144,20 @@ export function CalendarPage() {
           <Card padding="md">
             <Group justify="space-between" mb="md">
               <Group gap={4}>
-                {view !== 'semester' && (
+                {view !== 'semester' && view !== 'key' && (
                   <ActionIcon variant="subtle" onClick={() => step(-1)} aria-label={t('Previous')}>
                     <IconChevronLeft size={20} />
                   </ActionIcon>
                 )}
                 <Title order={3} miw={190} ta="center">
-                  {title}
+                  {view === 'key' ? t('Key dates and exams') : title}
                 </Title>
-                {view !== 'semester' && (
+                {view !== 'semester' && view !== 'key' && (
                   <ActionIcon variant="subtle" onClick={() => step(1)} aria-label={t('Next')}>
                     <IconChevronRight size={20} />
                   </ActionIcon>
                 )}
-                {view !== 'semester' && cursor !== today && (
+                {view !== 'semester' && view !== 'key' && cursor !== today && (
                   <Button
                     size="compact-xs"
                     variant="subtle"
@@ -173,12 +178,14 @@ export function CalendarPage() {
                   { value: 'month', label: t('Month') },
                   { value: 'week', label: t('Week') },
                   { value: 'semester', label: t('Semester') },
+                  { value: 'key', label: t('Key dates') },
                 ]}
               />
             </Group>
             {view === 'month' && <MonthView cursor={cursor} today={today} selected={selected} onSelect={pick} />}
             {view === 'week' && <WeekView start={mondayOf(cursor)} today={today} selected={selected} onSelect={pick} />}
             {view === 'semester' && <SemesterView />}
+            {view === 'key' && <KeyDatesView />}
           </Card>
         </Grid.Col>
         <Grid.Col span={{ base: 24, lg: 7 }}>
@@ -289,7 +296,7 @@ function MonthView({ cursor, today, selected, onSelect }: { cursor: string } & D
         })}
       </div>
       <Group gap="xs" mt="sm">
-        {['session', 'task', 'assignment', 'exam', 'quiz', 'graded'].map((k) => (
+        {['session', 'task', 'assignment', 'exam', 'quiz', 'graded', 'final', 'key'].map((k) => (
           <KindBadge key={k} kind={k} />
         ))}
         <Text size="xs" c="dimmed">
@@ -338,10 +345,18 @@ function WeekView({ start, today, selected, onSelect }: { start: string } & DayP
 
 // The whole term at a glance: deadlines, exams and sessions week by week.
 function SemesterView() {
-  const { start, end } = termRange(CURRENT_TERM);
+  const { start, end } = termWithExams(CURRENT_TERM) ?? { start: ymd(new Date()), end: addDays(ymd(new Date()), 120) };
   const events = useRange(start, end);
   if (events.isPending) return <Loading />;
-  const items = (events.data ?? []).filter((e) => e.kind === 'deadline' || e.kind === 'session');
+  // Key dates that span days (reading break, exams) are listed once a week.
+  const seen = new Set<string>();
+  const items = (events.data ?? []).filter((e) => {
+    if (e.kind !== 'key') return e.kind === 'deadline' || e.kind === 'session';
+    const id = `${mondayOf(ymd(e.start))}|${e.title}`;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
   const weeks = [...new Set(items.map((e) => mondayOf(ymd(e.start))))].sort();
   if (!weeks.length) return <Empty>{t('No deadlines or study sessions this term yet.')}</Empty>;
 
@@ -366,6 +381,136 @@ function SemesterView() {
           </Group>
         </Group>
       ))}
+    </Stack>
+  );
+}
+
+// A3: the term's key dates and the final exam schedule (shared/keyDates.ts).
+function KeyDatesView() {
+  const today = ymd(new Date());
+  const [termName, setTermName] = useState<string>(CURRENT_TERM);
+  const [search, setSearch] = useState('');
+  const mine = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
+  const catalogue = useQuery({
+    queryKey: ['catalogue', 'search', '', termName, null],
+    queryFn: () => rpc.catalogue.search({ query: '', term: termName, level: null }),
+  });
+
+  const dates = keyDatesFor(termName);
+  const next = dates.find((d) => (d.end ?? d.date) >= today);
+  const titles = new Map((catalogue.data ?? []).map((c) => [`${c.subject} ${c.number}`, c.title]));
+  const myCourses = new Set((mine.data ?? []).filter((c) => c.term === termName).map((c) => `${c.subject} ${c.number}`));
+  const exams = FINAL_EXAMS.filter((e) => e.term === termName).sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`));
+  const myExams = exams.filter((e) => myCourses.has(e.course));
+  const query = search.trim().toLowerCase().replace(/\s+/g, '');
+  const listed = exams.filter((e) => !query || `${e.course}${titles.get(e.course) ?? ''}`.toLowerCase().replace(/\s+/g, '').includes(query));
+  const day = (date: string) => dayjs(date).format(t('ddd, MMM D'));
+
+  return (
+    <Stack gap="lg">
+      <SegmentedControl size="xs" w="fit-content" value={termName} onChange={setTermName} data={TERMS.map((x) => ({ value: x, label: term(x) }))} />
+
+      <div>
+        <Title order={4} mb="xs">
+          {t('Key dates')}
+        </Title>
+        {dates.map((d) => (
+          <Group
+            key={`${d.title}-${d.date}`}
+            py={6}
+            gap="sm"
+            wrap="nowrap"
+            style={{ borderBottom: '1.5px solid var(--ul-border)', opacity: (d.end ?? d.date) < today ? 0.55 : 1 }}
+          >
+            <Text size="sm" fw={800} w={170} style={{ flex: 'none' }}>
+              {d.end ? `${day(d.date)} – ${day(d.end)}` : day(d.date)}
+            </Text>
+            <Box w={9} h={9} style={{ flex: 'none', borderRadius: 9, background: `var(--mantine-color-${d.type === 'deadline' ? 'red' : 'yellow'}-5)` }} />
+            <Text size="sm" fw={d.type === 'deadline' ? 800 : 600} style={{ flex: 1 }}>
+              {t(d.title)}
+            </Text>
+            {d.approximate && (
+              <Tooltip label={t('Not published yet; check Minerva closer to the term.')}>
+                <Badge size="sm" variant="light" color="gray">
+                  {t('approx.')}
+                </Badge>
+              </Tooltip>
+            )}
+            {d === next && <Badge size="sm">{t('Next')}</Badge>}
+          </Group>
+        ))}
+      </div>
+
+      <div>
+        <Title order={4} mb="xs">
+          {t('Final exam schedule')}
+        </Title>
+        {!EXAM_SCHEDULE_TERMS.includes(termName) ? (
+          <Text size="sm" c="dimmed">
+            {t("The {{term}} exam schedule isn't out yet. McGill publishes it during the term.", { term: term(termName) })}
+          </Text>
+        ) : (
+          <Stack gap="sm">
+            <Alert variant="light" color="yellow" icon={<IconAlertTriangle size={18} />}>
+              {t('Sample schedule. The official one is on McGill’s exams website; always check it before your exams.')}
+            </Alert>
+            {myExams.length > 0 && (
+              <Card withBorder padding="sm" style={{ background: 'var(--ul-soft)' }}>
+                <Text fw={800} mb={6}>
+                  {t('Your final exams')}
+                </Text>
+                {myExams.map((e) => (
+                  <Group key={e.course} gap="sm" wrap="nowrap" py={2}>
+                    <Text size="sm" fw={800} w={90} style={{ flex: 'none' }}>
+                      {e.course}
+                    </Text>
+                    <Text size="sm" style={{ flex: 1 }}>
+                      {day(e.date)} · {e.start}–{e.end}
+                    </Text>
+                    <Text size="sm" c="dimmed">
+                      {e.location}
+                    </Text>
+                  </Group>
+                ))}
+              </Card>
+            )}
+            <TextInput
+              placeholder={t('Search by course code or title')}
+              leftSection={<IconSearch size={16} />}
+              radius="xl"
+              value={search}
+              onChange={(e) => setSearch(e.currentTarget.value)}
+            />
+            <Table.ScrollContainer minWidth={520}>
+              <Table verticalSpacing={6}>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>{t('Course')}</Table.Th>
+                    <Table.Th>{t('When')}</Table.Th>
+                    <Table.Th>{t('Location')}</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {listed.map((e) => (
+                    <Table.Tr key={e.course} fw={myCourses.has(e.course) ? 800 : undefined}>
+                      <Table.Td>
+                        {e.course}
+                        <Text span size="xs" c="dimmed" ml={6}>
+                          {titles.get(e.course)}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td>
+                        {day(e.date)} · {e.start}–{e.end}
+                      </Table.Td>
+                      <Table.Td>{e.location}</Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+          </Stack>
+        )}
+      </div>
     </Stack>
   );
 }
@@ -428,7 +573,7 @@ function Upcoming({ onViewAll }: { onViewAll: () => void }) {
   );
 }
 
-const PILL: Record<string, string> = { class: tx('Lecture'), session: tx('Study'), task: tx('Task'), deadline: tx('Due') };
+const PILL: Record<string, string> = { class: tx('Lecture'), session: tx('Study'), task: tx('Task'), deadline: tx('Due'), key: tx('Key date'), final: tx('Exam') };
 
 function DayList({ day, today }: { day: string; today: string }) {
   const events = useRange(day, day);
@@ -483,7 +628,7 @@ function DayList({ day, today }: { day: string; today: string }) {
                 )}
               </div>
               <Badge variant="outline" color={kindColor(eventKind(e))} size="lg" visibleFrom="xs">
-                {t(PILL[e.kind] ?? e.kind)}
+                {t(PILL[e.detail === 'final' ? 'final' : e.kind] ?? e.kind)}
               </Badge>
             </Group>
           );

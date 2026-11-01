@@ -243,7 +243,7 @@ function Deadlines() {
                     {fmtDateTime(e.start)}
                   </Text>
                 </div>
-                {e.detail !== 'planner' && (
+                {e.detail !== 'planner' && e.detail !== 'key' && (
                   <Tooltip label={t('Plan it')}>
                     <ActionIcon
                       size="sm"

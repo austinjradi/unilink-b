@@ -507,6 +507,23 @@ describe('S4 discussion board', () => {
 });
 
 describe('A3–A5 shared section info', () => {
+  it("puts the term's key dates and your final exams on the calendar", async () => {
+    const { api } = await student('Maya');
+    await api.classes.join({ classId: await comp251(api) });
+
+    // Withdrawal is a deadline at 23:59; the reading break covers each of its days.
+    const october = await api.calendar.range({ from: '2026-10-01', to: '2026-10-31' });
+    expect(october.filter((e) => e.detail === 'key').map((e) => [e.title, e.start])).toEqual([
+      ['Last day to withdraw (W, no refund)', new Date(2026, 9, 27, 23, 59)],
+    ]);
+    expect(october.filter((e) => e.kind === 'key').map((e) => e.start.getDate())).toEqual([9, 10, 11, 12, 13, 14]);
+
+    const december = await api.calendar.range({ from: '2026-12-01', to: '2026-12-31' });
+    expect(december.filter((e) => e.detail === 'final')).toMatchObject([
+      { title: 'COMP 251 final exam', classLabel: 'COMP 251-001', location: 'Field House', start: new Date(2026, 11, 14, 14, 0), end: new Date(2026, 11, 14, 17, 0) },
+    ]);
+  });
+
   it('shares class times and course details with the section, but not notes', async () => {
     const { classId, people } = await classmates('Maya', 'Leo');
     const [maya, leo] = people;
@@ -524,8 +541,10 @@ describe('A3–A5 shared section info', () => {
     await maya.api.courses.saveNotes({ classId, notes: 'Ask about the bonus' });
 
     const week = { from: '2026-10-05', to: '2026-10-11' };
-    expect((await leo.api.calendar.range(week)).map((e) => `${e.kind}:${e.title}`)).toEqual(['class:COMP 251-001', 'class:COMP 251-001']);
-    expect(await sam.api.calendar.range(week)).toEqual([]);
+    // (The term's key dates are on everyone's calendar; see the A3 key dates test.)
+    const own = <T extends { kind: string; detail: string }>(events: T[]) => events.filter((e) => e.kind !== 'key' && e.detail !== 'key');
+    expect(own(await leo.api.calendar.range(week)).map((e) => `${e.kind}:${e.title}`)).toEqual(['class:COMP 251-001', 'class:COMP 251-001']);
+    expect(own(await sam.api.calendar.range(week))).toEqual([]);
     const info = await leo.api.courses.info({ classId });
     expect(info).toMatchObject({ professor: 'Prof. Alberini', notes: '', detailsEditedBy: { name: 'Maya', former: false }, meetingsEditedBy: { name: 'Maya', former: false } });
 
@@ -616,7 +635,7 @@ describe('ST2 assignment planner', () => {
     expect(plan.dueAt).toEqual(new Date(2026, 9, 16, 23, 59));
     expect((await titles(maya)).some((title) => title.startsWith('"Problem set 4" is now due'))).toBe(true);
     // It's listed once, as the class deadline.
-    expect((await maya.api.calendar.upcoming({ days: 30 })).map((e) => e.title)).toEqual(['Problem set 4']);
+    expect((await maya.api.calendar.upcoming({ days: 30 })).filter((e) => e.detail !== 'key').map((e) => e.title)).toEqual(['Problem set 4']);
 
     // Picking her own date stops following it.
     await maya.api.planner.update({ assignmentId: plan.id, title: plan.title, classId, dueAt: new Date(2026, 9, 14, 12), notes: '', bufferDays: 2 });
