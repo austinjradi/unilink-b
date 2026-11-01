@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { type ComponentType, lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { Center, Loader, MantineProvider } from '@mantine/core';
 import { DatesProvider } from '@mantine/dates';
 import { ModalsProvider } from '@mantine/modals';
@@ -11,16 +11,22 @@ import { MeContext } from './lib/hooks';
 import { applyLocale, getLocale, LocaleContext, useLocale } from './lib/i18n';
 import { rpc, RpcError } from './lib/rpc';
 import { ResetPassword, SignIn, SignUp } from './pages/Auth';
-import { CalculatorPage } from './pages/Calculator';
-import { CalendarPage } from './pages/Calendar';
-import { ClassPage } from './pages/ClassPage';
-import { CoursesPage } from './pages/Classes';
 import { Home } from './pages/Home';
-import { PlannerPage } from './pages/Planner';
-import { SessionSearchPage, SessionsPage } from './pages/Sessions';
-import { SettingsPage } from './pages/Settings';
-import { StudyModePage } from './pages/StudyMode';
 import { cssVariablesResolver, theme } from './theme';
+
+// Sign-in and Home load with the app; the other pages load when first opened, so the
+// first visit downloads less (the web build is opened from a link, often on a phone).
+const page = <K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) =>
+  lazy(() => load().then((m) => ({ default: m[name] })));
+const CalculatorPage = page(() => import('./pages/Calculator'), 'CalculatorPage');
+const CalendarPage = page(() => import('./pages/Calendar'), 'CalendarPage');
+const ClassPage = page(() => import('./pages/ClassPage'), 'ClassPage');
+const CoursesPage = page(() => import('./pages/Classes'), 'CoursesPage');
+const PlannerPage = page(() => import('./pages/Planner'), 'PlannerPage');
+const SessionsPage = page(() => import('./pages/Sessions'), 'SessionsPage');
+const SessionSearchPage = page(() => import('./pages/Sessions'), 'SessionSearchPage');
+const SettingsPage = page(() => import('./pages/Settings'), 'SettingsPage');
+const StudyModePage = page(() => import('./pages/StudyMode'), 'StudyModePage');
 
 const queryClient: QueryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
@@ -63,26 +69,34 @@ function Root() {
   return (
     <MeContext.Provider value={me.data}>
       <Layout>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/courses/:tab?" element={<CoursesPage />} />
-          <Route path="/classes" element={<Navigate to="/courses" replace />} />
-          <Route path="/classes/:classId/:tab?" element={<ClassPage />} />
-          <Route path="/calendar" element={<CalendarPage />} />
-          <Route path="/planner" element={<PlannerPage />} />
-          <Route path="/calculator" element={<CalculatorPage />} />
-          <Route path="/sessions" element={<SessionsPage />} />
-          <Route path="/sessions/search" element={<SessionSearchPage />} />
-          <Route path="/study-mode" element={<StudyModePage />} />
-          <Route path="/settings/:tab?" element={<SettingsPage />} />
-          {/* Older routes, still used by links in existing notifications. */}
-          <Route path="/academics/:tab?" element={<RedirectAcademics />} />
-          <Route path="/focus" element={<Navigate to="/study-mode" replace />} />
-          <Route path="/settings/study-mode" element={<Navigate to="/study-mode" replace />} />
-          <Route path="/profile" element={<Navigate to="/settings/account" replace />} />
-          <Route path="/integrations" element={<Navigate to="/settings/integrations" replace />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <Suspense
+          fallback={
+            <Center py="xl">
+              <Loader />
+            </Center>
+          }
+        >
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/courses/:tab?" element={<CoursesPage />} />
+            <Route path="/classes" element={<Navigate to="/courses" replace />} />
+            <Route path="/classes/:classId/:tab?" element={<ClassPage />} />
+            <Route path="/calendar" element={<CalendarPage />} />
+            <Route path="/planner" element={<PlannerPage />} />
+            <Route path="/calculator" element={<CalculatorPage />} />
+            <Route path="/sessions" element={<SessionsPage />} />
+            <Route path="/sessions/search" element={<SessionSearchPage />} />
+            <Route path="/study-mode" element={<StudyModePage />} />
+            <Route path="/settings/:tab?" element={<SettingsPage />} />
+            {/* Older routes, still used by links in existing notifications. */}
+            <Route path="/academics/:tab?" element={<RedirectAcademics />} />
+            <Route path="/focus" element={<Navigate to="/study-mode" replace />} />
+            <Route path="/settings/study-mode" element={<Navigate to="/study-mode" replace />} />
+            <Route path="/profile" element={<Navigate to="/settings/account" replace />} />
+            <Route path="/integrations" element={<Navigate to="/settings/integrations" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
       </Layout>
     </MeContext.Provider>
   );
