@@ -26,7 +26,18 @@ import {
 import { useForm } from '@mantine/form';
 import { useDebouncedValue } from '@mantine/hooks';
 import { modals } from '@mantine/modals';
-import { IconCheck, IconCircleCheck, IconLock, IconMessageCircle, IconMessages, IconPencil, IconPlus, IconSearch, IconTrash } from '@tabler/icons-react';
+import {
+  IconCheck,
+  IconCircleCheck,
+  IconFilter,
+  IconLock,
+  IconMessageCircle,
+  IconMessages,
+  IconPencil,
+  IconPlus,
+  IconSearch,
+  IconTrash,
+} from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router';
 import { fromNow } from '../lib/format';
@@ -256,6 +267,9 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
   const [since, setSince] = useState<Since>(null);
   const [unresolved, setUnresolved] = useState(false);
   const [sort, setSort] = useState<'new' | 'top'>('new');
+  // Below the wide layout the filters would sit under every post, so they open in a drawer.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const activeFilters = classIds.length + topics.length + (since ? 1 : 0) + (unresolved ? 1 : 0) + (search.trim() ? 1 : 0);
   const [composing, setComposing] = useState<PostDetail | 'new' | null>(null);
 
   const classes = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
@@ -342,6 +356,9 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
           <Group justify="space-between" mb="md">
             <Title order={3}>{classId ? t('Discussion') : t('Class discussions')}</Title>
             <Group gap="sm">
+              <Button hiddenFrom="lg" variant="default" leftSection={<IconFilter size={16} />} onClick={() => setFiltersOpen(true)}>
+                {activeFilters ? t('Filters ({{count}})', { count: activeFilters }) : t('Filters')}
+              </Button>
               <SegmentedControl
                 size="xs"
                 value={sort}
@@ -384,12 +401,16 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
             </Card>
           )}
         </Grid.Col>
-        <Grid.Col span={{ base: 24, lg: left ? 5 : 6 }}>
+        <Grid.Col span={{ base: 24, lg: left ? 5 : 6 }} visibleFrom="lg">
           <Card padding="md" style={{ position: 'sticky', top: 88 }}>
             {filters}
           </Card>
         </Grid.Col>
       </Grid>
+
+      <Drawer opened={filtersOpen} onClose={() => setFiltersOpen(false)} position="bottom" size="auto" hiddenFrom="lg" withCloseButton>
+        {filters}
+      </Drawer>
 
       <Drawer opened={openPost != null} onClose={() => setOpenPost(null)} position="right" size="xl" title={<Text fw={800}>{t('Post')}</Text>}>
         {openPost != null && <PostThread postId={openPost} onEdit={(p) => setComposing(p)} onDeleted={() => setOpenPost(null)} />}

@@ -29,12 +29,42 @@ export function Home() {
       <Feed
         left={
           <Stack gap="lg">
+            <Welcome />
             <TodayTasks />
             <Deadlines />
           </Stack>
         }
       />
     </>
+  );
+}
+
+// A new account's first steps, shown until they've joined a class.
+function Welcome() {
+  const mine = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
+  if (!mine.data || mine.data.length) return null;
+  const steps = [
+    { to: '/courses/find', label: t('Find and join your classes') },
+    { to: '/calendar', label: t('Add deadlines to your calendar') },
+    { to: '/planner?new=1', label: t('Plan out an assignment') },
+    { to: '/settings/goat', label: t('Dress up your goat') },
+  ];
+  return (
+    <Card padding="md">
+      <Text fw={800} size="lg" className="display">
+        {t('Welcome to UniLink!')}
+      </Text>
+      <Text size="sm" c="dimmed" mb="sm">
+        {t('A few things to start with:')}
+      </Text>
+      <Stack gap={6}>
+        {steps.map((step, i) => (
+          <Anchor key={step.to} component={Link} to={step.to} size="sm" fw={700}>
+            {i + 1}. {step.label}
+          </Anchor>
+        ))}
+      </Stack>
+    </Card>
   );
 }
 

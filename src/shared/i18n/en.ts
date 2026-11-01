@@ -14,6 +14,7 @@ export const EN: Record<string, string> = {
     'Exported {{count}} event. Import the file into Google Calendar.',
   ),
   ...plural('Finished or past due ({{count}})', 'Finished or past due ({{count}})'),
+  ...plural('Filters ({{count}})', 'Filters ({{count}})'),
   ...plural('Goat reactions: {{count}}', 'Goat reactions: {{count}}'),
   ...plural('Hidden after reports ({{count}})', 'Hidden after reports ({{count}})'),
   ...plural('Imported {{count}} deadlines', 'Imported {{count}} deadline'),
