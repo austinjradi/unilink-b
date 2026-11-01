@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { ActionIcon, Anchor, Badge, Button, Card, Checkbox, Collapse, Group, RingProgress, Stack, Text, TextInput } from '@mantine/core';
-import { IconChevronDown, IconChevronRight, IconPlus, IconTrash } from '@tabler/icons-react';
+import { ActionIcon, Anchor, Badge, Button, Card, Checkbox, Collapse, Group, RingProgress, Stack, Text, TextInput, Tooltip } from '@mantine/core';
+import { IconChevronDown, IconChevronRight, IconListCheck, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { Link } from 'react-router';
@@ -243,6 +243,20 @@ function Deadlines() {
                     {fmtDateTime(e.start)}
                   </Text>
                 </div>
+                {e.detail !== 'planner' && (
+                  <Tooltip label={t('Plan it')}>
+                    <ActionIcon
+                      size="sm"
+                      variant="subtle"
+                      color="gray"
+                      component={Link}
+                      to={`/planner?new=1&from=${e.key}`}
+                      aria-label={t('Plan out {{title}}', { title: e.title })}
+                    >
+                      <IconListCheck size={15} />
+                    </ActionIcon>
+                  </Tooltip>
+                )}
                 {e.deadlineId != null && (
                   <Checkbox size="xs" mt={2} onChange={() => setDone.mutate(e.deadlineId!)} aria-label={t('Mark {{title}} done', { title: e.title })} />
                 )}

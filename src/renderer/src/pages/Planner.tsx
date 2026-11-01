@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Accordion,
   ActionIcon,
@@ -55,9 +55,11 @@ type Task = Assignment['tasks'][number];
 export function PlannerPage() {
   const me = useMe();
   const list = useQuery({ queryKey: ['planner', 'list'], queryFn: () => rpc.planner.list() });
-  // "Add event/assignment" on the calendar links here with ?new=1.
+  // "Add event/assignment" on the calendar links here with ?new=1, and "Plan it" on a
+  // deadline adds &from=<the deadline's calendar key>.
   const [params, setParams] = useSearchParams();
   const [editing, setEditing] = useState<Assignment | 'new' | null>(params.get('new') ? 'new' : null);
+  const [from] = useState(params.get('from'));
   const [editingTime, setEditingTime] = useState(false);
   const close = () => {
     setEditing(null);
@@ -121,7 +123,7 @@ export function PlannerPage() {
       )}
 
       <Modal opened={editing != null} onClose={close} title={editing === 'new' ? t('New assignment') : t('Edit assignment')} size="lg">
-        {editing === 'new' && <NewAssignmentForm onDone={close} />}
+        {editing === 'new' && <NewAssignmentForm onDone={close} from={from} />}
         {editing && editing !== 'new' && <EditAssignmentForm assignment={editing} onDone={close} />}
       </Modal>
       <Modal opened={editingTime} onClose={() => setEditingTime(false)} title={t('Your free study time')}>
@@ -326,7 +328,7 @@ function TaskRow({ task, dueDay }: { task: Task; dueDay: string }) {
 
 type TaskDraft = { title: string; minutes: number };
 
-function NewAssignmentForm({ onDone }: { onDone: () => void }) {
+function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string | null }) {
   const [attachment, setAttachment] = useState<{ path: string; name: string } | null>(null);
   const form = useForm({
     initialValues: {
@@ -359,7 +361,9 @@ function NewAssignmentForm({ onDone }: { onDone: () => void }) {
   // A plan started from a class deadline or graded item keeps following its due date,
   // unless the student picks a different date here.
   const [follows, setFollows] = useState<{ deadlineId: number | null; assessmentId: number | null; due: Date } | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
   const startFrom = (key: string | null) => {
+    setPicked(key);
     const source = sources.find((e) => e.key === key);
     const assessmentId = source?.key.startsWith('assessment-') ? Number(source.key.slice('assessment-'.length)) : null;
     setFollows(source && (source.deadlineId != null || assessmentId != null) ? { deadlineId: source.deadlineId, assessmentId, due: source.start } : null);
@@ -370,6 +374,12 @@ function NewAssignmentForm({ onDone }: { onDone: () => void }) {
       dueAt: source.start,
     });
   };
+
+  // Opened from a deadline's "Plan it": start from that deadline once the list is in.
+  const fromReady = from != null && sources.some((e) => e.key === from);
+  useEffect(() => {
+    if (fromReady) startFrom(from);
+  }, [fromReady]);
 
   const choose = useAction(() => rpc.planner.chooseAttachment(), { onSuccess: (file) => file && setAttachment(file) });
   const create = useAction(
@@ -403,6 +413,7 @@ function NewAssignmentForm({ onDone }: { onDone: () => void }) {
             searchable
             clearable
             data={sources.map((e) => ({ value: e.key, label: [e.title, e.classLabel, dayjs(e.start).format(t('ddd, MMM D'))].filter(Boolean).join(' · ') }))}
+            value={picked}
             onChange={startFrom}
           />
         )}
