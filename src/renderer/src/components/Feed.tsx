@@ -25,7 +25,7 @@ import { useDebouncedValue } from '@mantine/hooks';
 import { modals } from '@mantine/modals';
 import { IconCheck, IconCircleCheck, IconLock, IconMessageCircle, IconMessages, IconPencil, IconPlus, IconSearch, IconTrash } from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { fromNow } from '../lib/format';
 import { t, tx } from '../lib/i18n';
 import { useAction } from '../lib/hooks';
@@ -313,6 +313,13 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
                     ? t('No posts yet. Ask a question or start a discussion!')
                     : t('Join your classes to see their discussions here.')}
               </Empty>
+              {classes.data?.length === 0 && (
+                <Group justify="center" mb="md">
+                  <Button component={Link} to="/courses/find" variant="light" leftSection={<IconSearch size={16} />}>
+                    {t('Find your courses')}
+                  </Button>
+                </Group>
+              )}
             </Card>
           )}
         </Grid.Col>

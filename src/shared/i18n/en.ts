@@ -53,6 +53,7 @@ export const EN: Record<string, string> = {
   ...plural('{{count}} required courses', '{{count}} required course'),
   ...plural('{{count}} students from {{code}} are on UniLink.', '{{count}} student from {{code}} is on UniLink.'),
   ...plural('{{count}} students on UniLink', '{{count}} student on UniLink'),
+  ...plural('{{count}} unanswered questions', '{{count}} unanswered question'),
   ...plural('{{count}} tasks', '{{count}} task'),
   ...plural('{{count}} working days before the deadline', '{{count}} working day before the deadline'),
   ...plural('{{done}} of {{count}} courses', '{{done}} of {{count}} course'),

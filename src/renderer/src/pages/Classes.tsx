@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Badge, Button, Card, Group, Select, SimpleGrid, Table, Tabs, Text, TextInput } from '@mantine/core';
+import { Badge, Button, Card, Group, Select, SimpleGrid, Stack, Table, Tabs, Text, TextInput } from '@mantine/core';
 import { useDebouncedValue } from '@mantine/hooks';
-import { IconCertificate, IconListDetails, IconSchool, IconSearch, IconUsers } from '@tabler/icons-react';
+import { IconCalendarDue, IconCertificate, IconClock, IconListDetails, IconMessageQuestion, IconSchool, IconSearch, IconUsers } from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import dayjs from 'dayjs';
 import { Link, useNavigate, useParams } from 'react-router';
 import { LEVELS } from '@shared/courseQuery';
-import { CURRENT_TERM } from '@shared/dates';
+import { addDays, CURRENT_TERM, ymd } from '@shared/dates';
 import { Empty, Loading, PageHeader, SectionCard, Tag } from '../components/ui';
 import { useAction } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
@@ -58,6 +59,14 @@ export function CoursesPage() {
 
 function MyCourses() {
   const mine = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
+  // At a glance for each class: the next lecture, the next thing due and questions still open.
+  const today = ymd(new Date());
+  const week = useQuery({ queryKey: ['calendar', today, addDays(today, 7)], queryFn: () => rpc.calendar.range({ from: today, to: addDays(today, 7) }) });
+  const due = useQuery({ queryKey: ['calendar', 'upcoming', 60], queryFn: () => rpc.calendar.upcoming({ days: 60 }) });
+  const open = useQuery({
+    queryKey: ['board', 'feed', 'open'],
+    queryFn: () => rpc.board.feed({ classIds: null, topics: [], since: null, search: '', unresolved: true }),
+  });
   if (mine.isPending) return <Loading />;
   if (!mine.data?.length) {
     return (
@@ -73,21 +82,53 @@ function MyCourses() {
   }
   return (
     <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="lg">
-      {mine.data.map((c) => (
-        <Card key={c.id} component={Link} to={`/classes/${c.id}`} className="clickable" padding="lg">
-          <Group justify="space-between" mb="xs">
-            <Text fw={700} fz={24} className="display">
-              {c.code}
-            </Text>
-            <Tag>{term(c.term)}</Tag>
-          </Group>
-          <Text>{c.title}</Text>
-          <Group gap={4} mt="md" c="dimmed">
-            <IconUsers size={16} />
-            <Text size="sm">{t('{{count}} students on UniLink', { count: c.memberCount })}</Text>
-          </Group>
-        </Card>
-      ))}
+      {mine.data.map((c) => {
+        const lecture = week.data?.find((e) => e.kind === 'class' && e.classId === c.id && e.start > new Date());
+        const next = due.data?.find((e) => e.classId === c.id);
+        const questions = open.data?.filter((p) => p.classId === c.id).length ?? 0;
+        return (
+          <Card key={c.id} component={Link} to={`/classes/${c.id}`} className="clickable" padding="lg">
+            <Group justify="space-between" mb="xs">
+              <Text fw={700} fz={24} className="display">
+                {c.code}
+              </Text>
+              <Tag>{term(c.term)}</Tag>
+            </Group>
+            <Text>{c.title}</Text>
+            <Stack gap={4} mt="md" c="dimmed">
+              {lecture && (
+                <Group gap={6} wrap="nowrap">
+                  <IconClock size={16} style={{ flex: 'none' }} />
+                  <Text size="sm" truncate>
+                    {t('Next class: {{when}}', { when: dayjs(lecture.start).format(t('ddd, MMM D · HH:mm')) })}
+                    {lecture.location && ` · ${lecture.location}`}
+                  </Text>
+                </Group>
+              )}
+              {next && (
+                <Group gap={6} wrap="nowrap">
+                  <IconCalendarDue size={16} style={{ flex: 'none' }} />
+                  <Text size="sm" truncate>
+                    {t('Next due: {{title}}, {{when}}', { title: next.title, when: dayjs(next.start).format(t('ddd, MMM D')) })}
+                  </Text>
+                </Group>
+              )}
+              <Group gap="md">
+                <Group gap={6} wrap="nowrap">
+                  <IconUsers size={16} />
+                  <Text size="sm">{t('{{count}} students on UniLink', { count: c.memberCount })}</Text>
+                </Group>
+                {questions > 0 && (
+                  <Group gap={6} wrap="nowrap">
+                    <IconMessageQuestion size={16} />
+                    <Text size="sm">{t('{{count}} unanswered questions', { count: questions })}</Text>
+                  </Group>
+                )}
+              </Group>
+            </Stack>
+          </Card>
+        );
+      })}
     </SimpleGrid>
   );
 }

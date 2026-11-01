@@ -104,6 +104,8 @@
   "New": "Nouveau",
   "New code": "Nouveau code",
   "New code made. The old one no longer works.": "Nouveau code créé. L’ancien ne fonctionne plus.",
+  "Next class: {{when}}": "Prochain cours : {{when}}",
+  "Next due: {{title}}, {{when}}": "Prochaine remise : {{title}}, {{when}}",
   "No open sessions planned. Create one and share its invite code!": "Aucune séance ouverte de prévue. Créez-en une et partagez son code d’invitation!",
   "No sections match. Try a code like \"MATH 240\" or \"COMP 2XX\". The built-in catalogue is a sample of McGill courses for now.": "Aucune section ne correspond. Essayez un sigle comme « MATH 240 » ou « COMP 2XX ». Le catalogue intégré n’est pour l’instant qu’un échantillon des cours de McGill.",
   "No study session has that code. Check it with the host.": "Aucune séance d’étude n’a ce code. Vérifiez-le avec l’hôte.",
@@ -225,6 +227,8 @@
   "{{count}} on the waitlist_other": "{{count}} sur la liste d’attente",
   "{{count}} people are already going. Pick a limit of at least that._one": "{{count}} personne participe déjà. Choisissez une limite d’au moins ce nombre.",
   "{{count}} people are already going. Pick a limit of at least that._other": "{{count}} personnes participent déjà. Choisissez une limite d’au moins ce nombre.",
+  "{{count}} unanswered questions_one": "{{count}} question sans réponse",
+  "{{count}} unanswered questions_other": "{{count}} questions sans réponse",
   "{{hours}} h a week": "{{hours}} h par semaine",
   "{{level}}-level": "Niveau {{level}}",
   "{{name}} already shared this chat in {{class}}.": "{{name}} a déjà partagé ce groupe dans {{class}}."
