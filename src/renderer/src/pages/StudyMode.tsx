@@ -34,13 +34,13 @@ export function StudyModePage() {
               <List size="sm" spacing={4}>
                 <List.Item>
                   <b>{t('Block distracting websites.')}</b>{' '}
-                  {t("A desktop app can't block sites in your browser without admin rights or a browser extension. A companion extension that reads UniLink's study mode is the planned route.")}
+                  {t("A web page can't block other sites. A companion browser extension that reads UniLink's study mode is the planned route.")}
                 </List.Item>
                 <List.Item>
-                  {t("It only switches on and off while UniLink is open. It isn't a background service.")}
+                  {t("It only switches on and off while a UniLink tab is open. It isn't a background service.")}
                 </List.Item>
                 <List.Item>
-                  {t("System-wide Do Not Disturb works on GNOME (Ubuntu) only. Windows and macOS don't let apps turn on Focus.")}
+                  {t("A web page can't turn on your computer's Do Not Disturb. The desktop app can, on GNOME (Ubuntu).")}
                 </List.Item>
               </List>
             </Alert>
@@ -143,7 +143,7 @@ function Settings({ status }: { status: Status }) {
           description={
             status.systemDndSupported
               ? t('Silences notifications from every app (GNOME), and switches back afterwards')
-              : t('Only available on GNOME desktops')
+              : t('Not available in the browser')
           }
           disabled={!status.systemDndSupported}
           checked={s.systemDnd && status.systemDndSupported}
