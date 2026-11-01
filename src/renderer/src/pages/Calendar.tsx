@@ -442,7 +442,7 @@ function KeyDatesView() {
                 </Badge>
               </Tooltip>
             )}
-            {d === next && <Badge size="sm">{t('Next')}</Badge>}
+            {d === next && <Badge size="sm">{t('Up next')}</Badge>}
           </Group>
         ))}
       </div>
