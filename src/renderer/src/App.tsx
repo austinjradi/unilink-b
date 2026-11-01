@@ -20,7 +20,7 @@ import { PlannerPage } from './pages/Planner';
 import { SessionSearchPage, SessionsPage } from './pages/Sessions';
 import { SettingsPage } from './pages/Settings';
 import { StudyModePage } from './pages/StudyMode';
-import { theme } from './theme';
+import { cssVariablesResolver, theme } from './theme';
 
 const queryClient: QueryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
@@ -102,7 +102,7 @@ export function App() {
 
   return (
     <LocaleContext.Provider value={{ locale, setLocale }}>
-      <MantineProvider theme={theme} defaultColorScheme="auto">
+      <MantineProvider theme={theme} cssVariablesResolver={cssVariablesResolver} defaultColorScheme="auto">
         <DatesProvider settings={{ firstDayOfWeek: 1, locale }}>
           <Notifications position="top-right" />
           <QueryClientProvider client={queryClient}>

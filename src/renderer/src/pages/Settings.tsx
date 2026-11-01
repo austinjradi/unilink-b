@@ -45,7 +45,7 @@ export function SettingsPage() {
 
   return (
     <Tabs value={tab} onChange={(v) => navigate(`/settings/${v}`)} orientation="vertical" variant="pills" radius="lg" keepMounted={false}>
-      <Box w={220} pr="lg" mr="lg" style={{ borderRight: '2px solid var(--ul-ink)', minHeight: 'calc(100vh - 140px)' }}>
+      <Box w={220} pr="lg" mr="lg" style={{ borderRight: '2px solid var(--ul-rule)', minHeight: 'calc(100vh - 140px)' }}>
         <Title order={1} fz={34} mb="lg">
           {t('Settings')}
         </Title>
@@ -153,7 +153,7 @@ function GoatEditor() {
 
   return (
     <Stack align="center" gap="lg">
-      <Box w={300} h={300} style={{ border: '3px solid var(--ul-ink)', borderRadius: 24, overflow: 'hidden' }}>
+      <Box w={300} h={300} style={{ border: '3px solid var(--ul-rule)', borderRadius: 24, overflow: 'hidden' }}>
         <GoatSvg goat={shown} />
       </Box>
       <Text c="dimmed" size="sm">
@@ -171,7 +171,7 @@ function GoatEditor() {
               style={{
                 borderTopLeftRadius: 999,
                 borderTopRightRadius: 999,
-                border: '2px solid var(--ul-ink)',
+                border: '2px solid var(--ul-rule)',
                 borderBottom: 'none',
                 marginRight: -2,
                 background: part === tabItem.part ? 'var(--ul-soft)' : 'transparent',
@@ -183,7 +183,7 @@ function GoatEditor() {
             </UnstyledButton>
           ))}
         </Group>
-        <Card radius={0} padding="lg" style={{ border: '2px solid var(--ul-ink)', borderTop: '2px dashed var(--ul-border)' }}>
+        <Card radius={0} padding="lg" style={{ border: '2px solid var(--ul-rule)', borderTop: '2px dashed var(--ul-border)' }}>
           <SimpleGrid cols={{ base: 3, sm: 4, md: 6 }} spacing="md">
             {(GOAT_OPTIONS[part] as readonly string[]).map((option) => {
               const preview = { ...shown, [part]: option } as GoatConfig;

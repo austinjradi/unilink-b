@@ -3,13 +3,19 @@
   --ul-page: #f6f6fb;
   --ul-border: color-mix(in srgb, var(--ul-ink) 22%, transparent);
   --ul-soft: #eceef8;
+  --ul-rule: var(--ul-ink);
+  --ul-recess: color-mix(in srgb, var(--ul-soft) 60%, transparent);
 }
 
+/* Built on the tinted dark greys in theme.ts: the page sits below the cards,
+   outlines stay soft, and the header gets a quiet rule instead of a bright line. */
 [data-mantine-color-scheme='dark'] {
-  --ul-ink: #c9cbd6;
-  --ul-page: #18191f;
-  --ul-border: color-mix(in srgb, var(--ul-ink) 25%, transparent);
-  --ul-soft: #24262f;
+  --ul-ink: var(--mantine-color-dark-0);
+  --ul-page: #151622;
+  --ul-border: color-mix(in srgb, var(--ul-ink) 18%, transparent);
+  --ul-soft: var(--mantine-color-dark-6);
+  --ul-rule: var(--mantine-color-dark-4);
+  --ul-recess: color-mix(in srgb, var(--ul-page) 70%, transparent);
 }
 
 body {
@@ -124,7 +130,7 @@ h3,
 }
 
 .month-cell[data-outside] {
-  background: color-mix(in srgb, var(--ul-soft) 60%, transparent);
+  background: var(--ul-recess);
 }
 
 .month-cell[data-outside] .day-number {

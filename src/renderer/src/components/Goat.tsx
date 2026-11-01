@@ -180,7 +180,7 @@ export function GoatAvatar({ goat, size = 40, style }: { goat: GoatConfig; size?
         height: size,
         flex: 'none',
         borderRadius: Math.max(6, size / 6),
-        border: `${size >= 64 ? 2.5 : 1.5}px solid var(--ul-ink)`,
+        border: `${size >= 64 ? 2.5 : 1.5}px solid var(--ul-rule)`,
         overflow: 'hidden',
         ...style,
       }}

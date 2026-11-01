@@ -83,7 +83,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
   return (
     <AppShell header={{ height: 72 }} padding={{ base: 'sm', sm: 'lg' }}>
-      <AppShell.Header px={{ base: 'sm', sm: 'lg' }} style={{ borderBottom: '2px solid var(--ul-ink)' }}>
+      <AppShell.Header px={{ base: 'sm', sm: 'lg' }} style={{ borderBottom: '2px solid var(--ul-rule)' }}>
         <Group h="100%" justify="space-between" wrap="nowrap" gap="md">
           <UnstyledButton component={Link} to="/" aria-label={t('UniLink home')} className="header-logo">
             <Logo />
