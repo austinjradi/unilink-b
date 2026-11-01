@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
-import { ActionIcon, Box, Button, Grid, Group, Select, Stack, Text, Textarea, TextInput, UnstyledButton } from '@mantine/core';
+import { ActionIcon, Box, Button, Grid, Group, Modal, Select, Stack, Text, Textarea, TextInput, UnstyledButton } from '@mantine/core';
 import { TimeInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { modals } from '@mantine/modals';
-import { IconPlus, IconTrash, IconUsers } from '@tabler/icons-react';
+import { IconFileImport, IconPlus, IconTrash, IconUsers } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
 import dayjs from 'dayjs';
 import { finalExamFor } from '@shared/keyDates';
 import { Empty, kindColor, Loading, SectionCard } from '../../components/ui';
+import { SyllabusImport } from '../Calendar';
 import { fromNow } from '../../lib/format';
 import { useAction } from '../../lib/hooks';
 import { type Out, rpc } from '../../lib/rpc';
@@ -192,6 +193,7 @@ function ClassTimes({ classId, code, initial, editor }: { classId: number; code:
 // What's next in this class: its deadlines and graded work (A3/A5) and study sessions (S3).
 function ComingUp({ classId, exam }: { classId: number; exam: ReturnType<typeof finalExamFor> }) {
   const navigate = useNavigate();
+  const [importing, setImporting] = useState(false);
   const due = useQuery({ queryKey: ['calendar', 'upcoming', 60], queryFn: () => rpc.calendar.upcoming({ days: 60 }) });
   const sessions = useQuery({ queryKey: ['studySessions', classId], queryFn: () => rpc.studySessions.list({ classId }) });
   if (due.isPending || sessions.isPending) return null;
@@ -205,7 +207,17 @@ function ComingUp({ classId, exam }: { classId: number; exam: ReturnType<typeof 
     .slice(0, 6);
 
   return (
-    <SectionCard title={t('Coming up')}>
+    <SectionCard
+      title={t('Coming up')}
+      actions={
+        <Button size="compact-xs" variant="subtle" leftSection={<IconFileImport size={14} />} onClick={() => setImporting(true)}>
+          {t('Dates from a syllabus')}
+        </Button>
+      }
+    >
+      <Modal opened={importing} onClose={() => setImporting(false)} title={t('Import dates from a syllabus')} size="xl">
+        {importing && <SyllabusImport initialClassId={classId} onDone={() => setImporting(false)} />}
+      </Modal>
       {items.length ? (
         <Stack gap={4}>
           {items.map((i) => (

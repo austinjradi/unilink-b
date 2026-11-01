@@ -698,8 +698,8 @@ function AllDeadlines({ onEdit }: { onEdit: (d: Deadline) => void }) {
 // A3 "imported from my syllabus": paste the course outline's schedule, check what was found,
 // and add it for the whole section. Weighted items join the shared grading scheme (A5),
 // which shows them on the calendar too; the rest become class deadlines.
-function SyllabusImport({ onDone }: { onDone: () => void }) {
-  const [classId, setClassId] = useState<number | null>(null);
+export function SyllabusImport({ onDone, initialClassId = null }: { onDone: () => void; initialClassId?: number | null }) {
+  const [classId, setClassId] = useState<number | null>(initialClassId);
   const [text, setText] = useState('');
   const [unchecked, setUnchecked] = useState<Set<number>>(new Set());
   const classes = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
