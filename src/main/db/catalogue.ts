@@ -38,3 +38,8 @@ export const CATALOGUE: [subject: string, number: string, title: string, credits
   ['PHYS', '142', 'Electromagnetism and Optics', 4],
   ['PSYC', '100', 'Introduction to Psychology', 3],
 ];
+
+// Lecture sections per course and term. Big 100- and 200-level courses run two.
+export function sectionsFor(number: string): string[] {
+  return Number(number) < 300 ? ['001', '002'] : ['001'];
+}

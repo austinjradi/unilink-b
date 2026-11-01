@@ -5,9 +5,10 @@ import { evaluateDegree } from '@shared/degree';
 import { summarize } from '@shared/grades';
 import type { DB } from '../db/client';
 import { PROGRAMS } from '../db/programs';
-import { assessments, classes, courseRecords, courses, enrollments, users } from '../db/schema';
+import { classes, courseRecords, courses, enrollments, users } from '../db/schema';
 import { AppError, idSchema, procedure } from '../rpc/core';
 import { notFound } from './access';
+import { gradedItems } from './courses';
 
 // A1: the courses a student has taken, is taking and plans to take, with credits and grades.
 // A2: which of them count toward a program, and what's still missing.
@@ -78,13 +79,7 @@ export const recordRouter = {
     const joined = new Map(myClasses(ctx.db, ctx.userId).map((c) => [`${c.subject} ${c.number}|${c.term}`, c.classId]));
     return records.map((r) => {
       const classId = r.status === 'in-progress' ? (joined.get(`${r.code}|${r.term}`) ?? null) : null;
-      const items = classId
-        ? ctx.db
-            .select({ weight: assessments.weight, score: assessments.score })
-            .from(assessments)
-            .where(and(eq(assessments.userId, ctx.userId), eq(assessments.classId, classId)))
-            .all()
-        : [];
+      const items = classId ? gradedItems(ctx.db, ctx.userId, classId) : [];
       return { ...r, classId, currentAverage: items.length ? summarize(items).currentAverage : null };
     });
   }),

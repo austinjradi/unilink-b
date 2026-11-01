@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { letterFor, summarize } from '@shared/grades';
 import { buildCalendar, parseCalendar } from '@shared/ics';
-import { parseChatLink } from '@shared/links';
-import { planTasks, type PlannableTask } from '@shared/planner';
+import { isHidden, parseChatLink } from '@shared/links';
+import { DEFAULT_WEEKLY_MINUTES, minutesOn, planTasks, type PlannableTask, weeklyMinutes } from '@shared/planner';
 import { passwordProblems } from '@shared/validation';
+import { parseCourseQuery } from '@shared/courseQuery';
 import { summarizeRecord, termOrder } from '@shared/academics';
 import { evaluateDegree, type Program } from '@shared/degree';
 import { type FocusWindow, studyModeStatus } from '@shared/studyMode';
@@ -44,33 +45,31 @@ describe('grades (A4)', () => {
     expect(low.requirements.find((r) => r.letter === 'A')?.status).toBe('out-of-reach');
   });
 
-  it('scales schemes whose weights do not add up to 100', () => {
-    expect(summarize([{ weight: 50, score: 80 }]).worstFinal).toBe(80);
+  it('counts weight missing from the scheme as work still to come', () => {
+    // Only the 50% midterm is listed so far: the other 50% isn't graded yet, not ignored.
+    const s = summarize([{ weight: 50, score: 80 }]);
+    expect(s.unlistedWeight).toBe(50);
+    expect(s.remainingWeight).toBe(50);
+    expect([s.worstFinal, s.bestFinal]).toEqual([40, 90]);
+    expect(s.requirements.find((r) => r.letter === 'A')).toEqual({ letter: 'A', needed: 90, status: 'possible' });
   });
 });
 
 describe('assignment planner (ST2)', () => {
   const tasks = (n: number, minutes = 60): PlannableTask[] =>
     Array.from({ length: n }, (_, i) => ({ id: i + 1, minutes, scheduledFor: '2026-10-05', pinned: false, done: false }));
-  const base = { today: '2026-10-05', dueDate: '2026-10-08', bufferDays: 1, capacity: () => 120 };
+  const base = { today: '2026-10-05', dueDate: '2026-10-08', bufferDays: 2, capacity: () => 120 };
 
-  it('spreads 3 problems over 3 days with a spare day before the deadline', () => {
+  it('schedules work as early as free time allows, keeping two spare days', () => {
     const plan = planTasks({ ...base, tasks: tasks(3) });
-    expect([...plan.dates.values()]).toEqual(['2026-10-05', '2026-10-06', '2026-10-07']);
-    expect(plan.lastWorkDay).toBe('2026-10-07');
+    expect([...plan.dates.values()]).toEqual(['2026-10-05', '2026-10-05', '2026-10-06']);
+    expect(plan.lastWorkDay).toBe('2026-10-06');
     expect(plan.tight || plan.overloaded).toBe(false);
   });
 
-  it('doubles up when there are more tasks than days', () => {
-    const plan = planTasks({ ...base, tasks: tasks(6) });
-    expect([...plan.dates.values()]).toEqual([
-      '2026-10-05',
-      '2026-10-05',
-      '2026-10-06',
-      '2026-10-06',
-      '2026-10-07',
-      '2026-10-07',
-    ]);
+  it('fills each day before moving to the next', () => {
+    const plan = planTasks({ ...base, dueDate: '2026-10-12', tasks: tasks(5) });
+    expect([...plan.dates.values()]).toEqual(['2026-10-05', '2026-10-05', '2026-10-06', '2026-10-06', '2026-10-07']);
   });
 
   it('skips days without free time', () => {
@@ -78,34 +77,61 @@ describe('assignment planner (ST2)', () => {
     expect([...plan.dates.values()]).toEqual(['2026-10-06', '2026-10-06']);
   });
 
+  it('uses free time set per weekday', () => {
+    const weekly = weeklyMinutes(null);
+    expect(weekly).toEqual(DEFAULT_WEEKLY_MINUTES);
+    expect(minutesOn(weekly, '2026-10-05')).toBe(90); // Monday
+    expect(minutesOn(weekly, '2026-10-10')).toBe(180); // Saturday
+    const plan = planTasks({ ...base, dueDate: '2026-10-13', tasks: tasks(4, 90), capacity: (d) => minutesOn(weekly, d) });
+    // Mon–Thu take one 90-minute task each.
+    expect([...plan.dates.values()]).toEqual(['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08']);
+  });
+
   it('keeps hand-placed tasks but moves missed ones', () => {
     const plan = planTasks({
       ...base,
       tasks: [
-        { id: 1, minutes: 60, scheduledFor: '2026-10-07', pinned: true, done: false },
+        { id: 1, minutes: 60, scheduledFor: '2026-10-06', pinned: true, done: false },
         { id: 2, minutes: 60, scheduledFor: '2026-10-01', pinned: true, done: false },
         { id: 3, minutes: 60, scheduledFor: '2026-10-01', pinned: false, done: true },
       ],
     });
-    expect(plan.dates.get(1)).toBe('2026-10-07');
+    expect(plan.dates.get(1)).toBe('2026-10-06');
     expect(plan.dates.get(2)).toBe('2026-10-05');
     expect(plan.dates.has(3)).toBe(false);
   });
 
-  it('reports when the buffer or the daily study time cannot be respected', () => {
-    expect(planTasks({ ...base, dueDate: '2026-10-05', tasks: tasks(1) }).tight).toBe(true);
+  it('reports when the buffer or the free study time cannot be respected', () => {
+    expect(planTasks({ ...base, dueDate: '2026-10-06', tasks: tasks(1) }).tight).toBe(true);
     expect(planTasks({ ...base, tasks: tasks(3), capacity: () => 30 }).overloaded).toBe(true);
   });
 });
 
 describe('group chat links (S2)', () => {
   it('detects the platform and normalizes the URL', () => {
-    expect(parseChatLink('http://chat.whatsapp.com/AbC123/')).toEqual({
+    expect(parseChatLink('http://chat.whatsapp.com/AbC123/?utm_source=x')).toEqual({
       url: 'https://chat.whatsapp.com/AbC123',
       platform: 'WhatsApp',
+      chatKey: 'whatsapp:AbC123',
     });
     expect(parseChatLink(' https://discord.gg/xyz#intro ')?.platform).toBe('Discord');
     expect(parseChatLink('https://www.example.com/group')?.platform).toBe('Other');
+  });
+
+  it('recognizes the same chat under different URLs', () => {
+    const key = (url: string) => parseChatLink(url)?.chatKey;
+    expect(key('https://discord.gg/abc')).toBe('discord:abc');
+    expect(key('https://discord.com/invite/abc?ref=x')).toBe('discord:abc');
+    expect(key('https://t.me/joinchat/Qwe')).toBe(key('https://t.me/+Qwe'));
+    expect(key('https://discord.gg/ABC')).not.toBe(key('https://discord.gg/abc')); // invite codes are case-sensitive
+    expect(key('https://teams.microsoft.com/l/chat?id=1')).not.toBe(key('https://teams.microsoft.com/l/chat?id=2'));
+  });
+
+  it('hides a link once reports reach 2 and outnumber "works"', () => {
+    expect(isHidden(1, 0)).toBe(false);
+    expect(isHidden(2, 0)).toBe(true);
+    expect(isHidden(2, 2)).toBe(false);
+    expect(isHidden(3, 2)).toBe(true);
   });
 
   it('rejects things that are not web links', () => {
@@ -115,11 +141,23 @@ describe('group chat links (S2)', () => {
   });
 });
 
+describe('course search (S1)', () => {
+  it('reads course codes with wildcards', () => {
+    expect(parseCourseQuery('COMP 2XX')).toEqual({ kind: 'code', subject: 'COMP', number: '2__' });
+    expect(parseCourseQuery('comp251')).toEqual({ kind: 'code', subject: 'COMP', number: '251' });
+    expect(parseCourseQuery('3**')).toEqual({ kind: 'code', subject: null, number: '3__' });
+    expect(parseCourseQuery('math 24')).toEqual({ kind: 'code', subject: 'MATH', number: '24_' });
+    expect(parseCourseQuery('COMP')).toEqual({ kind: 'text', words: ['comp'], subject: 'COMP' });
+    expect(parseCourseQuery('linear algebra')).toEqual({ kind: 'text', words: ['linear', 'algebra'], subject: null });
+  });
+});
+
 describe('accounts (G4)', () => {
-  it('lists missing password requirements', () => {
-    expect(passwordProblems('short1')).toEqual(['At least 8 characters']);
-    expect(passwordProblems('longenough')).toEqual(['At least one number']);
-    expect(passwordProblems('longenough1')).toEqual([]);
+  it('uses passphrase rules', () => {
+    expect(passwordProblems('short1')).toEqual(['At least 12 characters (a few words work well)']);
+    expect(passwordProblems('Password1234')).toEqual(['Not a common password']);
+    expect(passwordProblems('maya loves algorithms', 'maya.chen@mail.mcgill.ca')).toEqual(["Doesn't contain your name from your email"]);
+    expect(passwordProblems('purple goat on a bike', 'maya.chen@mail.mcgill.ca')).toEqual([]);
   });
 });
 

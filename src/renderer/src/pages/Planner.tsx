@@ -36,8 +36,9 @@ import {
 } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { Link, useSearchParams } from 'react-router';
+import { useSearchParams } from 'react-router';
 import { addDays, ymd } from '@shared/dates';
+import { DEFAULT_BUFFER_DAYS, weeklyMinutes } from '@shared/planner';
 import { Empty, Loading, PageHeader } from '../components/ui';
 import { dayLabel, fmtDateTime, fromNow, toDate } from '../lib/format';
 import { useAction, useMe } from '../lib/hooks';
@@ -48,13 +49,14 @@ import { t } from '../lib/i18n';
 type Assignment = Out<typeof rpc.planner.list>[number];
 type Task = Assignment['tasks'][number];
 
-// ST2: assignments split into tasks and spread over the days before they're due.
+// ST2: assignments split into tasks and scheduled as early as free study time allows.
 export function PlannerPage() {
   const me = useMe();
   const list = useQuery({ queryKey: ['planner', 'list'], queryFn: () => rpc.planner.list() });
   // "Add event/assignment" on the calendar links here with ?new=1.
   const [params, setParams] = useSearchParams();
   const [editing, setEditing] = useState<Assignment | 'new' | null>(params.get('new') ? 'new' : null);
+  const [editingTime, setEditingTime] = useState(false);
   const close = () => {
     setEditing(null);
     if (params.get('new')) setParams({}, { replace: true });
@@ -69,14 +71,14 @@ export function PlannerPage() {
         title={t('Assignment planner')}
         subtitle={
           <>
-            {t('Work is spread across the days before each deadline, within your {{minutes}} minutes of study time a day', {
-              minutes: me.studyMinutesPerDay,
+            {t('Tasks are scheduled as early as your free study time allows ({{hours}} h a week), so you finish ahead of each deadline', {
+              hours: Math.round(weeklyMinutes(me.weeklyStudyMinutes).reduce((a, b) => a + b, 0) / 6) / 10,
             })}{' '}
             (
-            <Anchor component={Link} to="/settings/account" size="sm">
+            <Anchor component="button" type="button" size="sm" onClick={() => setEditingTime(true)}>
               {t('change')}
             </Anchor>
-            ). {t('Missed tasks move forward automatically.')}
+            ). {t('Missed tasks move to your next free time automatically.')}
           </>
         }
         actions={
@@ -91,7 +93,7 @@ export function PlannerPage() {
       ) : !list.data?.length ? (
         <Card withBorder>
           <Empty icon={<IconChecklist size={22} />}>
-            {t('Add an assignment, split it into tasks (e.g. one per problem), and UniLink will schedule them before the deadline with a spare day as a buffer.')}
+            {t('Add an assignment, split it into tasks (e.g. one per problem), and UniLink will schedule them as soon as you have free time, keeping two spare days before the deadline.')}
           </Empty>
         </Card>
       ) : (
@@ -120,7 +122,48 @@ export function PlannerPage() {
         {editing === 'new' && <NewAssignmentForm onDone={close} />}
         {editing && editing !== 'new' && <EditAssignmentForm assignment={editing} onDone={close} />}
       </Modal>
+      <Modal opened={editingTime} onClose={() => setEditingTime(false)} title={t('Your free study time')}>
+        {editingTime && <StudyTimeForm onDone={() => setEditingTime(false)} />}
+      </Modal>
     </>
+  );
+}
+
+// ST2 "free time": minutes the planner may use on each weekday, Monday first on screen.
+export function StudyTimeForm({ onDone }: { onDone?: () => void }) {
+  const me = useMe();
+  const [minutes, setMinutes] = useState(weeklyMinutes(me.weeklyStudyMinutes));
+  const save = useAction(() => rpc.planner.setAvailability({ minutes }), {
+    success: 'Free time saved. Your plans were updated.',
+    onSuccess: () => onDone?.(),
+  });
+  const total = minutes.reduce((a, b) => a + b, 0);
+  return (
+    <Stack>
+      <Text size="sm" c="dimmed">
+        {t('Minutes you can study on each day of the week. Study sessions you join count toward them.')}
+      </Text>
+      <Group gap="xs" grow>
+        {[1, 2, 3, 4, 5, 6, 0].map((day) => (
+          <NumberInput
+            key={day}
+            label={dayjs().day(day).format('ddd')}
+            min={0}
+            max={960}
+            step={30}
+            hideControls
+            value={minutes[day]}
+            onChange={(v) => setMinutes((m) => m.map((x, i) => (i === day ? Number(v) || 0 : x)))}
+          />
+        ))}
+      </Group>
+      <Group justify="space-between">
+        <Text size="sm">{t('{{hours}} h a week', { hours: Math.round(total / 6) / 10 })}</Text>
+        <Button onClick={() => save.mutate()} loading={save.isPending}>
+          {t('Save free time')}
+        </Button>
+      </Group>
+    </Stack>
   );
 }
 
@@ -197,7 +240,7 @@ function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onE
         <Alert color="yellow" variant="light" icon={<IconAlertTriangle size={18} />} mb="md" p="xs">
           <Text size="sm">
             {a.tight && `${t('Some work lands on your buffer day before the deadline.')} `}
-            {a.overloaded && t('Some days have more work than your daily study time. Consider starting early or moving tasks.')}
+            {a.overloaded && t('Some days have more work than your free study time. Add free time or move tasks.')}
           </Text>
         </Alert>
       )}
@@ -281,7 +324,7 @@ function NewAssignmentForm({ onDone }: { onDone: () => void }) {
       title: '',
       classId: null as number | null,
       dueAt: dayjs().add(4, 'day').hour(23).minute(59).second(0).toDate() as Date | string | null,
-      bufferDays: 1,
+      bufferDays: DEFAULT_BUFFER_DAYS,
       notes: '',
       mode: 'parts' as 'parts' | 'custom',
       parts: 3,
@@ -371,7 +414,7 @@ function NewAssignmentForm({ onDone }: { onDone: () => void }) {
           )}
           <Text size="xs" c="dimmed" mt="xs">
             {t('{{count}} tasks', { count: tasks.length })} · {t('{{count}} working days before the deadline', { count: workDays })}
-            {workDays > 0 && tasks.length > 0 && ` · ${t('about {{count}} per day', { count: Math.ceil(tasks.length / workDays) })}`}
+            {workDays > 0 && tasks.length > 0 && ` · ${t('starting with your next free time')}`}
           </Text>
         </div>
 

@@ -1,24 +1,28 @@
-import { and, eq, ne, or, sql } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { parseChatLink } from '@shared/links';
+import { isHidden, LINK_PURPOSES, type LinkPurpose, parseChatLink } from '@shared/links';
 import type { DB } from '../db/client';
-import { chatLinkFlags, chatLinks, users } from '../db/schema';
+import { chatLinks, chatLinkVotes, classes, users } from '../db/schema';
 import { AppError, idSchema, procedure } from '../rpc/core';
 import { classLabel, notFound, requireMember } from './access';
 import { m, notify } from './notifications';
 
-// S2: group chat links per class.
-
-// Decision for "how are flagged links handled?": once this many classmates
-// report a link it's collapsed behind a warning; the owner fixing the URL clears the reports.
-export const FLAG_HIDE_THRESHOLD = 3;
+// S2 in version B:
+// - Links are shared with the class as soon as they're added (no private stage).
+// - Each link says what it's for (whole course, this section, a project team…).
+// - The same chat can't be added twice anywhere in the course, across all its sections,
+//   even under a different URL for the same invite.
+// - Classmates mark a link "still works" or report it. It's hidden once 2 or more report it
+//   and reports outnumber "works". The owner is told, and can mark it fixed to clear the reports.
 
 export const FLAG_REASONS = ['Expired', 'Broken', 'Not relevant', 'Spam or inappropriate'] as const;
+
+const purposes = Object.keys(LINK_PURPOSES) as [LinkPurpose, ...LinkPurpose[]];
 
 const linkInput = {
   url: z.string().trim().min(1, 'Paste the group chat link').max(500),
   label: z.string().trim().max(80),
-  isPublic: z.boolean(),
+  purpose: z.enum(purposes),
 };
 
 function parseOrThrow(url: string) {
@@ -27,13 +31,29 @@ function parseOrThrow(url: string) {
   return parsed;
 }
 
-function assertNotDuplicate(db: DB, classId: number, url: string, exceptId?: number) {
+// Same course and term, any section.
+function assertNotDuplicate(db: DB, classId: number, chatKey: string, exceptId?: number) {
+  const cls = db.select().from(classes).where(eq(classes.id, classId)).get() ?? notFound('class');
   const existing = db
-    .select({ id: chatLinks.id })
+    .select({ id: chatLinks.id, classId: chatLinks.classId, ownerName: users.name })
     .from(chatLinks)
-    .where(and(eq(chatLinks.classId, classId), eq(chatLinks.url, url), exceptId ? ne(chatLinks.id, exceptId) : undefined))
+    .innerJoin(classes, eq(chatLinks.classId, classes.id))
+    .innerJoin(users, eq(chatLinks.ownerId, users.id))
+    .where(
+      and(
+        eq(classes.courseId, cls.courseId),
+        eq(classes.term, cls.term),
+        eq(chatLinks.chatKey, chatKey),
+        exceptId ? ne(chatLinks.id, exceptId) : undefined,
+      ),
+    )
     .get();
-  if (existing) throw new AppError('This link has already been added to this class.', 'CONFLICT');
+  if (!existing) return;
+  if (existing.classId === classId) throw new AppError('This chat has already been added to this class.', 'CONFLICT');
+  throw new AppError('{{name}} already shared this chat in {{class}}.', 'CONFLICT', {
+    name: existing.ownerName,
+    class: classLabel(db, existing.classId) ?? '',
+  });
 }
 
 function ownLink(db: DB, userId: number, linkId: number) {
@@ -45,62 +65,81 @@ function ownLink(db: DB, userId: number, linkId: number) {
 function visibleLink(db: DB, userId: number, linkId: number) {
   const link = db.select().from(chatLinks).where(eq(chatLinks.id, linkId)).get() ?? notFound('link');
   requireMember(db, userId, link.classId);
-  if (!link.isPublic && link.ownerId !== userId) notFound('link');
   return link;
 }
 
+function tally(db: DB, linkId: number) {
+  const votes = db.select().from(chatLinkVotes).where(eq(chatLinkVotes.linkId, linkId)).all();
+  const reports = votes.filter((v) => v.vote === 'report').length;
+  return { reports, works: votes.length - reports };
+}
+
+function voteCount(vote: 'works' | 'report') {
+  return sql<number>`(select count(*) from ${chatLinkVotes} where ${chatLinkVotes.linkId} = ${chatLinks.id} and ${chatLinkVotes.vote} = ${vote})`.mapWith(
+    Number,
+  );
+}
+
 export const linksRouter = {
-  // S2.1: public links plus your own private ones.
+  // S2.1: platform, purpose, who added it, and what classmates say about it.
   list: procedure(z.object({ classId: idSchema }), ({ classId }, ctx) => {
     requireMember(ctx.db, ctx.userId, classId);
-    const flagCount = sql<number>`(select count(*) from ${chatLinkFlags} where ${chatLinkFlags.linkId} = ${chatLinks.id})`.mapWith(
-      Number,
-    );
-    const myFlag = sql<string | null>`(select ${chatLinkFlags.reason} from ${chatLinkFlags} where ${chatLinkFlags.linkId} = ${chatLinks.id} and ${chatLinkFlags.userId} = ${ctx.userId})`;
+    const myVote = sql<string | null>`(select ${chatLinkVotes.vote} from ${chatLinkVotes} where ${chatLinkVotes.linkId} = ${chatLinks.id} and ${chatLinkVotes.userId} = ${ctx.userId})`;
+    const myReason = sql<string | null>`(select ${chatLinkVotes.reason} from ${chatLinkVotes} where ${chatLinkVotes.linkId} = ${chatLinks.id} and ${chatLinkVotes.userId} = ${ctx.userId})`;
+    const lastWorked = sql<number | null>`(select max(${chatLinkVotes.createdAt}) from ${chatLinkVotes} where ${chatLinkVotes.linkId} = ${chatLinks.id} and ${chatLinkVotes.vote} = 'works')`;
     return ctx.db
       .select({
         id: chatLinks.id,
         url: chatLinks.url,
         platform: chatLinks.platform,
         label: chatLinks.label,
-        isPublic: chatLinks.isPublic,
+        purpose: chatLinks.purpose,
         createdAt: chatLinks.createdAt,
         ownerId: chatLinks.ownerId,
         ownerName: users.name,
-        flagCount,
-        myFlag,
+        reports: voteCount('report'),
+        works: voteCount('works'),
+        myVote,
+        myReason,
+        lastWorked,
       })
       .from(chatLinks)
       .innerJoin(users, eq(chatLinks.ownerId, users.id))
-      .where(and(eq(chatLinks.classId, classId), or(eq(chatLinks.isPublic, true), eq(chatLinks.ownerId, ctx.userId))))
-      .orderBy(chatLinks.platform, chatLinks.createdAt)
+      .where(eq(chatLinks.classId, classId))
+      .orderBy(chatLinks.purpose, chatLinks.createdAt)
       .all()
-      .map((l) => ({ ...l, mine: l.ownerId === ctx.userId, hidden: l.flagCount >= FLAG_HIDE_THRESHOLD }));
+      .map(({ lastWorked, ...l }) => ({
+        ...l,
+        purpose: l.purpose as LinkPurpose,
+        lastWorkedAt: lastWorked == null ? null : new Date(Number(lastWorked)),
+        mine: l.ownerId === ctx.userId,
+        hidden: isHidden(l.reports, l.works),
+      }));
   }),
 
-  // S2.2: links start private to whoever adds them; they choose when to share.
-  add: procedure(z.object({ classId: idSchema, ...linkInput }), ({ classId, url, label, isPublic }, ctx) => {
+  // S2.2: everyone in the class sees a link as soon as it's added.
+  add: procedure(z.object({ classId: idSchema, ...linkInput }), ({ classId, url, label, purpose }, ctx) => {
     requireMember(ctx.db, ctx.userId, classId);
     const parsed = parseOrThrow(url);
-    assertNotDuplicate(ctx.db, classId, parsed.url);
+    assertNotDuplicate(ctx.db, classId, parsed.chatKey);
     return ctx.db
       .insert(chatLinks)
-      .values({ classId, ownerId: ctx.userId, label, isPublic, ...parsed })
+      .values({ classId, ownerId: ctx.userId, label, purpose, isPublic: true, ...parsed })
       .returning({ id: chatLinks.id })
       .get();
   }),
 
-  // S2.5: only the owner edits or removes. A new URL clears old reports.
-  update: procedure(z.object({ linkId: idSchema, ...linkInput }), ({ linkId, url, label, isPublic }, ctx) => {
+  // S2.5: only the owner edits or removes. A new chat starts with a clean slate.
+  update: procedure(z.object({ linkId: idSchema, ...linkInput }), ({ linkId, url, label, purpose }, ctx) => {
     const link = ownLink(ctx.db, ctx.userId, linkId);
     const parsed = parseOrThrow(url);
-    assertNotDuplicate(ctx.db, link.classId, parsed.url, link.id);
+    assertNotDuplicate(ctx.db, link.classId, parsed.chatKey, link.id);
     ctx.db.transaction((tx) => {
       tx.update(chatLinks)
-        .set({ ...parsed, label, isPublic, updatedAt: ctx.now() })
+        .set({ ...parsed, label, purpose, updatedAt: ctx.now() })
         .where(eq(chatLinks.id, linkId))
         .run();
-      if (parsed.url !== link.url) tx.delete(chatLinkFlags).where(eq(chatLinkFlags.linkId, linkId)).run();
+      if (parsed.chatKey !== link.chatKey) tx.delete(chatLinkVotes).where(eq(chatLinkVotes.linkId, linkId)).run();
     });
   }),
 
@@ -109,35 +148,45 @@ export const linksRouter = {
     ctx.db.delete(chatLinks).where(eq(chatLinks.id, linkId)).run();
   }),
 
-  // S2.4
-  flag: procedure(z.object({ linkId: idSchema, reason: z.enum(FLAG_REASONS) }), ({ linkId, reason }, ctx) => {
-    const link = visibleLink(ctx.db, ctx.userId, linkId);
-    if (link.ownerId === ctx.userId) throw new AppError('You can edit or remove your own link instead.', 'FORBIDDEN');
-    const isNew = !ctx.db
-      .select({ linkId: chatLinkFlags.linkId })
-      .from(chatLinkFlags)
-      .where(and(eq(chatLinkFlags.linkId, linkId), eq(chatLinkFlags.userId, ctx.userId)))
-      .get();
-    ctx.db
-      .insert(chatLinkFlags)
-      .values({ linkId, userId: ctx.userId, reason })
-      .onConflictDoUpdate({ target: [chatLinkFlags.linkId, chatLinkFlags.userId], set: { reason } })
-      .run();
-    if (isNew) {
-      notify(ctx.db, link.ownerId, {
-        type: 'link-flagged',
-        title: m('Your {{platform}} link in {{class}} was reported', {
-          platform: link.platform,
-          class: classLabel(ctx.db, link.classId) ?? { t: 'a class' },
-        }),
-        body: m('Reason: {{reason}}. Check it still works, or update it to clear the reports.', { reason: { t: reason } }),
-        link: `/classes/${link.classId}/chats`,
-      });
-    }
+  // S2.4: "still works" or a report with a reason; voting again replaces your vote.
+  vote: procedure(
+    z.object({ linkId: idSchema, vote: z.enum(['works', 'report']), reason: z.enum(FLAG_REASONS).nullable() }),
+    ({ linkId, vote, reason }, ctx) => {
+      const link = visibleLink(ctx.db, ctx.userId, linkId);
+      if (link.ownerId === ctx.userId) throw new AppError('You can edit or remove your own link instead.', 'FORBIDDEN');
+      if (vote === 'report' && !reason) throw new AppError("Say what's wrong with the link.");
+      const before = tally(ctx.db, linkId);
+      ctx.db
+        .insert(chatLinkVotes)
+        .values({ linkId, userId: ctx.userId, vote, reason: vote === 'report' ? reason : null, createdAt: ctx.now() })
+        .onConflictDoUpdate({
+          target: [chatLinkVotes.linkId, chatLinkVotes.userId],
+          set: { vote, reason: vote === 'report' ? reason : null, createdAt: ctx.now() },
+        })
+        .run();
+      const after = tally(ctx.db, linkId);
+      if (!isHidden(before.reports, before.works) && isHidden(after.reports, after.works)) {
+        notify(ctx.db, link.ownerId, {
+          type: 'link-hidden',
+          title: m('Your {{platform}} link in {{class}} was hidden', {
+            platform: link.platform,
+            class: classLabel(ctx.db, link.classId) ?? { t: 'a class' },
+          }),
+          body: m('{{count}} classmates reported it. Fix the link, or mark it fixed if it works.', { count: after.reports }),
+          link: `/classes/${link.classId}/chats`,
+        });
+      }
+    },
+  ),
+
+  unvote: procedure(z.object({ linkId: idSchema }), ({ linkId }, ctx) => {
+    visibleLink(ctx.db, ctx.userId, linkId);
+    ctx.db.delete(chatLinkVotes).where(and(eq(chatLinkVotes.linkId, linkId), eq(chatLinkVotes.userId, ctx.userId))).run();
   }),
 
-  unflag: procedure(z.object({ linkId: idSchema }), ({ linkId }, ctx) => {
-    visibleLink(ctx.db, ctx.userId, linkId);
-    ctx.db.delete(chatLinkFlags).where(and(eq(chatLinkFlags.linkId, linkId), eq(chatLinkFlags.userId, ctx.userId))).run();
+  // The owner checked the chat and it's fine: reports are cleared, "works" votes stay.
+  markFixed: procedure(z.object({ linkId: idSchema }), ({ linkId }, ctx) => {
+    ownLink(ctx.db, ctx.userId, linkId);
+    ctx.db.delete(chatLinkVotes).where(and(eq(chatLinkVotes.linkId, linkId), eq(chatLinkVotes.vote, 'report'))).run();
   }),
 };

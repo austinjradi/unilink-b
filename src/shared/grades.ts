@@ -36,10 +36,14 @@ export interface Requirement {
 export interface GradeSummary {
   totalWeight: number;
   gradedWeight: number;
+  // Version B: weights that add up to less than 100% leave "unlisted" work, which counts as
+  // still to come (not graded yet) instead of the listed weights being scaled up to 100%.
+  unlistedWeight: number;
+  // Everything not graded yet, including unlisted work.
   remainingWeight: number;
   // Average on graded work only, in %.
   currentAverage: number | null;
-  // Final grade range if every remaining item scores 0% / 100%.
+  // Final grade range if everything left scores 0% / 100%.
   worstFinal: number;
   bestFinal: number;
   requirements: Requirement[];
@@ -47,24 +51,25 @@ export interface GradeSummary {
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
+function totals(items: GradedItem[]) {
+  const totalWeight = items.reduce((sum, i) => sum + i.weight, 0);
+  const gradedWeight = items.filter((i) => i.score != null).reduce((sum, i) => sum + i.weight, 0);
+  // Percentage points of the final grade already earned.
+  const earned = items.reduce((sum, i) => sum + (i.score == null ? 0 : (i.weight * i.score) / 100), 0);
+  return { totalWeight, gradedWeight, earned, remainingWeight: Math.max(0, 100 - gradedWeight) };
+}
+
 // "Explore different scenarios": the final grade if everything left averages `average`%.
 export function finalIfRemainingAverages(items: GradedItem[], average: number): number {
-  const totalWeight = items.reduce((sum, i) => sum + i.weight, 0);
-  if (!totalWeight) return 0;
-  const earned = items.reduce((sum, i) => sum + (i.score == null ? (i.weight * average) / 100 : (i.weight * i.score) / 100), 0);
-  return round1((earned / totalWeight) * 100);
+  const { earned, remainingWeight } = totals(items);
+  return round1(earned + (remainingWeight * average) / 100);
 }
 
 export function summarize(items: GradedItem[]): GradeSummary {
-  const totalWeight = items.reduce((sum, i) => sum + i.weight, 0);
-  const graded = items.filter((i) => i.score != null);
-  const gradedWeight = graded.reduce((sum, i) => sum + i.weight, 0);
-  const earned = graded.reduce((sum, i) => sum + (i.weight * (i.score ?? 0)) / 100, 0);
-  const remainingWeight = totalWeight - gradedWeight;
-  const scale = totalWeight > 0 ? 100 / totalWeight : 0;
+  const { totalWeight, gradedWeight, earned, remainingWeight } = totals(items);
 
   const requirements = MCGILL_SCALE.filter((g) => g.min > 0).map((g): Requirement => {
-    const pointsNeeded = g.min / scale - earned;
+    const pointsNeeded = g.min - earned;
     if (pointsNeeded <= 0) return { letter: g.letter, needed: 0, status: 'secured' };
     if (remainingWeight <= 0) return { letter: g.letter, needed: null, status: 'out-of-reach' };
     const needed = (pointsNeeded / remainingWeight) * 100;
@@ -74,10 +79,11 @@ export function summarize(items: GradedItem[]): GradeSummary {
   return {
     totalWeight: round1(totalWeight),
     gradedWeight: round1(gradedWeight),
+    unlistedWeight: round1(Math.max(0, 100 - totalWeight)),
     remainingWeight: round1(remainingWeight),
     currentAverage: gradedWeight > 0 ? round1((earned / gradedWeight) * 100) : null,
-    worstFinal: round1(earned * scale),
-    bestFinal: round1((earned + remainingWeight) * scale),
+    worstFinal: round1(earned),
+    bestFinal: round1(earned + remainingWeight),
     requirements,
   };
 }

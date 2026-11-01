@@ -38,9 +38,8 @@ describe('translate()', () => {
     expect(translate('fr', '{{count}} credits', { count: 1 })).toBe('1 crédit');
     expect(translate('fr', '{{count}} credits', { count: 0 })).toBe('0 crédit'); // French: 0 is singular
     expect(translate('en', '{{count}} credits', { count: 0 })).toBe('0 credits');
-    expect(translate('fr', 'Reason: {{reason}}. Check it still works, or update it to clear the reports.', { reason: { t: 'Expired' } })).toBe(
-      'Raison : Expiré. Vérifiez qu’il fonctionne toujours, ou mettez-le à jour pour effacer les signalements.',
-    );
+    expect(translate('fr', 'Now {{when}} · {{place}}', { when: 'demain', place: { t: 'Online' } })).toBe('Maintenant le demain · En ligne');
+    expect(translate('fr', '{{count}} classmates say it works', { count: 2 })).toBe('2 camarades disent qu’il fonctionne');
     expect(termLabel('fr', 'Fall 2026')).toBe('Automne 2026');
   });
 

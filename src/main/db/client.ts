@@ -2,7 +2,7 @@ import type { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core';
 import { drizzle } from 'drizzle-orm/sql-js';
 import type { Database } from 'sql.js';
 import { TERMS } from '@shared/dates';
-import { CATALOGUE } from './catalogue';
+import { CATALOGUE, sectionsFor } from './catalogue';
 import { MIGRATIONS } from './migrations';
 import * as schema from './schema';
 
@@ -30,9 +30,9 @@ function seedCatalogue(db: ReturnType<typeof drizzle<typeof schema>>) {
       .values(CATALOGUE.map(([subject, number, title, credits]) => ({ subject, number, title, credits })))
       .onConflictDoNothing()
       .run();
-    const courses = tx.select({ id: schema.courses.id }).from(schema.courses).all();
+    const courses = tx.select({ id: schema.courses.id, number: schema.courses.number }).from(schema.courses).all();
     tx.insert(schema.classes)
-      .values(courses.flatMap((c) => TERMS.map((term) => ({ courseId: c.id, term }))))
+      .values(courses.flatMap((c) => TERMS.flatMap((term) => sectionsFor(c.number).map((section) => ({ courseId: c.id, term, section })))))
       .onConflictDoNothing()
       .run();
   });

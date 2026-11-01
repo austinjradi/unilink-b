@@ -4,6 +4,7 @@ import { useDebouncedValue } from '@mantine/hooks';
 import { IconCertificate, IconListDetails, IconSchool, IconSearch, IconUsers } from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router';
+import { LEVELS } from '@shared/courseQuery';
 import { CURRENT_TERM } from '@shared/dates';
 import { Empty, Loading, PageHeader, SectionCard, Tag } from '../components/ui';
 import { useAction } from '../lib/hooks';
@@ -14,7 +15,7 @@ import { t, term } from '../lib/i18n';
 const TABS = ['mine', 'find', 'record', 'degree'] as const;
 type CoursesTab = (typeof TABS)[number];
 
-// S1 (my courses, find & join) plus A1/A2 (record and degree plan).
+// S1 (my courses, find & join a section) plus A1/A2 (record and degree plan).
 export function CoursesPage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -76,7 +77,7 @@ function MyCourses() {
         <Card key={c.id} component={Link} to={`/classes/${c.id}`} className="clickable" padding="lg">
           <Group justify="space-between" mb="xs">
             <Text fw={700} fz={24} className="display">
-              {c.subject} {c.number}
+              {c.code}
             </Text>
             <Tag>{term(c.term)}</Tag>
           </Group>
@@ -95,18 +96,21 @@ function FindCourses() {
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [term, setTerm] = useState<string>(CURRENT_TERM);
-  const [subject, setSubject] = useState<string | null>(null);
+  const [level, setLevel] = useState<string | null>(null);
   const [debounced] = useDebouncedValue(query, 200);
 
   const terms = useQuery({ queryKey: ['catalogue', 'terms'], queryFn: () => rpc.catalogue.terms() });
-  const subjects = useQuery({ queryKey: ['catalogue', 'subjects'], queryFn: () => rpc.catalogue.subjects() });
   const results = useQuery({
-    queryKey: ['catalogue', 'search', debounced, term, subject],
-    queryFn: () => rpc.catalogue.search({ query: debounced, term, subject }),
+    queryKey: ['catalogue', 'search', debounced, term, level],
+    queryFn: () => rpc.catalogue.search({ query: debounced, term, level: level ? Number(level) : null }),
     placeholderData: keepPreviousData,
   });
   const join = useAction((classId: number) => rpc.classes.join({ classId }), {
     success: 'Joined! Your classmates are here.',
+    onSuccess: (_data, classId) => navigate(`/classes/${classId}`),
+  });
+  const switchTo = useAction((classId: number) => rpc.classes.switchSection({ classId }), {
+    success: 'Switched sections',
     onSuccess: (_data, classId) => navigate(`/classes/${classId}`),
   });
 
@@ -114,8 +118,9 @@ function FindCourses() {
     <SectionCard title={t('Find your courses')}>
       <Group mb="md" align="flex-end">
         <TextInput
-          label={t('Course code or name')}
-          placeholder={t('e.g. COMP 251 or algorithms')}
+          label={t('Course code or title')}
+          placeholder={t('e.g. COMP 2XX, MATH 240 or algorithms')}
+          description={t('X stands for any digit: "COMP 3XX" lists every 300-level COMP course.')}
           leftSection={<IconSearch size={16} />}
           radius="xl"
           value={query}
@@ -124,7 +129,16 @@ function FindCourses() {
           autoFocus
         />
         <Select label={t('Term')} radius="xl" data={terms.data ?? [CURRENT_TERM]} value={term} onChange={(v) => v && setTerm(v)} w={160} allowDeselect={false} />
-        <Select label={t('Subject')} radius="xl" placeholder={t('Any')} data={subjects.data ?? []} value={subject} onChange={setSubject} clearable searchable w={140} />
+        <Select
+          label={t('Level')}
+          radius="xl"
+          placeholder={t('Any')}
+          data={LEVELS.map((l) => ({ value: String(l), label: t('{{level}}-level', { level: l }) }))}
+          value={level}
+          onChange={setLevel}
+          clearable
+          w={140}
+        />
       </Group>
       {results.isPending ? (
         <Loading />
@@ -132,7 +146,7 @@ function FindCourses() {
         <Table highlightOnHover verticalSpacing="sm">
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>{t('Course')}</Table.Th>
+              <Table.Th>{t('Section')}</Table.Th>
               <Table.Th>{t('Title')}</Table.Th>
               <Table.Th>{t('Credits')}</Table.Th>
               <Table.Th>{t('Students')}</Table.Th>
@@ -143,7 +157,7 @@ function FindCourses() {
             {results.data.map((c) => (
               <Table.Tr key={c.id}>
                 <Table.Td fw={700} style={{ whiteSpace: 'nowrap' }}>
-                  {c.subject} {c.number}
+                  {c.code}
                 </Table.Td>
                 <Table.Td>{c.title}</Table.Td>
                 <Table.Td>{c.credits}</Table.Td>
@@ -152,6 +166,10 @@ function FindCourses() {
                   {c.joined ? (
                     <Button size="xs" variant="light" component={Link} to={`/classes/${c.id}`}>
                       {t('Open')}
+                    </Button>
+                  ) : c.otherSectionId ? (
+                    <Button size="xs" variant="default" onClick={() => switchTo.mutate(c.id)} loading={switchTo.isPending && switchTo.variables === c.id}>
+                      {t('Switch here')}
                     </Button>
                   ) : (
                     <Button size="xs" onClick={() => join.mutate(c.id)} loading={join.isPending && join.variables === c.id}>
@@ -165,7 +183,7 @@ function FindCourses() {
         </Table>
       ) : (
         <Empty>
-          {t('No courses match. Try a code like "MATH 240". The built-in catalogue is a sample of McGill courses for now.')}
+          {t('No sections match. Try a code like "MATH 240" or "COMP 2XX". The built-in catalogue is a sample of McGill courses for now.')}
           <Badge ml={6} size="xs" variant="light" color="yellow">
             {t('sample')}
           </Badge>

@@ -68,7 +68,7 @@ export function CalculatorPage() {
             <Select
               radius="xl"
               w={220}
-              data={classes.data.map((c) => ({ value: String(c.id), label: `${c.subject} ${c.number}` }))}
+              data={classes.data.map((c) => ({ value: String(c.id), label: c.code }))}
               value={chosen ? String(chosen) : null}
               onChange={(v) => v && setParams({ class: v })}
               allowDeselect={false}

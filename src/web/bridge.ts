@@ -17,7 +17,7 @@ const DB_KEY = 'db';
 
 // Other tabs on this site have their own copy of the database. Each saved copy is
 // sent to them, so the newest state wins everywhere (open two tabs to be two classmates).
-const channel = 'BroadcastChannel' in window ? new BroadcastChannel('unilink') : null;
+const channel = 'BroadcastChannel' in window ? new BroadcastChannel('unilink-b') : null;
 
 let SQL: SqlJsStatic;
 let sqlite: Database;

@@ -3,8 +3,8 @@ const plural = (key: string, one: string, other = key) => ({ [`${key}_one`]: one
 
 export const EN: Record<string, string> = {
   ...plural('+{{count}} more', '+{{count}} more'),
+  ...plural('+{{count}} waiting', '+{{count}} waiting'),
   ...plural('(skipped {{count}} past or duplicate)', '(skipped {{count}} past or duplicate)'),
-  ...plural('({{count}} already in)', '({{count}} already in)'),
   ...plural('Added {{count}} current classes', 'Added {{count}} current class'),
   ...plural('Choose {{count}} credits from:', 'Choose {{count}} credit from:'),
   ...plural('Email outbox ({{count}})', 'Email outbox ({{count}})'),
@@ -15,8 +15,8 @@ export const EN: Record<string, string> = {
   ),
   ...plural('Finished or past due ({{count}})', 'Finished or past due ({{count}})'),
   ...plural('Goat reactions: {{count}}', 'Goat reactions: {{count}}'),
+  ...plural('Hidden after reports ({{count}})', 'Hidden after reports ({{count}})'),
   ...plural('Imported {{count}} deadlines', 'Imported {{count}} deadline'),
-  ...plural('Invited {{count}} classmates', 'Invited {{count}} classmate'),
   ...plural('Later ({{count}})', 'Later ({{count}})'),
   ...plural('Planned {{count}} tasks before the deadline', 'Planned {{count}} task before the deadline'),
   ...plural(
@@ -26,7 +26,6 @@ export const EN: Record<string, string> = {
   ...plural('Replies: {{count}}', 'Replies: {{count}}'),
   ...plural('Reported by {{count}} classmates', 'Reported by {{count}} classmate'),
   ...plural('You have {{count}} tasks for today', 'You have {{count}} task for today'),
-  ...plural('about {{count}} per day', 'about {{count}} per day'),
   ...plural('more ({{count}})', 'more ({{count}})'),
   ...plural('{{count}} buffer days', '{{count}} buffer day'),
   ...plural(
@@ -34,14 +33,22 @@ export const EN: Record<string, string> = {
     '{{count}} credit from other courses counts as an elective toward the {{total}}-credit total.',
   ),
   ...plural('{{count}} classes', '{{count}} class'),
+  ...plural(
+    '{{count}} classmates reported it. Fix the link, or mark it fixed if it works.',
+    '{{count}} classmate reported it. Fix the link, or mark it fixed if it works.',
+  ),
+  ...plural('{{count}} classmates say it works', '{{count}} classmate says it works'),
   ...plural('{{count}} complementary credits', '{{count}} complementary credit'),
   ...plural('{{count}} credits', '{{count}} credit'),
   ...plural('{{count}} credits toward the total', '{{count}} credit toward the total'),
   ...plural('{{count}} d. left', '{{count}} d.\nleft', '{{count}} d.\nleft'),
-  ...plural('{{count}} going', '{{count}} going'),
-  ...plural('{{count}} invites pending', '{{count}} invite pending'),
   ...plural('{{count}} new notifications', '{{count}} new notification'),
   ...plural('{{count}} of {{capacity}} going', '{{count}} of {{capacity}} going'),
+  ...plural('{{count}} on the waitlist', '{{count}} on the waitlist'),
+  ...plural(
+    '{{count}} people are already going. Pick a limit of at least that.',
+    '{{count}} person is already going. Pick a limit of at least that.',
+  ),
   ...plural('{{count}} planned tasks left', '{{count}} planned task left'),
   ...plural('{{count}} required courses', '{{count}} required course'),
   ...plural('{{count}} students from {{code}} are on UniLink.', '{{count}} student from {{code}} is on UniLink.'),

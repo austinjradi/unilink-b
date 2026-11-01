@@ -1,15 +1,15 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { and, asc, eq, gte, isNotNull, isNull, lt } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, lt, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { addDays, atTime, eachDay, parseYmd, termRange, ymd } from '@shared/dates';
 import { translate } from '@shared/i18n';
 import { buildCalendar, type IcsEvent, parseCalendar } from '@shared/ics';
 import type { DB } from '../db/client';
 import {
-  assessments,
   classes,
   classMeetings,
   courses,
+  deadlineDone,
   deadlines,
   enrollments,
   plannerAssignments,
@@ -19,9 +19,13 @@ import {
   users,
 } from '../db/schema';
 import { AppError, idSchema, nonEmpty, procedure } from '../rpc/core';
-import { notFound, requireMember } from './access';
+import { classLabels, FORMER_STUDENT_EMAIL, notFound, requireMember } from './access';
+import { gradedItems } from './courses';
 
 // A3: one calendar for class times, deadlines, exams, study sessions and planned work.
+// In version B a deadline added to a class is shared with the whole section (one person
+// adds "Assignment 2", everyone sees it); deadlines with no class stay private. Each
+// student checks shared deadlines off for themselves.
 // G2: export to Google Calendar (.ics) and import from myCourses (.ics).
 
 export const DEADLINE_KINDS = ['assignment', 'exam', 'quiz', 'other'] as const;
@@ -38,8 +42,10 @@ export type CalendarEvent = {
   classLabel: string | null;
   location: string;
   done: boolean;
-  // Set for the student's own deadlines, which can be checked off (ST3).
+  // Set for deadlines, which can be checked off (ST3).
   deadlineId: number | null;
+  // Who added a shared class deadline (null for your own).
+  addedBy: string | null;
 };
 
 const ymdSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -52,25 +58,50 @@ const deadlineFields = {
   notes: z.string().trim().max(2000),
 };
 
-function labels(db: DB) {
-  return new Map(
-    db
-      .select({ id: classes.id, subject: courses.subject, number: courses.number })
-      .from(classes)
-      .innerJoin(courses, eq(classes.courseId, courses.id))
-      .all()
-      .map((c) => [c.id, `${c.subject} ${c.number}`]),
-  );
+const labels = classLabels;
+
+function myClassIds(db: DB, userId: number) {
+  return db.select({ id: enrollments.classId }).from(enrollments).where(eq(enrollments.userId, userId));
 }
 
-function myMeetings(db: DB, userId: number) {
+// The section's class times, for every class the student is in.
+export function myMeetings(db: DB, userId: number) {
   return db
     .select({ meeting: classMeetings, term: classes.term })
     .from(classMeetings)
     .innerJoin(classes, eq(classMeetings.classId, classes.id))
     .innerJoin(enrollments, and(eq(enrollments.classId, classes.id), eq(enrollments.userId, userId)))
-    .where(eq(classMeetings.userId, userId))
     .all();
+}
+
+// Your private deadlines plus the shared deadlines of every class you're in, with whether
+// you've checked each one off.
+export function visibleDeadlines(db: DB, userId: number, from?: Date, to?: Date) {
+  return db
+    .select({
+      deadline: deadlines,
+      doneAt: deadlineDone.doneAt,
+      addedByName: users.name,
+      addedByEmail: users.email,
+    })
+    .from(deadlines)
+    .innerJoin(users, eq(deadlines.userId, users.id))
+    .leftJoin(deadlineDone, and(eq(deadlineDone.deadlineId, deadlines.id), eq(deadlineDone.userId, userId)))
+    .where(
+      and(
+        or(and(isNull(deadlines.classId), eq(deadlines.userId, userId)), inArray(deadlines.classId, myClassIds(db, userId))),
+        from ? gte(deadlines.dueAt, from) : undefined,
+        to ? lt(deadlines.dueAt, to) : undefined,
+      ),
+    )
+    .orderBy(asc(deadlines.dueAt))
+    .all()
+    .map(({ deadline, doneAt, addedByName, addedByEmail }) => ({
+      ...deadline,
+      done: doneAt != null,
+      mine: deadline.userId === userId,
+      addedBy: deadline.userId === userId ? null : addedByEmail === FORMER_STUDENT_EMAIL ? '' : addedByName,
+    }));
 }
 
 function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] {
@@ -96,15 +127,12 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
         location: m.location,
         done: false,
         deadlineId: null,
+        addedBy: null,
       });
     }
   }
 
-  for (const d of db
-    .select()
-    .from(deadlines)
-    .where(and(eq(deadlines.userId, userId), gte(deadlines.dueAt, from), lt(deadlines.dueAt, to)))
-    .all()) {
+  for (const d of visibleDeadlines(db, userId, from, to)) {
     events.push({
       key: `deadline-${d.id}`,
       kind: 'deadline',
@@ -115,28 +143,29 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
       allDay: false,
       classLabel: labelOf(d.classId),
       location: '',
-      done: d.completedAt != null,
+      done: d.done,
       deadlineId: d.id,
+      addedBy: d.addedBy,
     });
   }
 
-  for (const a of db
-    .select()
-    .from(assessments)
-    .where(and(eq(assessments.userId, userId), isNotNull(assessments.dueAt), gte(assessments.dueAt, from), lt(assessments.dueAt, to)))
-    .all()) {
+  // Dated parts of each section's shared grading scheme; done once you have a mark.
+  const classIds = myClassIds(db, userId).all().map((r) => r.id);
+  for (const a of classIds.flatMap((classId) => gradedItems(db, userId, classId))) {
+    if (!a.dueAt || a.dueAt < from || a.dueAt >= to) continue;
     events.push({
       key: `assessment-${a.id}`,
       kind: 'deadline',
       detail: 'graded',
       title: `${a.name} (${a.weight}%)`,
-      start: a.dueAt!,
+      start: a.dueAt,
       end: null,
       allDay: false,
       classLabel: labelOf(a.classId),
       location: '',
       done: a.score != null,
       deadlineId: null,
+      addedBy: null,
     });
   }
 
@@ -157,6 +186,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
       location: '',
       done: false,
       deadlineId: null,
+      addedBy: null,
     });
   }
 
@@ -184,6 +214,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
       location: '',
       done: task.doneAt != null,
       deadlineId: null,
+      addedBy: null,
     });
   }
 
@@ -216,6 +247,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
       location: s.location,
       done: false,
       deadlineId: null,
+      addedBy: null,
     });
   }
 
@@ -223,13 +255,15 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
 }
 
 function ownDeadline(db: DB, userId: number, id: number) {
-  return (
-    db
-      .select()
-      .from(deadlines)
-      .where(and(eq(deadlines.id, id), eq(deadlines.userId, userId)))
-      .get() ?? notFound('deadline')
-  );
+  const row = db.select().from(deadlines).where(eq(deadlines.id, id)).get() ?? notFound('deadline');
+  if (row.userId !== userId) throw new AppError('Only the person who added this deadline can change it.', 'FORBIDDEN');
+  return row;
+}
+
+function seenDeadline(db: DB, userId: number, id: number) {
+  const row = db.select().from(deadlines).where(eq(deadlines.id, id)).get() ?? notFound('deadline');
+  if (row.classId == null ? row.userId !== userId : (requireMember(db, userId, row.classId), false)) notFound('deadline');
+  return row;
 }
 
 function guessKind(title: string): (typeof DEADLINE_KINDS)[number] {
@@ -253,13 +287,10 @@ export const calendarRouter = {
 
   deadlines: procedure(z.void(), (_input, ctx) => {
     const label = labels(ctx.db);
-    return ctx.db
-      .select()
-      .from(deadlines)
-      .where(and(eq(deadlines.userId, ctx.userId), gte(deadlines.dueAt, parseYmd(addDays(ymd(ctx.now()), -7)))))
-      .orderBy(asc(deadlines.dueAt))
-      .all()
-      .map((d) => ({ ...d, classLabel: d.classId ? (label.get(d.classId) ?? null) : null }));
+    return visibleDeadlines(ctx.db, ctx.userId, parseYmd(addDays(ymd(ctx.now()), -7))).map((d) => ({
+      ...d,
+      classLabel: d.classId ? (label.get(d.classId) ?? null) : null,
+    }));
   }),
 
   addDeadline: procedure(z.object(deadlineFields), (fields, ctx) => {
@@ -276,14 +307,12 @@ export const calendarRouter = {
     ctx.db.update(deadlines).set(fields).where(eq(deadlines.id, id)).run();
   }),
 
-  // ST3: checked off from the to-do list.
+  // ST3: checked off from the to-do list, just for you.
   setDeadlineDone: procedure(z.object({ id: idSchema, done: z.boolean() }), ({ id, done }, ctx) => {
-    ownDeadline(ctx.db, ctx.userId, id);
-    ctx.db
-      .update(deadlines)
-      .set({ completedAt: done ? ctx.now() : null })
-      .where(eq(deadlines.id, id))
-      .run();
+    seenDeadline(ctx.db, ctx.userId, id);
+    const key = and(eq(deadlineDone.deadlineId, id), eq(deadlineDone.userId, ctx.userId));
+    if (!done) ctx.db.delete(deadlineDone).where(key).run();
+    else ctx.db.insert(deadlineDone).values({ deadlineId: id, userId: ctx.userId, doneAt: ctx.now() }).onConflictDoNothing().run();
   }),
 
   removeDeadline: procedure(z.object({ id: idSchema }), ({ id }, ctx) => {
@@ -355,14 +384,8 @@ export const calendarRouter = {
         .all()
         .map((c) => [`${c.subject}${c.number}`, c.id]),
     );
-    const existing = new Set(
-      ctx.db
-        .select({ title: deadlines.title, dueAt: deadlines.dueAt })
-        .from(deadlines)
-        .where(eq(deadlines.userId, ctx.userId))
-        .all()
-        .map((d) => `${d.title}|${d.dueAt.getTime()}`),
-    );
+    // Includes deadlines classmates already shared, so the section never gets two copies.
+    const existing = new Set(visibleDeadlines(ctx.db, ctx.userId).map((d) => `${d.title}|${d.dueAt.getTime()}`));
 
     const cutoff = ctx.now().getTime() - 86_400_000;
     let imported = 0;

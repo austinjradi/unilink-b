@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button, Group, Modal, Title } from '@mantine/core';
 import { IconPlus, IconUsersGroup } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { SessionForm, SessionList, SessionsCard } from '../../components/Sessions';
+import { JoinByCode, SessionForm, SessionList, SessionsCard } from '../../components/Sessions';
 import { Empty, Loading } from '../../components/ui';
 import { rpc } from '../../lib/rpc';
 import { t } from '../../lib/i18n';
@@ -16,9 +16,12 @@ export function StudySessions({ classId }: { classId: number }) {
     <>
       <Group justify="space-between" mb="md">
         <Title order={2}>{t('Study Sessions')}</Title>
-        <Button leftSection={<IconPlus size={16} />} onClick={() => setCreating(true)}>
-          {t('Create your study session')}
-        </Button>
+        <Group gap="sm">
+          <JoinByCode />
+          <Button leftSection={<IconPlus size={16} />} onClick={() => setCreating(true)}>
+            {t('Create your study session')}
+          </Button>
+        </Group>
       </Group>
       <SessionsCard>
         {sessions.isPending ? (
@@ -26,7 +29,7 @@ export function StudySessions({ classId }: { classId: number }) {
         ) : (
           <SessionList
             sessions={sessions.data ?? []}
-            empty={<Empty icon={<IconUsersGroup size={22} />}>{t('No sessions planned. Create one and invite your classmates!')}</Empty>}
+            empty={<Empty icon={<IconUsersGroup size={22} />}>{t('No open sessions planned. Create one and share its invite code!')}</Empty>}
           />
         )}
       </SessionsCard>

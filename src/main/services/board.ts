@@ -1,22 +1,24 @@
-import { and, asc, desc, eq, gte, inArray, like, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNull, like, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { goatFor } from '@shared/goat';
 import type { DB } from '../db/client';
 import { classes, courses, enrollments, postAudience, postReactions, posts, replies, replyReactions, users } from '../db/schema';
 import { AppError, idSchema, nonEmpty, procedure } from '../rpc/core';
-import { notFound, requireMember } from './access';
+import { FORMER_STUDENT_EMAIL, notFound, requireMember, sectionCode } from './access';
 import { enrolledUsersByEmail } from './classes';
 import { m, notify, raw } from './notifications';
 
-// S4: Ed-style discussion board. Posts have a class, a type ("topic": Assignment,
-// Midterm, Just yapping…), 🐐 reactions and threaded replies, and are visible to the
-// whole class or only to selected classmates. The home feed shows posts from all
-// of a student's classes.
+// S4 in version B: Ed-style, closer to a Q&A site. A post is a question or a note, filed
+// under one of a fixed set of topics. Replies are one flat list; whoever asked a question
+// can accept one reply as the answer, which resolves it and shows that answer first.
+// Deleting a post that has replies keeps the thread and blanks the post.
+// Posts are visible to the whole class or only to selected classmates; 🐐 reactions stay.
 
-export const SUGGESTED_TOPICS = ['Assignment', 'Midterm', 'Final', 'Lecture', 'Study group', 'Just yapping'];
+export const SUGGESTED_TOPICS = ['Lectures', 'Assignments', 'Exams', 'Labs and tutorials', 'Logistics', 'Off-topic'];
 
 const postFields = {
-  topic: nonEmpty('Type', 60),
+  kind: z.enum(['question', 'note']),
+  topic: z.enum(SUGGESTED_TOPICS as [string, ...string[]], { message: 'Pick a topic' }),
   title: nonEmpty('Title', 200),
   body: nonEmpty('Post', 10_000),
 };
@@ -47,6 +49,7 @@ function visiblePost(db: DB, userId: number, postId: number) {
 function ownPost(db: DB, userId: number, postId: number) {
   const post = db.select().from(posts).where(eq(posts.id, postId)).get() ?? notFound('post');
   if (post.authorId !== userId) throw new AppError('You can only change your own posts.', 'FORBIDDEN');
+  if (post.deletedAt) throw new AppError('This post was deleted.');
   return post;
 }
 
@@ -62,27 +65,17 @@ function audienceOf(db: DB, postId: number) {
 
 const authorColumns = { authorId: users.id, authorName: users.name, authorEmail: users.email, authorAvatar: users.avatar };
 
-const withGoat = <T extends { authorId: number; authorAvatar: unknown }>({ authorAvatar, ...row }: T) => ({
-  ...row,
-  authorGoat: goatFor(row.authorId, authorAvatar as never),
-});
-
-const classLabel = sql<string>`${courses.subject} || ' ' || ${courses.number}`;
+// Former students (deleted accounts) are shown without a name, email or goat outfit.
+const withGoat = <T extends { authorId: number; authorAvatar: unknown; authorEmail: string }>({ authorAvatar, ...row }: T) => {
+  const former = row.authorEmail === FORMER_STUDENT_EMAIL;
+  return { ...row, authorEmail: former ? '' : row.authorEmail, formerStudent: former, authorGoat: goatFor(row.authorId, former ? null : (authorAvatar as never)) };
+};
 
 export const boardRouter = {
-  // Post types used so far, plus the usual ones, for the filters and the composer.
+  // The fixed topics, for the filters and the composer.
   topics: procedure(z.object({ classId: idSchema.nullable() }), ({ classId }, ctx) => {
     if (classId) requireMember(ctx.db, ctx.userId, classId);
-    const ids = classId ? [classId] : myClassIds(ctx.db, ctx.userId);
-    const used = ids.length
-      ? ctx.db
-          .selectDistinct({ topic: posts.topic })
-          .from(posts)
-          .where(and(inArray(posts.classId, ids), canSee(ctx.userId)))
-          .all()
-          .map((r) => r.topic)
-      : [];
-    return [...new Set([...SUGGESTED_TOPICS, ...used])];
+    return SUGGESTED_TOPICS;
   }),
 
   // One class's board, or the home feed across every class the student is in.
@@ -92,8 +85,10 @@ export const boardRouter = {
       topics: z.array(z.string()),
       since: z.enum(['today', 'week', 'month']).nullable(),
       search: z.string().trim().max(100),
+      // Only questions nobody has answered yet.
+      unresolved: z.boolean().default(false),
     }),
-    ({ classIds, topics, since, search }, ctx) => {
+    ({ classIds, topics, since, search, unresolved }, ctx) => {
       const mine = myClassIds(ctx.db, ctx.userId);
       const ids = classIds ? classIds.filter((id) => mine.includes(id)) : mine;
       if (classIds?.length === 1 && !ids.length) requireMember(ctx.db, ctx.userId, classIds[0]);
@@ -112,11 +107,14 @@ export const boardRouter = {
         .select({
           id: posts.id,
           classId: posts.classId,
-          classLabel,
+          classLabel: sectionCode,
+          kind: posts.kind,
           topic: posts.topic,
           title: posts.title,
           body: posts.body,
           visibility: posts.visibility,
+          acceptedReplyId: posts.acceptedReplyId,
+          deletedAt: posts.deletedAt,
           createdAt: posts.createdAt,
           editedAt: posts.editedAt,
           ...authorColumns,
@@ -135,6 +133,7 @@ export const boardRouter = {
             topics.length ? inArray(posts.topic, topics) : undefined,
             from ? gte(posts.createdAt, from) : undefined,
             search ? or(like(posts.title, term), like(posts.body, term)) : undefined,
+            unresolved ? and(eq(posts.kind, 'question'), isNull(posts.acceptedReplyId), isNull(posts.deletedAt)) : undefined,
           ),
         )
         .orderBy(desc(posts.createdAt), desc(posts.id))
@@ -148,14 +147,14 @@ export const boardRouter = {
     const post = visiblePost(ctx.db, ctx.userId, postId);
     const writer = ctx.db.select().from(users).where(eq(users.id, post.authorId)).get();
     const label = ctx.db
-      .select({ label: classLabel })
+      .select({ label: sectionCode })
       .from(classes)
       .innerJoin(courses, eq(classes.courseId, courses.id))
       .where(eq(classes.id, post.classId))
       .get()?.label;
     const reactions = ctx.db.select().from(postReactions).where(eq(postReactions.postId, postId)).all();
     const replyRows = ctx.db
-      .select({ id: replies.id, parentId: replies.parentId, body: replies.body, createdAt: replies.createdAt, ...authorColumns })
+      .select({ id: replies.id, body: replies.body, createdAt: replies.createdAt, ...authorColumns })
       .from(replies)
       .innerJoin(users, eq(replies.authorId, users.id))
       .where(eq(replies.postId, postId))
@@ -168,23 +167,26 @@ export const boardRouter = {
           .where(inArray(replyReactions.replyId, replyRows.map((r) => r.id)))
           .all()
       : [];
+    const author = withGoat({ authorId: post.authorId, authorName: writer?.name ?? '', authorEmail: writer?.email ?? FORMER_STUDENT_EMAIL, authorAvatar: writer?.avatar });
 
     return {
       ...post,
+      ...author,
       classLabel: label ?? '',
-      authorName: writer?.name ?? 'Deleted user',
-      authorEmail: writer?.email ?? '',
-      authorGoat: goatFor(post.authorId, writer?.avatar),
       mine: post.authorId === ctx.userId,
       goats: reactions.length,
       goated: reactions.some((r) => r.userId === ctx.userId),
       audience: post.visibility === 'selected' ? audienceOf(ctx.db, postId) : [],
-      replies: replyRows.map((r) => ({
-        ...withGoat(r),
-        mine: r.authorId === ctx.userId,
-        goats: replyGoats.filter((g) => g.replyId === r.id).length,
-        goated: replyGoats.some((g) => g.replyId === r.id && g.userId === ctx.userId),
-      })),
+      // The accepted answer comes first, then everything else in order.
+      replies: replyRows
+        .map((r) => ({
+          ...withGoat(r),
+          accepted: r.id === post.acceptedReplyId,
+          mine: r.authorId === ctx.userId,
+          goats: replyGoats.filter((g) => g.replyId === r.id).length,
+          goated: replyGoats.some((g) => g.replyId === r.id && g.userId === ctx.userId),
+        }))
+        .sort((a, b) => Number(b.accepted) - Number(a.accepted)),
     };
   }),
 
@@ -217,17 +219,24 @@ export const boardRouter = {
   ),
 
   update: procedure(z.object({ postId: idSchema, ...postFields }), ({ postId, ...fields }, ctx) => {
-    ownPost(ctx.db, ctx.userId, postId);
+    const post = ownPost(ctx.db, ctx.userId, postId);
     ctx.db
       .update(posts)
-      .set({ ...fields, editedAt: ctx.now() })
+      .set({ ...fields, acceptedReplyId: fields.kind === 'note' ? null : post.acceptedReplyId, editedAt: ctx.now() })
       .where(eq(posts.id, postId))
       .run();
   }),
 
+  // A post with replies is blanked rather than deleted, so the answers stay readable.
   remove: procedure(z.object({ postId: idSchema }), ({ postId }, ctx) => {
     ownPost(ctx.db, ctx.userId, postId);
-    ctx.db.delete(posts).where(eq(posts.id, postId)).run();
+    const replyCount = ctx.db.select({ n: count() }).from(replies).where(eq(replies.postId, postId)).get()?.n ?? 0;
+    if (!replyCount) {
+      ctx.db.delete(posts).where(eq(posts.id, postId)).run();
+      return { kept: false };
+    }
+    ctx.db.update(posts).set({ title: '', body: '', deletedAt: ctx.now() }).where(eq(posts.id, postId)).run();
+    return { kept: true };
   }),
 
   // 🐐 toggles: one goat per student per post or reply.
@@ -246,41 +255,44 @@ export const boardRouter = {
     else ctx.db.insert(replyReactions).values({ replyId, userId: ctx.userId }).run();
   }),
 
-  // Replying to a reply nests one level; deeper replies join the same thread.
-  reply: procedure(
-    z.object({ postId: idSchema, parentId: idSchema.nullable().default(null), body: nonEmpty('Reply', 5000) }),
-    ({ postId, parentId, body }, ctx) => {
-      const post = visiblePost(ctx.db, ctx.userId, postId);
-      const parent = parentId ? (ctx.db.select().from(replies).where(eq(replies.id, parentId)).get() ?? notFound('reply')) : null;
-      if (parent && parent.postId !== postId) notFound('reply');
-      ctx.db
-        .insert(replies)
-        .values({ postId, body, authorId: ctx.userId, parentId: parent ? (parent.parentId ?? parent.id) : null })
-        .run();
+  // Replies are one flat list under the post.
+  reply: procedure(z.object({ postId: idSchema, body: nonEmpty('Reply', 5000) }), ({ postId, body }, ctx) => {
+    const post = visiblePost(ctx.db, ctx.userId, postId);
+    ctx.db.insert(replies).values({ postId, body, authorId: ctx.userId }).run();
+    if (post.authorId === ctx.userId || post.deletedAt) return;
+    const replierName = ctx.db.select({ name: users.name }).from(users).where(eq(users.id, ctx.userId)).get()?.name;
+    notify(ctx.db, post.authorId, {
+      type: 'reply',
+      title: m('{{name}} replied to "{{title}}"', { name: replierName ?? { t: 'A classmate' }, title: post.title }),
+      body: raw(body.length > 140 ? `${body.slice(0, 140)}…` : body),
+      link: `/classes/${post.classId}/discussion?post=${postId}`,
+    });
+  }),
 
-      const replierName = ctx.db.select({ name: users.name }).from(users).where(eq(users.id, ctx.userId)).get()?.name;
-      const name = replierName ?? { t: 'A classmate' };
-      const excerpt = raw(body.length > 140 ? `${body.slice(0, 140)}…` : body);
-      const link = `/classes/${post.classId}/discussion?post=${postId}`;
-      const told = new Set([ctx.userId]);
-      if (parent && !told.has(parent.authorId)) {
-        notify(ctx.db, parent.authorId, {
-          type: 'reply',
-          title: m('{{name}} replied to your reply on "{{title}}"', { name, title: post.title }),
-          body: excerpt,
-          link,
-        });
-        told.add(parent.authorId);
-      }
-      if (!told.has(post.authorId)) {
-        notify(ctx.db, post.authorId, { type: 'reply', title: m('{{name}} replied to "{{title}}"', { name, title: post.title }), body: excerpt, link });
-      }
-    },
-  ),
+  // Whoever asked picks the answer that solved it (or takes it back with replyId null).
+  accept: procedure(z.object({ postId: idSchema, replyId: idSchema.nullable() }), ({ postId, replyId }, ctx) => {
+    const post = ownPost(ctx.db, ctx.userId, postId);
+    if (post.kind !== 'question') throw new AppError('Only questions have an accepted answer.');
+    const reply = replyId ? (ctx.db.select().from(replies).where(eq(replies.id, replyId)).get() ?? notFound('reply')) : null;
+    if (reply && reply.postId !== postId) notFound('reply');
+    if (reply && reply.authorId === ctx.userId) throw new AppError("You can't accept your own reply.");
+    ctx.db.update(posts).set({ acceptedReplyId: reply?.id ?? null }).where(eq(posts.id, postId)).run();
+    if (reply && reply.id !== post.acceptedReplyId) {
+      notify(ctx.db, reply.authorId, {
+        type: 'answer-accepted',
+        title: m('Your answer to "{{title}}" was accepted', { title: post.title }),
+        body: raw(reply.body.length > 140 ? `${reply.body.slice(0, 140)}…` : reply.body),
+        link: `/classes/${post.classId}/discussion?post=${postId}`,
+      });
+    }
+  }),
 
   removeReply: procedure(z.object({ replyId: idSchema }), ({ replyId }, ctx) => {
     const reply = ctx.db.select().from(replies).where(eq(replies.id, replyId)).get() ?? notFound('reply');
     if (reply.authorId !== ctx.userId) throw new AppError('You can only delete your own replies.', 'FORBIDDEN');
-    ctx.db.delete(replies).where(eq(replies.id, replyId)).run();
+    ctx.db.transaction((tx) => {
+      tx.update(posts).set({ acceptedReplyId: null }).where(eq(posts.acceptedReplyId, replyId)).run();
+      tx.delete(replies).where(eq(replies.id, replyId)).run();
+    });
   }),
 };

@@ -29,14 +29,14 @@ type Assessment = Out<typeof rpc.courses.assessments>[number];
 
 // A4 + A5 in the layout of the wireframe (A2Team.pdf p. 6): the grading scheme with
 // your grades, a target grade, what you need, and a table of scenarios.
+// Version B: the scheme is shared by the section (anyone can add or fix a component);
+// your grades and target stay private. Weight that isn't listed counts as still to come.
 export function GradeCalculator({ classId }: { classId: number }) {
   const items = useQuery({ queryKey: ['courses', 'assessments', classId], queryFn: () => rpc.courses.assessments({ classId }) });
   const info = useQuery({ queryKey: ['courses', 'info', classId], queryFn: () => rpc.courses.info({ classId }) });
   const [editing, setEditing] = useState<Assessment | 'new' | null>(null);
   const remove = useAction((id: number) => rpc.courses.removeAssessment({ id }));
-  const setScore = useAction((a: Assessment & { score: number | null }) =>
-    rpc.courses.updateAssessment({ id: a.id, name: a.name, weight: a.weight, score: a.score, dueAt: a.dueAt }),
-  );
+  const setScore = useAction((a: { id: number; score: number | null }) => rpc.courses.setScore(a));
   const setTarget = useAction((targetGrade: string) => rpc.courses.setTarget({ classId, targetGrade }));
 
   if (items.isPending || !items.data || !info.data) return <Loading />;
@@ -45,18 +45,21 @@ export function GradeCalculator({ classId }: { classId: number }) {
   const target = info.data.targetGrade;
   const goal = summary.requirements.find((r) => r.letter === target);
   const remaining = list.filter((a) => a.score == null);
-  const single = remaining.length === 1 ? remaining[0].name : null;
+  const single = remaining.length === 1 && summary.unlistedWeight === 0 ? remaining[0].name : null;
   const restParams = { name: single?.toLowerCase() ?? '', weight: summary.remainingWeight, min: minimumFor(target) };
 
   return (
     <Stack gap="lg">
       <Card padding="lg">
-        <Group justify="space-between" mb="md">
+        <Group justify="space-between" mb={4}>
           <Title order={2}>{t('Current grades')}</Title>
           <Button variant="default" leftSection={<IconPlus size={16} />} onClick={() => setEditing('new')}>
             {t('Add component')}
           </Button>
         </Group>
+        <Text size="xs" c="dimmed" mb="md">
+          {t('The grading scheme is shared with your section, so anyone in it can add or fix a component. Your grades are private.')}
+        </Text>
         {list.length ? (
           <Table withTableBorder withColumnBorders verticalSpacing="sm" fz="md">
             <Table.Thead>
@@ -64,7 +67,8 @@ export function GradeCalculator({ classId }: { classId: number }) {
                 <Table.Th>{t('Component')}</Table.Th>
                 <Table.Th w={120}>{t('Weight (%)')}</Table.Th>
                 <Table.Th w={170}>{t('Your grade (%)')}</Table.Th>
-                <Table.Th w={220}>{t('Weighted contribution (%)')}</Table.Th>
+                <Table.Th w={200}>{t('Weighted contribution (%)')}</Table.Th>
+                <Table.Th w={140}>{t('Added by')}</Table.Th>
                 <Table.Th w={90} />
               </Table.Tr>
             </Table.Thead>
@@ -89,11 +93,16 @@ export function GradeCalculator({ classId }: { classId: number }) {
                       onBlur={(e) => {
                         const raw = e.currentTarget.value.trim();
                         const score = raw === '' ? null : Number(raw);
-                        if (score !== a.score && (score == null || !Number.isNaN(score))) setScore.mutate({ ...a, score });
+                        if (score !== a.score && (score == null || !Number.isNaN(score))) setScore.mutate({ id: a.id, score });
                       }}
                     />
                   </Table.Td>
                   <Table.Td>{a.score == null ? '—' : ((a.weight * a.score) / 100).toFixed(1)}</Table.Td>
+                  <Table.Td>
+                    <Text size="xs" c="dimmed">
+                      {a.addedBy ? (a.addedBy.former ? t('a former student') : a.addedBy.name) : ''}
+                    </Text>
+                  </Table.Td>
                   <Table.Td>
                     <Group gap={4} justify="flex-end" wrap="nowrap">
                       <ActionIcon variant="subtle" onClick={() => setEditing(a)} aria-label={t('Edit {{name}}', { name: a.name })}>
@@ -117,9 +126,9 @@ export function GradeCalculator({ classId }: { classId: number }) {
               {t('Average so far:')}{' '}
               <b>{summary.currentAverage == null ? '—' : `${summary.currentAverage}% (${letterFor(summary.currentAverage).letter})`}</b>
             </Text>
-            <Text size="sm" c={summary.totalWeight === 100 ? 'dimmed' : 'orange'}>
+            <Text size="sm" c={summary.unlistedWeight === 0 ? 'dimmed' : 'orange'}>
               {t('Weights total')} <b>{summary.totalWeight}%</b>
-              {summary.totalWeight !== 100 && ` ${t('(grades are scaled to this)')}`}
+              {summary.unlistedWeight > 0 && ` ${t('({{weight}}% not listed yet, counted as still to come)', { weight: summary.unlistedWeight })}`}
             </Text>
           </Group>
         )}
@@ -248,7 +257,6 @@ function ComponentForm({ classId, existing, onDone }: { classId: number; existin
     initialValues: {
       name: existing?.name ?? '',
       weight: existing?.weight ?? ('' as number | string),
-      score: existing?.score ?? ('' as number | string),
       dueAt: (existing?.dueAt ?? null) as Date | string | null,
     },
     validate: {
@@ -258,7 +266,7 @@ function ComponentForm({ classId, existing, onDone }: { classId: number; existin
   });
   const save = useAction(
     async (v: typeof form.values) => {
-      const fields = { name: v.name, weight: Number(v.weight), score: v.score === '' ? null : Number(v.score), dueAt: toDate(v.dueAt) };
+      const fields = { name: v.name, weight: Number(v.weight), dueAt: toDate(v.dueAt) };
       if (existing) await rpc.courses.updateAssessment({ id: existing.id, ...fields });
       else await rpc.courses.addAssessment({ classId, ...fields });
     },
@@ -269,11 +277,18 @@ function ComponentForm({ classId, existing, onDone }: { classId: number; existin
     <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
       <Stack>
         <TextInput label={t('Component')} placeholder={t('Midterm')} data-autofocus {...form.getInputProps('name')} />
-        <Group grow>
-          <NumberInput label={t('Weight')} suffix="%" min={0} max={100} decimalScale={2} {...form.getInputProps('weight')} />
-          <NumberInput label={t('Your grade')} description={t('Empty until graded')} suffix="%" min={0} max={150} decimalScale={2} {...form.getInputProps('score')} />
-        </Group>
-        <DateTimePicker label={t('Due date')} description={t('Shows on your calendar')} placeholder={t('Optional')} clearable valueFormat="ddd D MMM YYYY, HH:mm" {...form.getInputProps('dueAt')} />
+        <NumberInput label={t('Weight')} suffix="%" min={0} max={100} decimalScale={2} w={160} {...form.getInputProps('weight')} />
+        <DateTimePicker
+          label={t('Due date')}
+          description={t("Shows on everyone's calendar in this section")}
+          placeholder={t('Optional')}
+          clearable
+          valueFormat="ddd D MMM YYYY, HH:mm"
+          {...form.getInputProps('dueAt')}
+        />
+        <Text size="xs" c="dimmed">
+          {t('This changes the grading scheme for the whole section. Enter your own grade in the table.')}
+        </Text>
         <Group justify="flex-end">
           <Button type="submit" loading={save.isPending}>
             {t('Save')}

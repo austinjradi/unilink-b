@@ -3,15 +3,15 @@ import { basename, join } from 'node:path';
 import { and, asc, eq, gte, isNotNull, isNull, lt, lte, max, ne } from 'drizzle-orm';
 import { z } from 'zod';
 import { addDays, parseYmd, ymd } from '@shared/dates';
-import { planTasks } from '@shared/planner';
+import { DEFAULT_BUFFER_DAYS, minutesOn, planTasks, weeklyMinutes } from '@shared/planner';
 import { randomUUID } from '../crypto';
 import type { DB } from '../db/client';
 import { classes, courses, plannerAssignments, plannerTasks, studySessionMembers, studySessions, users } from '../db/schema';
 import { AppError, type AuthedContext, type Context, idSchema, nonEmpty, procedure } from '../rpc/core';
 import { notFound, requireMember } from './access';
 
-// ST2: assignments broken into tasks, spread over the days before the deadline
-// within the student's daily study time, and re-planned when tasks are missed.
+// ST2: assignments broken into tasks, scheduled as early as the student's free study
+// time per weekday allows (see shared/planner.ts), and re-planned when tasks are missed.
 
 const taskInput = z.object({
   title: nonEmpty('Task', 200),
@@ -23,7 +23,7 @@ const assignmentFields = {
   classId: idSchema.nullable(),
   dueAt: z.date(),
   notes: z.string().trim().max(5000),
-  bufferDays: z.number().int().min(0).max(7),
+  bufferDays: z.number().int().min(0).max(7).default(DEFAULT_BUFFER_DAYS),
 };
 
 function ownAssignment(db: DB, userId: number, id: number) {
@@ -86,8 +86,10 @@ function dailyLoad(db: DB, userId: number, from: string, to: string, excludeAssi
   return load;
 }
 
+// Free study minutes for a given day, from the student's weekly availability.
 function studyBudget(db: DB, userId: number) {
-  return db.select({ m: users.studyMinutesPerDay }).from(users).where(eq(users.id, userId)).get()?.m ?? 120;
+  const weekly = weeklyMinutes(db.select({ m: users.weeklyStudyMinutes }).from(users).where(eq(users.id, userId)).get()?.m);
+  return (day: string) => minutesOn(weekly, day);
 }
 
 export function replan(ctx: Context & { userId: number }, assignmentId: number, { unpinAll = false } = {}) {
@@ -115,7 +117,7 @@ export function replan(ctx: Context & { userId: number }, assignmentId: number, 
     today,
     dueDate,
     bufferDays: assignment.bufferDays,
-    capacity: (day) => Math.max(0, budget - (load.get(day) ?? 0)),
+    capacity: (day) => Math.max(0, budget(day) - (load.get(day) ?? 0)),
   });
 
   db.transaction((tx) => {
@@ -158,7 +160,7 @@ export function reconcile(ctx: AuthedContext) {
   const budget = studyBudget(ctx.db, ctx.userId);
   const stale = new Set(
     open
-      .filter((t) => t.scheduledFor < today || (!t.pinned && (load.get(t.scheduledFor) ?? 0) > budget))
+      .filter((t) => t.scheduledFor < today || (!t.pinned && (load.get(t.scheduledFor) ?? 0) > budget(t.scheduledFor)))
       .map((t) => t.assignmentId),
   );
   for (const id of stale) replan(ctx, id);
@@ -184,6 +186,19 @@ export async function deleteUserFiles(db: DB, userId: number) {
 }
 
 export const plannerRouter = {
+  // Free study minutes for each weekday, Sunday first. Every open assignment is re-planned.
+  setAvailability: procedure(
+    z.object({ minutes: z.array(z.number().int().min(0).max(16 * 60)).length(7) }),
+    ({ minutes }, ctx) => {
+      if (!minutes.some((m) => m > 0)) throw new AppError('Leave some study time on at least one day.');
+      ctx.db.update(users).set({ weeklyStudyMinutes: minutes }).where(eq(users.id, ctx.userId)).run();
+      const today = ymd(ctx.now());
+      for (const a of ctx.db.select().from(plannerAssignments).where(eq(plannerAssignments.userId, ctx.userId)).all()) {
+        if (ymd(a.dueAt) >= today) replan(ctx, a.id);
+      }
+    },
+  ),
+
   list: procedure(z.void(), (_input, ctx) => {
     reconcile(ctx);
     const today = ymd(ctx.now());
@@ -225,7 +240,7 @@ export const plannerRouter = {
         // Work landed inside the buffer before the deadline.
         tight: open.some((t) => t.scheduledFor > addDays(dueDate, -assignment.bufferDays)),
         // A day this assignment uses is booked beyond the daily study time.
-        overloaded: open.some((t) => t.scheduledFor >= today && (load.get(t.scheduledFor) ?? 0) > budget),
+        overloaded: open.some((t) => t.scheduledFor >= today && (load.get(t.scheduledFor) ?? 0) > budget(t.scheduledFor)),
       };
     });
   }),

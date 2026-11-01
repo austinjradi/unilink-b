@@ -43,8 +43,10 @@ export function collectKeys() {
   }
   // Labels kept as data and translated where they're shown.
   const shared = (name) => readFileSync(join(ROOT, 'src/shared', name), 'utf8');
-  for (const m of shared('notifications.ts').matchAll(/label:\s*'([^']+)'/g)) add(m[1]);
-  for (const m of shared('validation.ts').matchAll(/\['([^']+)',\s*\(pw\)/g)) add(m[1]);
+  for (const m of shared('notifications.ts').matchAll(/label:\s*(?:'([^']+)'|"([^"]+)")/g)) add(m[1] ?? m[2]);
+  for (const m of shared('validation.ts').matchAll(/\[\s*(?:'([^']+)'|"([^"]+)"),\s*\(pw/g)) add(m[1] ?? m[2]);
+  for (const m of shared('validation.ts').match(/FACULTIES = \[([^\]]+)\]/)[1].matchAll(/'([^']+)'/g)) add(m[1]);
+  for (const m of shared('links.ts').match(/LINK_PURPOSES = \{([^}]+)\}/)[1].matchAll(/:\s*'([^']+)'/g)) add(m[1]);
   const goatLabels = shared('goat.ts').match(/GOAT_LABELS[^{]*\{([^}]+)\}/)[1];
   for (const m of goatLabels.matchAll(/:\s*'([^']+)'/g)) add(m[1]);
   for (const m of shared('academics.ts').matchAll(/^\s+[A-Z]: '([^']+)',$/gm)) add(m[1]);

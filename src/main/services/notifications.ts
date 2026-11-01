@@ -5,8 +5,7 @@ import { type Locale, type Message, type Params, render, translate } from '@shar
 import { channelsFor, NOTIFICATION_TYPES, type NotificationType } from '@shared/notifications';
 import type { DB } from '../db/client';
 import {
-  assessments,
-  deadlines,
+  enrollments,
   notifications,
   outbox,
   plannerAssignments,
@@ -18,6 +17,8 @@ import {
 } from '../db/schema';
 import { type AuthedContext, idSchema, procedure } from '../rpc/core';
 import { classLabel } from './access';
+import { visibleDeadlines } from './calendar';
+import { gradedItems } from './courses';
 
 // G3: in-app notifications, desktop notifications and email.
 // Email can't actually be delivered without a mail server, so messages are kept in
@@ -104,11 +105,8 @@ export function sweepReminders(ctx: AuthedContext) {
   const in30m = new Date(now.getTime() + 30 * 60_000);
   const within24h = (dueAt: AnyColumn) => and(gt(dueAt, now), lte(dueAt, in24h));
 
-  for (const d of db
-    .select()
-    .from(deadlines)
-    .where(and(eq(deadlines.userId, userId), isNull(deadlines.completedAt), within24h(deadlines.dueAt)))
-    .all()) {
+  for (const d of visibleDeadlines(db, userId, now, in24h)) {
+    if (d.done) continue;
     notify(db, userId, {
       type: 'deadline-soon',
       title: soon('due', d.title, d.dueAt, now),
@@ -118,17 +116,15 @@ export function sweepReminders(ctx: AuthedContext) {
     });
   }
 
-  for (const a of db
-    .select()
-    .from(assessments)
-    .where(and(eq(assessments.userId, userId), isNull(assessments.score), within24h(assessments.dueAt)))
-    .all()) {
+  const classIds = db.select({ id: enrollments.classId }).from(enrollments).where(eq(enrollments.userId, userId)).all();
+  for (const a of classIds.flatMap((c) => gradedItems(db, userId, c.id))) {
+    if (a.score != null || !a.dueAt || a.dueAt <= now || a.dueAt > in24h) continue;
     notify(db, userId, {
       type: 'deadline-soon',
-      title: soon('due', a.name, a.dueAt!, now),
+      title: soon('due', a.name, a.dueAt, now),
       body: m('{{class}} · worth {{weight}}%', { class: classLabel(db, a.classId) ?? '', weight: a.weight }),
       link: `/classes/${a.classId}/grades`,
-      dedupeKey: `assessment:${a.id}:${a.dueAt!.getTime()}`,
+      dedupeKey: `assessment:${a.id}:${a.dueAt.getTime()}`,
     });
   }
 

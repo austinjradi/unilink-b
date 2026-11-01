@@ -1,18 +1,25 @@
-# UniLink (web)
+# UniLink (web), version B
 
 UniLink for McGill students, running entirely in the browser: find your classes and classmates, share group
 chats, host study sessions, discuss course topics, and keep deadlines, grades and assignment plans in one place.
 
-This is the UniLink desktop app (Electron, in the `unilink` project) ported to a static website, so it can be shown to anyone with a link and
-nothing to install. There's no server: the app's backend runs inside the page, and everything is saved in the
-visitor's own browser.
+**Version B** is a second take on the UniLink web port (`unilink-web`, "version A"). It has the same features,
+the same look and the same code layout, but makes different decisions everywhere the requirements board leaves
+something open: what a class is, who sees what, how study sessions fill up, how the discussion board works,
+whether course info is personal or shared, how passwords are reset, and what "free time" means to the planner.
+[Decisions compared](#decisions-compared-version-a-vs-version-b) lists every one side by side. `git diff 73f42b5`
+shows exactly how B differs from A.
+
+Like A, it's a static website with no server: the app's backend runs inside the page, and everything is saved in
+the visitor's own browser. B keeps its data under its own name (IndexedDB `unilink-b`), so both versions can run
+on the same site without touching each other's data.
 
 It implements the ten in-scope ("green") features from the UniLink requirements board, plus the five
 "if time allows" ("yellow") ones listed further down:
 
 | ID  | Feature                                 | Where in the app                                  | Code                                          |
 | --- | --------------------------------------- | ------------------------------------------------- | --------------------------------------------- |
-| S1  | Class and classmate discovery           | Classes page; class page → Overview               | `services/classes.ts`, `pages/Classes.tsx`    |
+| S1  | Class and classmate discovery           | Courses → Find courses; class page → Overview     | `services/classes.ts`, `shared/courseQuery.ts` |
 | S2  | Group chat links                        | Class page → Group chats                          | `services/links.ts`, `class/GroupChats.tsx`   |
 | S3  | Study session creation and invitations  | Class page → Study sessions; Home                 | `services/studySessions.ts`                   |
 | S4  | Peer discussion board                   | Class page → Discussion                           | `services/board.ts`, `class/Discussion.tsx`   |
@@ -20,7 +27,7 @@ It implements the ten in-scope ("green") features from the UniLink requirements 
 | A4  | Grade calculator                        | Class page → Grades                               | `shared/grades.ts`, `class/Grades.tsx`        |
 | A5  | Course info and grading scheme          | Class page → Overview and Grades                  | `services/courses.ts`                         |
 | G2  | Integrations                            | Integrations page; Calendar → Sync                | `shared/ics.ts`, `db/catalogue.ts`            |
-| G4  | Account sign-up and login               | Sign-in screens; Profile                          | `services/auth.ts`, `pages/Auth.tsx`          |
+| G4  | Account sign-up and login               | Sign-in screens; Settings → Account               | `services/auth.ts`, `shared/validation.ts`    |
 | ST2 | Assignment planner                      | Planner; Home                                     | `shared/planner.ts`, `services/planner.ts`    |
 
 The yellow features, with what couldn't be fully built:
@@ -41,7 +48,7 @@ The interface follows the team's wireframes in `A2Team.pdf`:
 - **Goat mascot:** customizable under Settings → Goat (`components/Goat.tsx`, `shared/goat.ts`).
 - **Home:** today's tasks and deadline countdowns on the left, a cross-class discussion feed with 🐐
   reactions in the middle, and filters on the right.
-- **Threads:** threaded replies.
+- **Threads:** one list of replies, with the accepted answer pinned first.
 - **Grade Calculator:** a "You need at least X%" bubble and a scenarios table.
 - **Calendar & Planner:** Month, Week and Semester views.
 - **Group chat links:** cards with Open/Report buttons.
@@ -71,9 +78,12 @@ npm run preview    # serve dist/ at http://localhost:4173
 npm run db:generate  # create a migration after editing src/main/db/schema.ts
 ```
 
-Every visitor starts with three demo classmates in COMP 251 and MATH 240 (Fall 2026), listed on the sign-in
-screen with the password `unilink-demo1`. Sign up with any `@mail.mcgill.ca` address to get your own account.
-**Reset demo data** under that list wipes everything saved in the browser and starts over.
+Every visitor starts with three demo classmates in COMP 251-001 and MATH 240-001 (Fall 2026), listed on the
+sign-in screen with the password `unilink-demo1`. Sign up with any `@mail.mcgill.ca` address to get your own
+account, then join **COMP 251-001** to see the section's shared course details, class times, grading scheme and
+quiz deadline, a resolved question with an accepted answer, links classmates have vouched for, and an open
+study session with one spot left. Alex's invite-only "Midterm review" session doesn't show up until you enter
+its code, `ALEXMT`. **Reset demo data** under the demo list wipes everything saved in the browser and starts over.
 
 To see the social features from both sides, open a second tab, sign out there and sign in as another
 classmate. The tabs keep each other up to date.
@@ -146,8 +156,8 @@ as `{ code, message, key, params }` and show up as notifications, translated in 
 | Demo classmates in dev builds only | Always on, plus **Reset demo data** |
 | One app window | Any number of tabs; each saved change is sent to the others, and each tab keeps its own sign-in |
 
-Only `services/auth.ts`, `services/planner.ts` (one import), `db/client.ts` and `db/demo.ts` differ in
-`src/main`. In the renderer, the sign-in screen has the reset link, and the header scrolls on phones.
+In version A, only `services/auth.ts`, `services/planner.ts` (one import), `db/client.ts` and `db/demo.ts` differ
+in `src/main`; version B's own decisions change much more (see below). In the renderer, the sign-in screen has the reset link, and the header scrolls on phones.
 
 ### Languages (English and French)
 
@@ -167,34 +177,70 @@ notifications and emails go out in the same language. The English text is the tr
   any are missing, if placeholders don't match, or if the French file has entries nothing uses.
 - User content (posts, titles, course names from the catalogue) isn't translated.
 
-## Decisions on the board's open questions
+## Decisions compared: version A vs version B
 
-| Requirement | Question on the board | What the app does |
-| --- | --- | --- |
-| S1.1 | Search by code, name, other filters? | Code (`COMP 251` or `comp251`) or title, plus term and subject filters |
-| S1.2 | Is "COMP 251" one class or one per term/section? | One class per course per term; sections share it |
-| S1 note | When are classmates visible? | No member list. Name and email show once someone posts, replies, or joins a study session |
-| S2.1 | What info is shown per link? | Platform (auto-detected), name, who added it, when |
-| S2.2 | Private first, then public? | Yes: links start private to whoever adds them; they can share with the class anytime |
-| S2.2 | Duplicates | Rejected per class after normalizing the URL (http→https, trailing slash, #fragment) |
-| S2.4 | How are flagged links handled? | Reports are shown on the link. At 3 reports it's marked as likely broken. The owner changing the URL clears them |
-| S3.4 | How do you invite if members are hidden? | By McGill email (must be in the class), with suggestions from classmates you can already see |
-| G4.1 | Password requirements? | 8+ characters with at least one letter and one number |
-| G4.5–6 | Which profile info? | Name, email (read-only), program, year, and daily study time for the planner |
-| ST2 | What is "free time"? | A daily study budget (default 120 min) minus other planned tasks and study sessions you're going to |
-| A1 | Which grades count? | McGill letter grades count in the GPA (J counts as 0). P/S earn credits without GPA; F, J, U and W earn nothing |
-| A2 | What counts toward a program? | Required courses plus "choose N credits" groups need C or better. Everything else that earns credit counts as electives |
-| G3 | Which features notify? | Session invites, cancellations and start reminders; replies to your posts; reports on your links; deadlines within 24 h; a morning task summary; study mode on/off. Each can go to desktop and/or email |
-| ST1 | When does study mode turn on? | During class times and study sessions you're going to (toggle each, plus per class), or a focus session started by hand. Stopping it skips the current class or session only |
-| ST3 | What's "today"? | Planned work scheduled up to today, plus your own to-dos due today, overdue or undated. Upcoming deadlines come next, and your own can be checked off |
+The requirements board specifies the features but leaves many details open, either as explicit questions or by
+not saying. Each row is one of those choices. Everything the board *does* specify (McGill email sign-up, joining
+many classes but each once, no member list, owner-only link edits, links opening in a new tab, posts visible to
+the class or selected students, the McGill grading system, deleting the account and its data…) is the same in
+both versions.
+
+| Requirement | Left open | Version A (`unilink-web`) | Version B (this project) |
+| --- | --- | --- | --- |
+| S1.2 | Is "COMP 251" one class, or one per term/section? | One class per course per term; sections share it | **One class per section** ("COMP 251-001"). You can be in one section of a course per term; *Switch section* moves you. Each section has its own board, chats, sessions and shared info |
+| S1.1 | Search by code, name, other filters? | Code or title, plus term and subject filters | **Code wildcards** like the board's "COMP 2XX" (X, \* or ? = any digit), title words, plus term and **course level** filters |
+| S1 note | When do classmates become visible, and what's shown? | Name and email, once they post, reply or join a study session | **Only posting or replying** reveals someone (joining a session doesn't). Shown: name, email, **pronouns and faculty**. The class page lists the classmates you can see |
+| S2.1 | What's shown per link? | Platform, name, who added it, when | Platform, name, who added it, **what it's for** (whole course, this section, project team, study group), and **how many classmates say it works** and when it was last checked |
+| S2.2 | Private first, then public? | Yes: private to whoever adds it until they share it | **No:** links are shared with the section as soon as they're added |
+| S2.2 | Duplicates | Same URL in the same class, after light normalization | Same **chat** (invite code), under any of its URLs (`discord.gg/x` = `discord.com/invite/x`, tracking parameters ignored), across **every section of the course**. The error says who shared it and where |
+| S2.4 | How are flagged links handled? | Reports are shown on the link; at 3 it's marked likely broken; changing the URL clears them | Classmates vote **"it works" or report** (with a reason). A link is **hidden** once 2+ report it and reports outnumber "works"; the owner is notified then and can **mark it fixed** without changing the URL |
+| S3 | Who can see a session? | Everyone in the class | **Open** to the section, or **invite-only** (hidden from anyone without the code) |
+| S3.4 | How do you invite if members are hidden? | By McGill email (must be in the class) | With a 6-character **invite code** the host shares anywhere (group chat, DM). Codes can be regenerated. No email invites |
+| S3 | Size limit | Optional; full sessions refuse new people | **Required** (2–30, default 6); once full, people join a **waitlist** and move up automatically |
+| S3 | Where | A place or call link, in one text field | **In person** (a place) or **online** (a meeting link, shown only to people going) |
+| S3 | Who's going | Everyone sees names and emails of people going | **Only people going** see who else is; others see a count and the host's first name |
+| S3.5 | Host leaves; session changes | Hosts can't leave, only cancel. Edits don't notify | Leaving **hands the session to the next person going** (cancelled only if nobody's left). Moving the time or place **notifies everyone in it** |
+| S4 | Post types and topics | Free-form "type" with suggestions (Assignment, Midterm, Just yapping…) | Posts are a **question or a note**, under a **fixed topic list** (Lectures, Assignments, Exams, Labs and tutorials, Logistics, Off-topic) |
+| S4 | Replies | Threaded, one level of replies to replies | **One flat list.** Whoever asked can **accept an answer**: it's pinned first, the question shows as answered, and the feed can filter to unanswered questions |
+| S4 | Deleting a post | Deletes its replies too | A post **with replies is blanked** and the thread stays; one without replies is removed |
+| A3 | Whose class times and deadlines? | Personal: each student enters their own | **Shared with the section**: one person enters the lecture times or a class deadline and everyone sees it. Deadlines with no class stay private; each student checks deadlines off separately; only whoever added a deadline can edit it |
+| A5 | Whose course details? | Personal ("only you see these") | Professor, email, office hours and room are **shared, wiki-style** (anyone in the section edits; "edited by Priya 2 days ago"). Notes stay private |
+| A4/A5 | Whose grading scheme? | Personal, with your scores | The scheme is **shared by the section**; **marks are private**. A component can't be removed once a classmate has a mark on it, and the scheme can't add up to more than 100% |
+| A4 | Weights that don't add up to 100% | Grades are scaled up to the listed total | The missing weight counts as **work still to come** (not scaled), so "what you need" covers it too |
+| G4.1 | Password requirements? | 8+ characters with a letter and a number | **Passphrases:** 12+ characters, no character rules, but **not a common password** and **not your own name** from your email |
+| G4.1/5 | Which profile info? | Name, email (read-only), program, year, daily study time | Name, **pronouns** (optional), **faculty**, **expected graduation**. Email **can be changed** with your password |
+| G4.4 | How does password reset work? | 6-digit code by email (shown on screen in the demo), valid 15 minutes | A **recovery code** shown once at sign-up (and replaced after each use, or from Settings). No reset emails |
+| G4.7 | What happens to shared things when you delete your account? | Everything you created is deleted | Your data is deleted; you can choose to **leave your posts and replies up without your name** ("Former student"). Class times, deadlines and schemes you added to a section stay with it. Sessions you host pass to the next person going |
+| ST2 | What is "free time"? | One daily study budget (default 120 min) minus other tasks and sessions | **Free minutes per weekday** (default 90 Mon–Thu, 60 Fri, 180 weekends) minus other tasks and sessions you're going to |
+| ST2 | How is work spread? | Evenly over the days before the deadline, 1 buffer day | **As early as possible** (each task on the first day with room), **2 buffer days** by default. Missed tasks move to the next free time |
+
+The yellow features (A1, A2, G3, ST1, ST3) keep version A's decisions, adjusted where they touch the above:
+notifications cover waitlist spots, host hand-offs, session changes, accepted answers and hidden links instead of
+invitations and individual reports; study mode follows the section's shared class times.
+
+### Where the decisions live
+
+| Decision | Code |
+| --- | --- |
+| Sections, wildcard search, classmate visibility | `db/catalogue.ts` (`sectionsFor`), `services/classes.ts`, `shared/courseQuery.ts` |
+| Link identity, purposes, hiding rule | `shared/links.ts`, `services/links.ts` |
+| Invite codes, waitlist, hand-off | `services/studySessions.ts` |
+| Questions, accepted answers, topics, deleted posts | `services/board.ts`, `components/Feed.tsx` |
+| Shared section info and private marks | `services/courses.ts`, `services/calendar.ts` (`visibleDeadlines`), `db/schema.ts` (`class_details`, `assessment_scores`, `deadline_done`) |
+| Unlisted weight | `shared/grades.ts` |
+| Passphrases, recovery codes, deletion | `shared/validation.ts`, `services/auth.ts`, `services/access.ts` (`formerStudentId`) |
+| Free time per weekday, front-loaded plans | `shared/planner.ts`, `services/planner.ts` |
+
+The database changes are migrations `0004_version_b` (new tables and columns) and `0005_version_b_cleanup`
+(columns and tables B no longer uses).
 
 ## Not built yet
 
 - **A shared server.** Data lives in each visitor's browser, so classmates are only shared between accounts in
   the same browser. The RPC layer is the seam: move `src/main` behind an HTTP API and point
   `window.unilink.call()` (in `web/bridge.ts`) at it.
-- **Email delivery (G3).** Emails (notifications, password reset codes) are written to an `outbox` table and
-  can be viewed under Profile → Notifications → Email outbox. Reset codes are also shown on screen.
+- **Email delivery (G3).** Notification emails are written to an `outbox` table and can be viewed under
+  Settings → Notifications → Email outbox. (Password resets don't need email in version B.)
 - **Website blocking (ST1).** Needs a browser extension that asks UniLink whether study mode is on. Study mode
   only runs while a UniLink tab is open.
 - **Program data (A2).** The three programs in `db/programs.ts` are illustrative samples, not official McGill

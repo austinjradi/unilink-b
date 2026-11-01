@@ -172,7 +172,7 @@ function PerClass({ enabled }: { enabled: boolean }) {
           {classes.data.map((c) => (
             <Switch
               key={c.classId}
-              label={`${c.subject} ${c.number}`}
+              label={c.code}
               description={term(c.term)}
               checked={c.auto}
               disabled={!enabled}

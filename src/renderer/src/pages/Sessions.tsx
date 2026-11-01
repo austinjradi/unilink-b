@@ -4,7 +4,7 @@ import { useDebouncedValue } from '@mantine/hooks';
 import { IconPlus, IconSearch, IconUsersGroup } from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
-import { SessionForm, SessionList, SessionsCard } from '../components/Sessions';
+import { JoinByCode, SessionForm, SessionList, SessionsCard } from '../components/Sessions';
 import { Empty, Loading, PageHeader } from '../components/ui';
 import { rpc } from '../lib/rpc';
 import { t } from '../lib/i18n';
@@ -32,6 +32,7 @@ export function SessionsPage() {
         title={t('My upcoming study sessions')}
         actions={
           <>
+            <JoinByCode />
             <Button size="md" variant="default" component={Link} to="/sessions/search" leftSection={<IconSearch size={18} />}>
               {t('Search for study sessions')}
             </Button>
@@ -47,7 +48,7 @@ export function SessionsPage() {
             sessions={mine.data ?? []}
             empty={
               <Empty icon={<IconUsersGroup size={22} />}>
-                {t("You're not in any upcoming sessions. Search for one to join, or create your own.")}
+                {t("You're not in any upcoming sessions. Search for one to join, enter an invite code, or create your own.")}
               </Empty>
             }
           />
@@ -71,7 +72,7 @@ export function SessionSearchPage() {
       <PageHeader
         crumbs={[{ label: t('Study Sessions'), to: '/sessions' }, { label: t('Search for sessions') }]}
         title={t('Search for sessions')}
-        subtitle={t('Upcoming study sessions in all your classes.')}
+        subtitle={t('Upcoming open sessions in all your classes. Invite-only sessions need their code.')}
         actions={<CreateButton />}
       />
       <TextInput

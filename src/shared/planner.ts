@@ -1,6 +1,19 @@
-import { addDays, eachDay } from './dates';
+import { addDays, eachDay, parseYmd } from './dates';
 
-// ST2: spread an assignment's tasks over the days before its deadline.
+// ST2 in version B: work is scheduled as early as possible, not spread evenly. Each task
+// goes on the first day, from today, with enough free study time left, in order, so the
+// plan finishes early and the days before the deadline stay free. "Free time" is set per
+// weekday (e.g. 90 minutes on weekdays, 3 hours on weekends) rather than one daily number.
+
+// Sunday first, like Date.getDay().
+export const DEFAULT_WEEKLY_MINUTES = [180, 90, 90, 90, 90, 60, 180];
+export const DEFAULT_BUFFER_DAYS = 2;
+
+export function weeklyMinutes(saved: number[] | null | undefined): number[] {
+  return saved?.length === 7 ? saved : DEFAULT_WEEKLY_MINUTES;
+}
+
+export const minutesOn = (weekly: number[], day: string) => weekly[parseYmd(day).getDay()] ?? 0;
 
 export interface PlannableTask {
   id: number;
@@ -50,15 +63,15 @@ export function planTasks({ tasks, today, dueDate, bufferDays, capacity }: PlanI
     if (left != null) remaining.set(task.scheduledFor, left - task.minutes);
   }
 
-  const movable = open.filter((t) => !isKept(t));
   let overloaded = false;
   let earliest = 0;
-  movable.forEach((task, i) => {
-    // Even spread: task i of k lands on day ⌊i·n/k⌋, never before the previous task.
-    let index = Math.max(earliest, Math.floor((i * days.length) / movable.length));
+  for (const task of open.filter((t) => !isKept(t))) {
+    // First day with room, never before the previous task.
+    let index = earliest;
     while (index < days.length && remaining.get(days[index])! < task.minutes) index++;
 
     if (index === days.length) {
+      // Nowhere has room: use the roomiest remaining day.
       overloaded = true;
       index = earliest;
       for (let j = earliest; j < days.length; j++) {
@@ -70,7 +83,7 @@ export function planTasks({ tasks, today, dueDate, bufferDays, capacity }: PlanI
     dates.set(task.id, day);
     remaining.set(day, remaining.get(day)! - task.minutes);
     earliest = index;
-  });
+  }
 
   return { dates, lastWorkDay, tight, overloaded };
 }

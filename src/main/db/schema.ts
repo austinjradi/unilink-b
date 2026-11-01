@@ -22,16 +22,20 @@ export const users = sqliteTable('users', {
   email: text('email').notNull().unique(),
   name: text('name').notNull(),
   passwordHash: text('password_hash').notNull(),
-  program: text('program').notNull().default(''),
-  year: integer('year'),
-  // Daily study budget the assignment planner (ST2) schedules work into.
-  studyMinutesPerDay: integer('study_minutes_per_day').notNull().default(120),
   // A2: the program the student is working towards (an id from db/programs.ts).
   degreeProgramId: text('degree_program_id'),
   // G3: per-type channel choices; missing types use the defaults in shared/notifications.ts.
   notificationPrefs: text('notification_prefs', { mode: 'json' }).$type<NotificationPrefs>(),
   // The student's goat avatar; null until customized (see shared/goat.ts).
   avatar: text('avatar', { mode: 'json' }).$type<GoatConfig>(),
+  // Version B profile: shown to classmates once you post or reply (S1).
+  pronouns: text('pronouns').notNull().default(''),
+  faculty: text('faculty').notNull().default(''),
+  gradYear: integer('grad_year'),
+  // G4: the one-time recovery code shown at sign-up (and after each reset) replaces emailed reset codes.
+  recoveryCodeHash: text('recovery_code_hash'),
+  // ST2: free study minutes for each weekday, Sunday first; null uses DEFAULT_WEEKLY_MINUTES.
+  weeklyStudyMinutes: text('weekly_study_minutes', { mode: 'json' }).$type<number[]>(),
   // Language for the UI, notifications and emails.
   locale: text('locale', { enum: ['en', 'fr'] }).notNull().default('en'),
   createdAt: createdAt(),
@@ -41,14 +45,6 @@ export const authSessions = sqliteTable('auth_sessions', {
   tokenHash: text('token_hash').primaryKey(),
   userId: userRef(),
   createdAt: createdAt(),
-});
-
-export const passwordResets = sqliteTable('password_resets', {
-  id: id(),
-  userId: userRef(),
-  codeHash: text('code_hash').notNull(),
-  expiresAt: timestamp('expires_at').notNull(),
-  usedAt: timestamp('used_at'),
 });
 
 // Small key/value store for device-local state (e.g. the remembered session).
@@ -71,7 +67,8 @@ export const courses = sqliteTable(
   (t) => [uniqueIndex('courses_code_idx').on(t.subject, t.number)],
 );
 
-// One class per course per term: "COMP 251 · Fall 2026". Sections share a class.
+// One class per course section per term: "COMP 251-001 · Fall 2026". Each section
+// has its own members, board, chats, sessions and shared course info.
 export const classes = sqliteTable(
   'classes',
   {
@@ -80,8 +77,9 @@ export const classes = sqliteTable(
       .notNull()
       .references(() => courses.id, { onDelete: 'cascade' }),
     term: text('term').notNull(),
+    section: text('section').notNull().default('001'),
   },
-  (t) => [uniqueIndex('classes_course_term_idx').on(t.courseId, t.term)],
+  (t) => [uniqueIndex('classes_course_term_section_idx').on(t.courseId, t.term, t.section)],
 );
 
 export const enrollments = sqliteTable(
@@ -106,20 +104,26 @@ export const chatLinks = sqliteTable(
     platform: text('platform').notNull(),
     label: text('label').notNull().default(''),
     isPublic: integer('is_public', { mode: 'boolean' }).notNull().default(false),
+    // What the chat is for: the whole course, this section, a project team, a study group…
+    purpose: text('purpose').notNull().default('course'),
+    // The chat's identity (platform + invite code), compared across every section of the course.
+    chatKey: text('chat_key').notNull().default(''),
     createdAt: createdAt(),
     updatedAt: timestamp('updated_at'),
   },
   (t) => [uniqueIndex('chat_links_class_url_idx').on(t.classId, t.url)],
 );
 
-export const chatLinkFlags = sqliteTable(
-  'chat_link_flags',
+// S2.4 in version B: classmates vouch for a link ("works") or report it.
+export const chatLinkVotes = sqliteTable(
+  'chat_link_votes',
   {
     linkId: integer('link_id')
       .notNull()
       .references(() => chatLinks.id, { onDelete: 'cascade' }),
     userId: userRef(),
-    reason: text('reason').notNull(),
+    vote: text('vote', { enum: ['works', 'report'] }).notNull(),
+    reason: text('reason'),
     createdAt: createdAt(),
   },
   (t) => [primaryKey({ columns: [t.linkId, t.userId] })],
@@ -141,6 +145,11 @@ export const studySessions = sqliteTable(
     capacity: integer('capacity'),
     // What it's for, shown as a tag: "Assignment", "Midterm", …
     tag: text('tag'),
+    // Version B: open to the whole section, or only to people who have the invite code.
+    visibility: text('visibility', { enum: ['class', 'invite'] }).notNull().default('class'),
+    format: text('format', { enum: ['in-person', 'online'] }).notNull().default('in-person'),
+    meetingUrl: text('meeting_url').notNull().default(''),
+    inviteCode: text('invite_code').notNull().default(''),
     cancelledAt: timestamp('cancelled_at'),
     createdAt: createdAt(),
   },
@@ -154,7 +163,8 @@ export const studySessionMembers = sqliteTable(
       .notNull()
       .references(() => studySessions.id, { onDelete: 'cascade' }),
     userId: userRef(),
-    status: text('status', { enum: ['invited', 'going'] }).notNull(),
+    // Version B has no invited state: you join with the code, or wait for a spot.
+    status: text('status', { enum: ['invited', 'going', 'waitlisted'] }).notNull(),
     invitedById: integer('invited_by_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
   },
@@ -173,6 +183,11 @@ export const posts = sqliteTable(
     title: text('title').notNull(),
     body: text('body').notNull(),
     visibility: text('visibility', { enum: ['class', 'selected'] }).notNull(),
+    // Version B: questions can be resolved with an accepted answer; notes can't.
+    kind: text('kind', { enum: ['question', 'note'] }).notNull().default('question'),
+    acceptedReplyId: integer('accepted_reply_id'),
+    // Deleting a post that has replies keeps the thread and blanks the post.
+    deletedAt: timestamp('deleted_at'),
     createdAt: createdAt(),
     editedAt: timestamp('edited_at'),
   },
@@ -228,11 +243,22 @@ export const deadlines = sqliteTable(
     title: text('title').notNull(),
     dueAt: timestamp('due_at').notNull(),
     notes: text('notes').notNull().default(''),
-    // ST3: checked off from the to-do list.
-    completedAt: timestamp('completed_at'),
     createdAt: createdAt(),
   },
   (t) => [index('deadlines_user_due_idx').on(t.userId, t.dueAt)],
+);
+
+// Version B: class deadlines are shared with the section, so each student checks them off separately.
+export const deadlineDone = sqliteTable(
+  'deadline_done',
+  {
+    deadlineId: integer('deadline_id')
+      .notNull()
+      .references(() => deadlines.id, { onDelete: 'cascade' }),
+    userId: userRef(),
+    doneAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.deadlineId, t.userId] })],
 );
 
 // --- A5 Course info and grading scheme (A4 reads these) -----------------------------
@@ -242,10 +268,7 @@ export const courseInfo = sqliteTable(
   {
     userId: userRef(),
     classId: classRef(),
-    professor: text('professor').notNull().default(''),
-    professorEmail: text('professor_email').notNull().default(''),
-    officeHours: text('office_hours').notNull().default(''),
-    location: text('location').notNull().default(''),
+    // Private notes; the shared details are in class_details.
     notes: text('notes').notNull().default(''),
     targetGrade: text('target_grade').notNull().default('A'),
     // ST1: whether this class's meetings switch study mode on.
@@ -262,11 +285,36 @@ export const assessments = sqliteTable(
     classId: classRef(),
     name: text('name').notNull(),
     weight: real('weight').notNull(), // % of the final grade
-    score: real('score'), // % earned, null until graded
     dueAt: timestamp('due_at'),
     position: integer('position').notNull().default(0),
   },
   (t) => [index('assessments_user_class_idx').on(t.userId, t.classId)],
+);
+
+// Version B: course details are shared by the section and anyone in it can edit them.
+export const classDetails = sqliteTable('class_details', {
+  classId: integer('class_id')
+    .primaryKey()
+    .references(() => classes.id, { onDelete: 'cascade' }),
+  professor: text('professor').notNull().default(''),
+  professorEmail: text('professor_email').notNull().default(''),
+  officeHours: text('office_hours').notNull().default(''),
+  location: text('location').notNull().default(''),
+  updatedById: integer('updated_by_id').references(() => users.id, { onDelete: 'set null' }),
+  updatedAt: timestamp('updated_at'),
+});
+
+// The grading scheme in `assessments` is shared by the section; each student's marks live here.
+export const assessmentScores = sqliteTable(
+  'assessment_scores',
+  {
+    assessmentId: integer('assessment_id')
+      .notNull()
+      .references(() => assessments.id, { onDelete: 'cascade' }),
+    userId: userRef(),
+    score: real('score').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.assessmentId, t.userId] })],
 );
 
 // --- ST2 Assignment planner ----------------------------------------------------

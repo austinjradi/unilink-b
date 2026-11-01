@@ -14,7 +14,7 @@ import {
   studySessions,
 } from '../db/schema';
 import { type AuthedContext, type Context, idSchema, procedure } from '../rpc/core';
-import { requireMember } from './access';
+import { requireMember, sectionCode } from './access';
 import { m, notify, sweepReminders, takeDesktopNotifications } from './notifications';
 
 // ST1: study mode switches on during class times and study sessions (or by hand),
@@ -50,20 +50,19 @@ function focusWindows(db: DB, userId: number, now: Date): FocusWindow[] {
 
   if (settings.autoForClasses) {
     const meetings = db
-      .select({ meeting: classMeetings, term: classes.term, subject: courses.subject, number: courses.number, auto: courseInfo.studyModeAuto })
+      .select({ meeting: classMeetings, term: classes.term, code: sectionCode, auto: courseInfo.studyModeAuto })
       .from(classMeetings)
       .innerJoin(classes, eq(classMeetings.classId, classes.id))
       .innerJoin(courses, eq(classes.courseId, courses.id))
       .innerJoin(enrollments, and(eq(enrollments.classId, classes.id), eq(enrollments.userId, userId)))
       .leftJoin(courseInfo, and(eq(courseInfo.classId, classes.id), eq(courseInfo.userId, userId)))
-      .where(eq(classMeetings.userId, userId))
       .all();
-    for (const { meeting: m, term, subject, number, auto } of meetings) {
+    for (const { meeting: m, term, code, auto } of meetings) {
       if (auto === false) continue;
       const range = termRange(term);
       for (const day of days) {
         if (parseYmd(day).getDay() !== m.weekday || day < range.start || day > range.end) continue;
-        windows.push({ start: atTime(day, m.startTime), end: atTime(day, m.endTime), reason: 'class', label: `${subject} ${number}` });
+        windows.push({ start: atTime(day, m.startTime), end: atTime(day, m.endTime), reason: 'class', label: code });
       }
     }
   }
@@ -134,13 +133,13 @@ export const studyModeRouter = {
   // Per-class choice: should this class's meetings switch study mode on?
   classes: procedure(z.void(), (_input, ctx) =>
     ctx.db
-      .select({ classId: classes.id, subject: courses.subject, number: courses.number, term: classes.term, auto: courseInfo.studyModeAuto })
+      .select({ classId: classes.id, code: sectionCode, term: classes.term, auto: courseInfo.studyModeAuto })
       .from(enrollments)
       .innerJoin(classes, eq(enrollments.classId, classes.id))
       .innerJoin(courses, eq(classes.courseId, courses.id))
       .leftJoin(courseInfo, and(eq(courseInfo.classId, classes.id), eq(courseInfo.userId, ctx.userId)))
       .where(eq(enrollments.userId, ctx.userId))
-      .orderBy(courses.subject, courses.number)
+      .orderBy(courses.subject, courses.number, classes.section)
       .all()
       .map((c) => ({ ...c, auto: c.auto ?? true })),
   ),

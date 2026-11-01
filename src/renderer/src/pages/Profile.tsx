@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import {
   Alert,
+  Autocomplete,
   Button,
   Card,
   Center,
+  Checkbox,
   Group,
   Modal,
-  NumberInput,
   PasswordInput,
   Select,
   Stack,
@@ -18,7 +19,8 @@ import {
 import { useForm } from '@mantine/form';
 import { IconAlertTriangle, IconEye, IconMail } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { passwordProblems } from '@shared/validation';
+import { FACULTIES, passwordProblems, PRONOUNS } from '@shared/validation';
+import { RecoveryCodeNotice } from './Auth';
 import { SectionCard } from '../components/ui';
 import { fromNow } from '../lib/format';
 import { useAction, useMe } from '../lib/hooks';
@@ -31,7 +33,7 @@ export function PrivacyPanel() {
   return (
     <SectionCard title={t('What classmates see')}>
       <Alert variant="light" icon={<IconEye size={18} />}>
-        {t("Your name, McGill email and goat are shown to classmates only when you post or reply on a discussion board, add a public group chat link, or join a study session. There's no member list for your classes. Your grades, notes, course record and planner are private to you.")}
+        {t("Your name, McGill email, pronouns, faculty and goat are shown to classmates only once you post or reply on a discussion board. Joining a study session doesn't reveal you: only the other people going see who's there. Group chat links you share show your name. There's no member list for your classes. Your grades, notes, course record and planner are private to you.")}
       </Alert>
     </SectionCard>
   );
@@ -127,19 +129,32 @@ export function NotificationSettings() {
   );
 }
 
+export const facultyOptions = () => FACULTIES.map((f) => ({ value: f, label: t(f) }));
+
+export const gradYearOptions = () => {
+  const year = new Date().getFullYear();
+  return Array.from({ length: 7 }, (_, i) => String(year + i));
+};
+
 export function ProfileForm() {
   const me = useMe();
   const form = useForm({
     initialValues: {
       name: me.name,
-      program: me.program,
-      year: me.year == null ? null : String(me.year),
-      studyMinutesPerDay: me.studyMinutesPerDay,
+      pronouns: me.pronouns,
+      faculty: (me.faculty || null) as string | null,
+      gradYear: me.gradYear == null ? null : String(me.gradYear),
     },
     validate: { name: (v) => (v.trim() ? null : t('Enter your name')) },
   });
   const save = useAction(
-    (v: typeof form.values) => rpc.profile.update({ ...v, year: v.year ? Number(v.year) : null, studyMinutesPerDay: Number(v.studyMinutesPerDay) }),
+    (v: typeof form.values) =>
+      rpc.profile.update({
+        name: v.name,
+        pronouns: v.pronouns,
+        faculty: (v.faculty ?? '') as Parameters<typeof rpc.profile.update>[0]['faculty'],
+        gradYear: v.gradYear ? Number(v.gradYear) : null,
+      }),
     { success: 'Profile saved', onSuccess: (_d, v) => form.resetDirty(v) },
   );
 
@@ -149,22 +164,12 @@ export function ProfileForm() {
         <Stack>
           <Group grow>
             <TextInput label={t('Name')} {...form.getInputProps('name')} />
-            <TextInput label={t('McGill email')} value={me.email} disabled />
+            <Autocomplete label={t('Pronouns')} placeholder={t('Optional')} data={[...PRONOUNS]} {...form.getInputProps('pronouns')} />
           </Group>
           <Group grow>
-            <TextInput label={t('Program')} placeholder={t('e.g. Computer Science')} {...form.getInputProps('program')} />
-            <Select label={t('Year')} placeholder="—" clearable data={['1', '2', '3', '4', '5', '6']} {...form.getInputProps('year')} />
+            <Select label={t('Faculty')} placeholder="—" clearable data={facultyOptions()} {...form.getInputProps('faculty')} />
+            <Select label={t('Expected graduation')} placeholder="—" clearable data={gradYearOptions()} {...form.getInputProps('gradYear')} />
           </Group>
-          <NumberInput
-            label={t('Study time per day')}
-            description={t('How much time the assignment planner can schedule on a day')}
-            suffix=" min"
-            min={15}
-            max={960}
-            step={15}
-            w={260}
-            {...form.getInputProps('studyMinutesPerDay')}
-          />
           <Group justify="flex-end">
             <Button type="submit" disabled={!form.isDirty()} loading={save.isPending}>
               {t('Save profile')}
@@ -176,13 +181,73 @@ export function ProfileForm() {
   );
 }
 
+// G4.6: the McGill email can change (e.g. @mcgill.ca after becoming staff); your password confirms it.
+export function ChangeEmail() {
+  const me = useMe();
+  const form = useForm({ initialValues: { email: me.email, password: '' } });
+  const save = useAction((v: typeof form.values) => rpc.profile.changeEmail(v), {
+    success: 'Email changed. Sign in with it from now on.',
+    onSuccess: (user) => form.setValues({ email: user.email, password: '' }),
+  });
+  return (
+    <SectionCard title={t('McGill email')}>
+      <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
+        <Group grow align="flex-end">
+          <TextInput label={t('Email')} {...form.getInputProps('email')} />
+          <PasswordInput label={t('Current password')} {...form.getInputProps('password')} />
+          <Button type="submit" variant="default" disabled={form.values.email.trim().toLowerCase() === me.email || !form.values.password} loading={save.isPending}>
+            {t('Change email')}
+          </Button>
+        </Group>
+      </form>
+    </SectionCard>
+  );
+}
+
+// G4.4: the recovery code is the only way back in without your password.
+export function RecoveryCode() {
+  const [password, setPassword] = useState('');
+  const [code, setCode] = useState<string | null>(null);
+  const make = useAction(() => rpc.profile.newRecoveryCode({ password }), {
+    onSuccess: (r) => {
+      setCode(r.recoveryCode);
+      setPassword('');
+    },
+  });
+  return (
+    <SectionCard title={t('Recovery code')}>
+      <Text size="sm" c="dimmed" mb="sm">
+        {t("If you forget your password, your recovery code lets you set a new one. UniLink doesn't send reset emails. Lost it? Make a new one; the old one stops working.")}
+      </Text>
+      {code ? (
+        <RecoveryCodeNotice code={code} />
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            make.mutate();
+          }}
+        >
+          <Group align="flex-end">
+            <PasswordInput label={t('Current password')} value={password} onChange={(e) => setPassword(e.currentTarget.value)} w={260} />
+            <Button type="submit" variant="default" disabled={!password} loading={make.isPending}>
+              {t('Make a new recovery code')}
+            </Button>
+          </Group>
+        </form>
+      )}
+    </SectionCard>
+  );
+}
+
 export function ChangePassword() {
+  const me = useMe();
   const form = useForm({
     initialValues: { currentPassword: '', newPassword: '', confirm: '' },
     validate: {
       newPassword: (v) =>
-        passwordProblems(v).length
-          ? t('Needs: {{rules}}', { rules: passwordProblems(v).map((rule) => t(rule).toLowerCase()).join(', ') })
+        passwordProblems(v, me.email).length
+          ? t('Needs: {{rules}}', { rules: passwordProblems(v, me.email).map((rule) => t(rule).toLowerCase()).join(', ') })
           : null,
       confirm: (v, values) => (v === values.newPassword ? null : t('Passwords do not match')),
     },
@@ -198,7 +263,7 @@ export function ChangePassword() {
         <Stack>
           <PasswordInput label={t('Current password')} {...form.getInputProps('currentPassword')} />
           <Group grow>
-            <PasswordInput label={t('New password')} {...form.getInputProps('newPassword')} />
+            <PasswordInput label={t('New password')} description={t('At least 12 characters. A short phrase is easiest to remember.')} {...form.getInputProps('newPassword')} />
             <PasswordInput label={t('Confirm new password')} {...form.getInputProps('confirm')} />
           </Group>
           <Group justify="flex-end">
@@ -215,12 +280,13 @@ export function ChangePassword() {
 export function DeleteAccount() {
   const [open, setOpen] = useState(false);
   const [password, setPassword] = useState('');
-  const remove = useAction(() => rpc.profile.deleteAccount({ password }), { success: 'Your account and data were deleted.' });
+  const [keepPosts, setKeepPosts] = useState(false);
+  const remove = useAction(() => rpc.profile.deleteAccount({ password, keepPosts }), { success: 'Your account and data were deleted.' });
 
   return (
     <SectionCard title={t('Delete account')}>
       <Text size="sm" c="dimmed" mb="md">
-        {t("Permanently deletes your account, classes, links, posts, study sessions, grades and plans. This can't be undone.")}
+        {t("Permanently deletes your account, classes, links, posts, grades and plans. Sessions you host pass to the next person going. This can't be undone.")}
       </Text>
       <Button color="red" variant="light" onClick={() => setOpen(true)}>
         {t('Delete my account')}
@@ -233,8 +299,17 @@ export function DeleteAccount() {
           }}
         >
           <Stack>
-            <Text size="sm">{t("Enter your password to confirm. Everything you've added to UniLink will be deleted.")}</Text>
+            <Text size="sm">{t('Enter your password to confirm.')}</Text>
             <PasswordInput label={t('Password')} value={password} onChange={(e) => setPassword(e.currentTarget.value)} data-autofocus />
+            <Checkbox
+              checked={keepPosts}
+              onChange={(e) => setKeepPosts(e.currentTarget.checked)}
+              label={t('Leave my posts and replies up, without my name')}
+              description={t('Classmates keep the answers you gave. They show as "Former student".')}
+            />
+            <Text size="xs" c="dimmed">
+              {t('Class times, deadlines and grading schemes you added for a section stay with it, credited to a former student.')}
+            </Text>
             <Group justify="flex-end">
               <Button variant="default" onClick={() => setOpen(false)}>
                 {t('Cancel')}

@@ -2,14 +2,16 @@ import { type ReactNode, useState } from 'react';
 import {
   Alert,
   Anchor,
+  Autocomplete,
   Button,
   Center,
   Code,
+  CopyButton,
   Group,
   List,
   Paper,
   PasswordInput,
-  PinInput,
+  Select,
   Stack,
   Text,
   TextInput,
@@ -18,10 +20,10 @@ import {
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { modals } from '@mantine/modals';
-import { IconCheck, IconInfoCircle, IconX } from '@tabler/icons-react';
+import { IconCheck, IconInfoCircle, IconKey, IconX } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router';
-import { MCGILL_EMAIL, PASSWORD_RULES, passwordProblems } from '@shared/validation';
+import { Link } from 'react-router';
+import { FACULTIES, MCGILL_EMAIL, PASSWORD_RULES, passwordProblems, PRONOUNS } from '@shared/validation';
 import { GoatAvatar } from '../components/Goat';
 import { Logo } from '../components/Layout';
 import { useAction } from '../lib/hooks';
@@ -61,13 +63,14 @@ const confirmReset = () =>
   });
 
 const emailRule = (v: string) => (MCGILL_EMAIL.test(v.trim()) ? null : t('Use your McGill email (@mail.mcgill.ca)'));
-const passwordRule = (v: string) => (passwordProblems(v).length ? t('Password does not meet the requirements') : null);
+const passwordRule = (v: string, values: { email: string }) =>
+  passwordProblems(v, values.email).length ? t('Password does not meet the requirements') : null;
 
-function PasswordChecklist({ password }: { password: string }) {
+function PasswordChecklist({ password, email }: { password: string; email: string }) {
   return (
     <List size="xs" spacing={2} center>
       {PASSWORD_RULES.map(([label, test]) => {
-        const ok = test(password);
+        const ok = password.length > 0 && test(password, email);
         return (
           <List.Item
             key={label}
@@ -132,29 +135,96 @@ export function SignIn() {
   );
 }
 
+// G4.4 in version B: shown once at sign-up and after each reset. It's the only way to
+// reset a forgotten password, since UniLink doesn't email reset codes.
+export function RecoveryCodeNotice({ code }: { code: string }) {
+  return (
+    <Alert variant="light" color="yellow" icon={<IconKey size={18} />} title={t('Save your recovery code')}>
+      <Text size="sm" mb="xs">
+        {t("If you forget your password, this code lets you set a new one. It's shown only once, so keep it somewhere safe (a password manager is ideal).")}
+      </Text>
+      <Group gap="sm">
+        <Code fz="lg" fw={700}>
+          {code}
+        </Code>
+        <CopyButton value={code}>
+          {({ copied, copy }) => (
+            <Button size="xs" variant="light" color="yellow" onClick={copy}>
+              {copied ? t('Copied') : t('Copy')}
+            </Button>
+          )}
+        </CopyButton>
+      </Group>
+    </Alert>
+  );
+}
+
+function showRecoveryCode(code: string) {
+  modals.open({
+    title: t('One more thing'),
+    closeOnClickOutside: false,
+    closeOnEscape: false,
+    withCloseButton: false,
+    children: (
+      <Stack>
+        <RecoveryCodeNotice code={code} />
+        <Button onClick={() => modals.closeAll()}>{t("I've saved it")}</Button>
+      </Stack>
+    ),
+  });
+}
+
 export function SignUp() {
   const form = useForm({
-    initialValues: { name: '', email: '', password: '', confirm: '' },
+    initialValues: { name: '', email: '', pronouns: '', faculty: null as string | null, gradYear: null as string | null, password: '', confirm: '' },
     validate: {
       name: (v) => (v.trim() ? null : t('Enter your name')),
       email: emailRule,
+      faculty: (v) => (v ? null : t('Pick your faculty')),
       password: passwordRule,
       confirm: (v, values) => (v === values.password ? null : t('Passwords do not match')),
     },
   });
-  const signUp = useAction(({ name, email, password }: typeof form.values) => rpc.auth.signUp({ name, email, password, locale: getLocale() }), {
-    success: 'Welcome to UniLink! Start by joining your classes.',
-  });
+  const signUp = useAction(
+    (v: typeof form.values) =>
+      rpc.auth.signUp({
+        name: v.name,
+        email: v.email,
+        password: v.password,
+        pronouns: v.pronouns,
+        faculty: (v.faculty ?? '') as Parameters<typeof rpc.auth.signUp>[0]['faculty'],
+        gradYear: v.gradYear ? Number(v.gradYear) : null,
+        locale: getLocale(),
+      }),
+    { success: 'Welcome to UniLink! Start by joining your classes.', onSuccess: (r) => showRecoveryCode(r.recoveryCode) },
+  );
+  const year = new Date().getFullYear();
 
   return (
     <AuthCard title={t('Create your account')} subtitle={t('UniLink is for McGill students. Use your McGill email.')}>
       <form onSubmit={form.onSubmit((v) => signUp.mutate(v))}>
         <Stack>
-          <TextInput label={t('Full name')} required {...form.getInputProps('name')} />
+          <Group grow align="flex-start">
+            <TextInput label={t('Full name')} required {...form.getInputProps('name')} />
+            <Autocomplete label={t('Pronouns')} placeholder={t('Optional')} data={[...PRONOUNS]} {...form.getInputProps('pronouns')} />
+          </Group>
           <TextInput label={t('McGill email')} placeholder={t('first.last@mail.mcgill.ca')} required {...form.getInputProps('email')} />
+          <Group grow align="flex-start">
+            <Select label={t('Faculty')} required searchable data={FACULTIES.map((f) => ({ value: f, label: t(f) }))} {...form.getInputProps('faculty')} />
+            <Select
+              label={t('Expected graduation')}
+              placeholder="—"
+              clearable
+              data={Array.from({ length: 7 }, (_, i) => String(year + i))}
+              {...form.getInputProps('gradYear')}
+            />
+          </Group>
+          <Text size="xs" c="dimmed" mt={-6}>
+            {t('Classmates see your name, email, pronouns and faculty once you post or reply in a class.')}
+          </Text>
           <div>
             <PasswordInput label={t('Password')} required mb={6} {...form.getInputProps('password')} />
-            <PasswordChecklist password={form.values.password} />
+            <PasswordChecklist password={form.values.password} email={form.values.email} />
           </div>
           <PasswordInput label={t('Confirm password')} required {...form.getInputProps('confirm')} />
           <Button type="submit" loading={signUp.isPending}>
@@ -173,72 +243,50 @@ export function SignUp() {
 }
 
 export function ResetPassword() {
-  const navigate = useNavigate();
-  const [email, setEmail] = useState('');
-  const [sent, setSent] = useState<{ devCode: string | null } | null>(null);
+  const [newCode, setNewCode] = useState<string | null>(null);
   const form = useForm({
-    initialValues: { code: '', password: '' },
-    validate: { code: (v) => (v.length === 6 ? null : t('Enter the 6-digit code')), password: passwordRule },
+    initialValues: { email: '', recoveryCode: '', password: '' },
+    validate: {
+      email: emailRule,
+      recoveryCode: (v) => (v.replace(/[^a-z0-9]/gi, '').length === 12 ? null : t('Enter the 12-character recovery code')),
+      password: passwordRule,
+    },
   });
-
-  const request = useAction((address: string) => rpc.auth.requestPasswordReset({ email: address }), {
-    onSuccess: (data) => setSent(data),
-  });
-  const reset = useAction((v: typeof form.values) => rpc.auth.resetPassword({ email, ...v }), {
+  const reset = useAction((v: typeof form.values) => rpc.auth.resetPassword(v), {
     success: 'Password updated. Sign in with your new password.',
-    onSuccess: () => navigate('/'),
+    onSuccess: (r) => setNewCode(r.recoveryCode),
   });
 
   return (
-    <AuthCard title={t('Reset your password')} subtitle={t("We'll send a one-time code to your McGill email.")}>
-      {!sent ? (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            request.mutate(email);
-          }}
-        >
+    <AuthCard title={t('Reset your password')} subtitle={t('Use the recovery code you saved when you created your account.')}>
+      {newCode ? (
+        <Stack>
+          <RecoveryCodeNotice code={newCode} />
+          <Text size="sm">{t('Your old recovery code no longer works. This new one replaces it.')}</Text>
+          <Button component={Link} to="/">
+            {t('Back to sign in')}
+          </Button>
+        </Stack>
+      ) : (
+        <form onSubmit={form.onSubmit((v) => reset.mutate(v))}>
           <Stack>
-            <TextInput label={t('McGill email')} required value={email} onChange={(e) => setEmail(e.currentTarget.value)} />
+            <TextInput label={t('McGill email')} required {...form.getInputProps('email')} />
+            <TextInput label={t('Recovery code')} placeholder="XXXX-XXXX-XXXX" required {...form.getInputProps('recoveryCode')} />
+            <div>
+              <PasswordInput label={t('New password')} required mb={6} {...form.getInputProps('password')} />
+              <PasswordChecklist password={form.values.password} email={form.values.email} />
+            </div>
             <Group justify="space-between">
               <Anchor component={Link} to="/" size="sm">
                 {t('Back to sign in')}
               </Anchor>
-              <Button type="submit" loading={request.isPending}>
-                {t('Send code')}
+              <Button type="submit" loading={reset.isPending}>
+                {t('Set new password')}
               </Button>
             </Group>
-          </Stack>
-        </form>
-      ) : (
-        <form onSubmit={form.onSubmit((v) => reset.mutate(v))}>
-          <Stack>
-            <Text size="sm">
-              {t('If {{email}} has an account, a code is on its way. It expires in 15 minutes.', { email })}
+            <Text size="xs" c="dimmed">
+              {t("Lost your recovery code too? There's no email reset in this version of UniLink. In the demo you can sign up again with another address.")}
             </Text>
-            {sent.devCode && (
-              <Alert variant="light" icon={<IconInfoCircle />} title={t("Dev build: email isn't wired up yet")}>
-                {t('Your code is')} <Code>{sent.devCode}</Code>
-              </Alert>
-            )}
-            <div>
-              <Text size="sm" fw={500} mb={4}>
-                {t('Code')}
-              </Text>
-              <PinInput length={6} type="number" {...form.getInputProps('code')} />
-              {form.errors.code && (
-                <Text c="red" size="xs" mt={4}>
-                  {form.errors.code}
-                </Text>
-              )}
-            </div>
-            <div>
-              <PasswordInput label={t('New password')} required mb={6} {...form.getInputProps('password')} />
-              <PasswordChecklist password={form.values.password} />
-            </div>
-            <Button type="submit" loading={reset.isPending}>
-              {t('Set new password')}
-            </Button>
           </Stack>
         </form>
       )}

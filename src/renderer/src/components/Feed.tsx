@@ -1,7 +1,6 @@
 import { type ReactNode, useState } from 'react';
 import {
   ActionIcon,
-  Autocomplete,
   Button,
   Card,
   Chip,
@@ -24,7 +23,7 @@ import {
 import { useForm } from '@mantine/form';
 import { useDebouncedValue } from '@mantine/hooks';
 import { modals } from '@mantine/modals';
-import { IconLock, IconMessageCircle, IconMessages, IconPencil, IconPlus, IconSearch, IconTrash } from '@tabler/icons-react';
+import { IconCheck, IconCircleCheck, IconLock, IconMessageCircle, IconMessages, IconPencil, IconPlus, IconSearch, IconTrash } from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { fromNow } from '../lib/format';
@@ -35,19 +34,20 @@ import { GoatAvatar } from './Goat';
 import { Empty, Loading, Tag } from './ui';
 
 // S4 discussion board in the layout of the wireframes (A2Team.pdf p. 9–10): a feed of
-// posts with class and type tags and 🐐 reactions, filters on the right, and threads.
+// posts with class and topic tags and 🐐 reactions, filters on the right, and threads.
+// Version B: questions and notes, fixed topics, flat replies and accepted answers.
 
 type FeedPost = Out<typeof rpc.board.feed>[number];
 type PostDetail = Out<typeof rpc.board.get>;
 type Since = 'today' | 'week' | 'month' | null;
 
 const TOPIC_COLORS: Record<string, string> = {
-  Assignment: 'orange',
-  Midterm: 'red',
-  Final: 'grape',
-  Lecture: 'periwinkle',
-  'Study group': 'teal',
-  'Just yapping': 'yellow',
+  Lectures: 'periwinkle',
+  Assignments: 'orange',
+  Exams: 'red',
+  'Labs and tutorials': 'teal',
+  Logistics: 'grape',
+  'Off-topic': 'yellow',
 };
 export const TopicTag = ({ topic }: { topic: string }) => <Tag color={TOPIC_COLORS[topic] ?? 'gray'}>{t(topic)}</Tag>;
 
@@ -84,6 +84,20 @@ function ReactionBar({
   );
 }
 
+const authorName = (p: { formerStudent: boolean; authorName: string }) => (p.formerStudent ? t('Former student') : p.authorName);
+
+// "Question · Answered" / "Question · Unanswered" / "Note".
+function KindTag({ post }: { post: { kind: string; acceptedReplyId: number | null; deletedAt: Date | null } }) {
+  if (post.kind === 'note') return <Tag color="gray">{t('Note')}</Tag>;
+  return post.acceptedReplyId ? (
+    <Tag color="teal">
+      <IconCheck size={12} style={{ verticalAlign: -1 }} /> {t('Answered')}
+    </Tag>
+  ) : (
+    <Tag color="orange">{post.deletedAt ? t('Question') : t('Unanswered')}</Tag>
+  );
+}
+
 function PostCard({ post, onOpen }: { post: FeedPost; onOpen: () => void }) {
   const react = useAction(() => rpc.board.react({ postId: post.id }));
   return (
@@ -94,7 +108,7 @@ function PostCard({ post, onOpen }: { post: FeedPost; onOpen: () => void }) {
           <Group justify="space-between" wrap="nowrap" gap="xs">
             <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
               <Text fw={700} truncate>
-                {post.authorName}
+                {post.deletedAt ? t('Deleted post') : authorName(post)}
               </Text>
               <Text size="sm" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
                 {fromNow(post.createdAt)}
@@ -108,14 +122,17 @@ function PostCard({ post, onOpen }: { post: FeedPost; onOpen: () => void }) {
               )}
               <Tag>{post.classLabel}</Tag>
               <TopicTag topic={post.topic} />
+              <KindTag post={post} />
             </Group>
           </Group>
-          <Text fw={800} size="lg" mt={4} className="clickable" onClick={onOpen} style={{ borderRadius: 6 }}>
-            {post.title}
+          <Text fw={800} size="lg" mt={4} className="clickable" onClick={onOpen} style={{ borderRadius: 6 }} c={post.deletedAt ? 'dimmed' : undefined}>
+            {post.deletedAt ? t('The author deleted this post. Its replies are still here.') : post.title}
           </Text>
-          <Text size="sm" mt={4} lineClamp={4} style={{ whiteSpace: 'pre-wrap' }}>
-            {post.body}
-          </Text>
+          {!post.deletedAt && (
+            <Text size="sm" mt={4} lineClamp={4} style={{ whiteSpace: 'pre-wrap' }}>
+              {post.body}
+            </Text>
+          )}
           <Group mt="sm">
             <ReactionBar
               goats={post.goats}
@@ -189,18 +206,20 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
   const [classIds, setClassIds] = useState<string[]>([]);
   const [topics, setTopics] = useState<string[]>([]);
   const [since, setSince] = useState<Since>(null);
+  const [unresolved, setUnresolved] = useState(false);
   const [composing, setComposing] = useState<PostDetail | 'new' | null>(null);
 
   const classes = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
   const allTopics = useQuery({ queryKey: ['board', 'topics', classId ?? null], queryFn: () => rpc.board.topics({ classId: classId ?? null }) });
   const feed = useQuery({
-    queryKey: ['board', 'feed', classId ?? null, classIds, topics, since, debounced],
+    queryKey: ['board', 'feed', classId ?? null, classIds, topics, since, debounced, unresolved],
     queryFn: () =>
       rpc.board.feed({
         classIds: classId ? [classId] : classIds.length ? classIds.map(Number) : null,
         topics,
         since,
         search: debounced,
+        unresolved,
       }),
     placeholderData: keepPreviousData,
   });
@@ -226,7 +245,7 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
                 const c = classes.data!.find((x) => String(x.id) === id)!;
                 return (
                   <Chip key={id} value={id} size="sm" variant="outline">
-                    {c.subject} {c.number}
+                    {c.code}
                   </Chip>
                 );
               }}
@@ -234,7 +253,12 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
           </Chip.Group>
         </ChipSection>
       )}
-      <ChipSection title={t('Type')}>
+      <ChipSection title={t('Questions')}>
+        <Chip size="sm" variant="outline" checked={unresolved} onChange={setUnresolved}>
+          {t('Unanswered only')}
+        </Chip>
+      </ChipSection>
+      <ChipSection title={t('Topic')}>
         <Chip.Group multiple value={topics} onChange={setTopics}>
           <MoreChips
             items={allTopics.data ?? []}
@@ -282,7 +306,7 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
           ) : (
             <Card>
               <Empty icon={<IconMessages size={22} />}>
-                {search || topics.length || classIds.length || since
+                {search || topics.length || classIds.length || since || unresolved
                   ? t('No posts match these filters.')
                   : classes.data?.length
                     ? t('No posts yet. Ask a question or start a discussion!')
@@ -320,26 +344,20 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
   );
 }
 
-// --- Thread (p. 10): the post, replies, and one level of replies to replies -----------
+// --- Thread (p. 10): the post and one flat list of replies, the accepted answer first ----
 
-function ReplyBox({ postId, parentId, onDone, autoFocus }: { postId: number; parentId: number | null; onDone?: () => void; autoFocus?: boolean }) {
+function ReplyBox({ postId, isQuestion }: { postId: number; isQuestion: boolean }) {
   const [body, setBody] = useState('');
-  const send = useAction(() => rpc.board.reply({ postId, parentId, body }), {
-    onSuccess: () => {
-      setBody('');
-      onDone?.();
-    },
-  });
+  const send = useAction(() => rpc.board.reply({ postId, body }), { onSuccess: () => setBody('') });
   return (
     <Group align="flex-end" gap="xs" wrap="nowrap">
       <Textarea
-        placeholder={parentId ? t('Reply to this…') : t('Write a reply…')}
+        placeholder={isQuestion ? t('Write an answer…') : t('Write a reply…')}
         autosize
         minRows={1}
         value={body}
         onChange={(e) => setBody(e.currentTarget.value)}
         style={{ flex: 1 }}
-        autoFocus={autoFocus}
       />
       <Button onClick={() => send.mutate()} disabled={!body.trim()} loading={send.isPending}>
         {t('Reply')}
@@ -350,18 +368,32 @@ function ReplyBox({ postId, parentId, onDone, autoFocus }: { postId: number; par
 
 type Reply = PostDetail['replies'][number];
 
-function ReplyItem({ reply, postId, children }: { reply: Reply; postId: number; children?: ReactNode }) {
-  const [replying, setReplying] = useState(false);
+function ReplyItem({ reply, postId, canAccept }: { reply: Reply; postId: number; canAccept: boolean }) {
   const react = useAction(() => rpc.board.reactReply({ replyId: reply.id }));
   const remove = useAction(() => rpc.board.removeReply({ replyId: reply.id }));
+  const accept = useAction(() => rpc.board.accept({ postId, replyId: reply.accepted ? null : reply.id }), {
+    success: reply.accepted ? t('Answer unmarked') : t('Marked as the answer'),
+  });
   return (
-    <div>
+    <Card
+      padding="sm"
+      withBorder={reply.accepted}
+      style={reply.accepted ? { borderColor: 'var(--mantine-color-teal-5)', background: 'var(--mantine-color-teal-light)' } : { background: 'transparent' }}
+    >
+      {reply.accepted && (
+        <Group gap={4} c="teal" mb={6}>
+          <IconCircleCheck size={16} />
+          <Text size="xs" fw={800}>
+            {t('Accepted answer')}
+          </Text>
+        </Group>
+      )}
       <Group align="flex-start" wrap="nowrap" gap="sm">
         <GoatAvatar goat={reply.authorGoat} size={44} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <Group gap="xs">
             <Text fw={700} size="sm">
-              {reply.authorName}
+              {authorName(reply)}
             </Text>
             <Text size="xs" c="dimmed">
               {fromNow(reply.createdAt)}
@@ -372,41 +404,44 @@ function ReplyItem({ reply, postId, children }: { reply: Reply; postId: number; 
           </Text>
           <Group gap="xs" mt={6}>
             <ReactionBar goats={reply.goats} goated={reply.goated} onGoat={() => react.mutate()} />
-            <Button size="compact-xs" variant="subtle" color="gray" onClick={() => setReplying((r) => !r)}>
-              {t('Reply')}
-            </Button>
+            {canAccept && !reply.mine && (
+              <Button size="compact-xs" variant="subtle" color="teal" leftSection={<IconCheck size={12} />} onClick={() => accept.mutate()}>
+                {reply.accepted ? t('Unmark answer') : t('Accept answer')}
+              </Button>
+            )}
             {reply.mine && (
               <ActionIcon size="sm" variant="subtle" color="red" onClick={() => remove.mutate()} aria-label={t('Delete reply')}>
                 <IconTrash size={14} />
               </ActionIcon>
             )}
           </Group>
-          {replying && (
-            <div style={{ marginTop: 8 }}>
-              <ReplyBox postId={postId} parentId={reply.id} onDone={() => setReplying(false)} autoFocus />
-            </div>
-          )}
         </div>
       </Group>
-      {children}
-    </div>
+    </Card>
   );
 }
 
 function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p: PostDetail) => void; onDeleted: () => void }) {
   const post = useQuery({ queryKey: ['board', 'post', postId], queryFn: () => rpc.board.get({ postId }) });
   const react = useAction(() => rpc.board.react({ postId }));
-  const remove = useAction(() => rpc.board.remove({ postId }), { success: 'Post deleted', onSuccess: onDeleted });
+  const remove = useAction(() => rpc.board.remove({ postId }), {
+    success: (r) => (r.kept ? t('Post deleted. Its replies stay up.') : t('Post deleted')),
+    onSuccess: (r) => !r.kept && onDeleted(),
+  });
 
   if (post.isPending) return <Loading />;
   if (!post.data) return <Text c="red">{post.error?.message}</Text>;
   const p = post.data;
-  const top = p.replies.filter((r) => r.parentId == null);
+  const isQuestion = p.kind === 'question';
 
   const confirmDelete = () =>
     modals.openConfirmModal({
       title: t('Delete this post?'),
-      children: <Text size="sm">{t('Its replies will be deleted too.')}</Text>,
+      children: (
+        <Text size="sm">
+          {p.replies.length ? t("Your post is blanked but its replies stay, so classmates keep the answers.") : t('It has no replies, so it’s removed completely.')}
+        </Text>
+      ),
       labels: { confirm: t('Delete'), cancel: t('Keep') },
       confirmProps: { color: 'red' },
       onConfirm: () => remove.mutate(),
@@ -419,7 +454,7 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
         <div style={{ flex: 1, minWidth: 0 }}>
           <Group justify="space-between" wrap="nowrap">
             <Group gap="xs">
-              <Text fw={700}>{p.authorName}</Text>
+              <Text fw={700}>{p.deletedAt ? t('Deleted post') : authorName(p)}</Text>
               <Text size="sm" c="dimmed">
                 {fromNow(p.createdAt)}
                 {p.editedAt && ` · ${t('edited')}`}
@@ -428,7 +463,8 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
             <Group gap={6} wrap="nowrap">
               <Tag>{p.classLabel}</Tag>
               <TopicTag topic={p.topic} />
-              {p.mine && (
+              <KindTag post={p} />
+              {p.mine && !p.deletedAt && (
                 <>
                   <ActionIcon variant="subtle" onClick={() => onEdit(p)} aria-label={t('Edit post')}>
                     <IconPencil size={16} />
@@ -440,8 +476,8 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
               )}
             </Group>
           </Group>
-          <Title order={3} mt={4}>
-            {p.title}
+          <Title order={3} mt={4} c={p.deletedAt ? 'dimmed' : undefined}>
+            {p.deletedAt ? t('The author deleted this post. Its replies are still here.') : p.title}
           </Title>
           {p.visibility === 'selected' && (
             <Group gap={4} mt={2} c="dimmed">
@@ -460,22 +496,16 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
         </div>
       </Group>
 
-      <Divider />
-      <ReplyBox postId={postId} parentId={null} />
-      {top.map((r) => {
-        const children = p.replies.filter((c) => c.parentId === r.id);
-        return (
-          <ReplyItem key={r.id} reply={r} postId={postId}>
-            {children.length > 0 && (
-              <Stack gap="md" mt="md" className="thread">
-                {children.map((c) => (
-                  <ReplyItem key={c.id} reply={c} postId={postId} />
-                ))}
-              </Stack>
-            )}
-          </ReplyItem>
-        );
-      })}
+      {p.mine && isQuestion && !p.acceptedReplyId && p.replies.some((r) => !r.mine) && (
+        <Text size="xs" c="dimmed">
+          {t('Did a reply answer your question? Accept it so classmates find it first.')}
+        </Text>
+      )}
+      <Divider label={isQuestion ? t('Answers') : t('Replies')} labelPosition="left" />
+      <ReplyBox postId={postId} isQuestion={isQuestion} />
+      {p.replies.map((r) => (
+        <ReplyItem key={r.id} reply={r} postId={postId} canAccept={p.mine && isQuestion && !p.deletedAt} />
+      ))}
     </Stack>
   );
 }
@@ -495,7 +525,8 @@ function PostForm({
   const form = useForm({
     initialValues: {
       classId: String(existing?.classId ?? classId ?? ''),
-      topic: existing ? t(existing.topic) : '',
+      kind: (existing?.kind ?? 'question') as 'question' | 'note',
+      topic: existing?.topic ?? '',
       title: existing?.title ?? '',
       body: existing?.body ?? '',
       visibility: (existing?.visibility ?? 'class') as 'class' | 'selected',
@@ -503,7 +534,7 @@ function PostForm({
     },
     validate: {
       classId: (v) => (v ? null : t('Pick a class')),
-      topic: (v) => (v.trim() ? null : t('Pick or type a type, e.g. "Assignment"')),
+      topic: (v) => (v ? null : t('Pick a topic')),
       title: (v) => (v.trim() ? null : t('Add a title')),
       body: (v) => (v.trim() ? null : t('Write something')),
       audienceEmails: (v, values) => (values.visibility === 'selected' && !existing && !v.length ? t('Add at least one classmate') : null),
@@ -516,12 +547,11 @@ function PostForm({
   });
   const save = useAction(
     async (v: typeof form.values) => {
-      const topic = toStoredTopic(v.topic, topics);
       if (existing) {
-        await rpc.board.update({ postId: existing.id, topic, title: v.title, body: v.body });
+        await rpc.board.update({ postId: existing.id, kind: v.kind, topic: v.topic, title: v.title, body: v.body });
         return { id: existing.id };
       }
-      return rpc.board.create({ ...v, topic, classId: Number(v.classId) });
+      return rpc.board.create({ ...v, classId: Number(v.classId) });
     },
     { success: existing ? 'Post updated' : 'Posted', onSuccess: (r) => onDone(r.id) },
   );
@@ -529,18 +559,31 @@ function PostForm({
   return (
     <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
       <Stack>
+        <SegmentedControl
+          data={[
+            { value: 'question', label: t('Question') },
+            { value: 'note', label: t('Note') },
+          ]}
+          {...form.getInputProps('kind')}
+        />
+        <Text size="xs" c="dimmed" mt={-8}>
+          {form.values.kind === 'question'
+            ? t('You can accept the reply that answers it.')
+            : t('For sharing something: notes, tips, announcements.')}
+        </Text>
         <Group grow align="flex-start">
           <Select
             label={t('Class')}
-            data={myClasses.data?.map((c) => ({ value: String(c.id), label: `${c.subject} ${c.number}` })) ?? []}
+            data={myClasses.data?.map((c) => ({ value: String(c.id), label: c.code })) ?? []}
             disabled={!!existing || !!classId}
             allowDeselect={false}
             {...form.getInputProps('classId')}
           />
-          <Autocomplete
-            label={t('Type')}
-            placeholder={t('Assignment, Midterm, Just yapping…')}
-            data={topics.map((topic) => t(topic))}
+          <Select
+            label={t('Topic')}
+            placeholder={t('Pick a topic')}
+            data={topics.map((topic) => ({ value: topic, label: t(topic) }))}
+            allowDeselect={false}
             {...form.getInputProps('topic')}
           />
         </Group>

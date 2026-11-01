@@ -3,7 +3,8 @@
 // Private windows or blocked site data can make IndexedDB fail; then the app still
 // works, it just forgets everything when the tab closes.
 
-const DB_NAME = 'unilink';
+// Its own name, so version B never reads or overwrites the original's data on the same site.
+const DB_NAME = 'unilink-b';
 const STORE = 'files';
 
 let opening: Promise<IDBDatabase | null> | null = null;

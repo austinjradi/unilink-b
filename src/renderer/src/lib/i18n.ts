@@ -6,7 +6,7 @@ import { isLocale, type Locale, type Message, type Params, render, termLabel, tr
 // The app re-mounts when the language changes (see App.tsx), so these plain functions
 // can be called anywhere during render without hooks.
 
-const STORAGE_KEY = 'unilink.locale';
+const STORAGE_KEY = 'unilink-b.locale';
 
 function initialLocale(): Locale {
   try {

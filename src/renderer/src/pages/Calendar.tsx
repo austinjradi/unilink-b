@@ -329,10 +329,10 @@ function Upcoming({ onViewAll }: { onViewAll: () => void }) {
 
   const soon = dayjs().add(7, 'day');
   const items = [
-    ...(upcoming.data ?? []).map((e) => ({ key: e.key, title: e.title, sub: e.classLabel, when: e.start, end: null as Date | null, kind: eventKind(e), deadlineId: e.deadlineId })),
+    ...(upcoming.data ?? []).map((e) => ({ key: e.key, title: e.title, sub: e.classLabel, when: e.start, end: null as Date | null, kind: eventKind(e), deadlineId: e.addedBy == null ? e.deadlineId : null, addedBy: e.addedBy })),
     ...(sessions.data ?? [])
       .filter((s) => s.myStatus === 'going' && dayjs(s.startsAt).isBefore(soon))
-      .map((s) => ({ key: `s${s.id}`, title: s.title, sub: s.classLabel, when: s.startsAt, end: s.endsAt, kind: 'session', deadlineId: null })),
+      .map((s) => ({ key: `s${s.id}`, title: s.title, sub: s.classLabel, when: s.startsAt, end: s.endsAt, kind: 'session', deadlineId: null, addedBy: null })),
   ].sort((a, b) => a.when.getTime() - b.when.getTime());
 
   return (
@@ -353,6 +353,7 @@ function Upcoming({ onViewAll }: { onViewAll: () => void }) {
               {i.sub && (
                 <Text size="xs" c="dimmed">
                   {i.sub}
+                  {i.addedBy != null && ` · ${t('shared by {{name}}', { name: i.addedBy || t('a former student') })}`}
                 </Text>
               )}
               <Text size="xs" mt={2}>
@@ -454,29 +455,38 @@ function AllDeadlines({ onEdit }: { onEdit: (d: Deadline) => void }) {
   return (
     <>
       <Text size="sm" c="dimmed" mb="sm">
-        {t("Graded work from each course's Grades tab and planner due dates show on the calendar automatically.")}
+        {t("Deadlines you add to a class are shared with everyone in that section; ones with no class stay private. Graded work from each course's Grades tab and planner due dates show on the calendar automatically.")}
       </Text>
       <Table verticalSpacing="xs">
         <Table.Tbody>
           {deadlines.data.map((d) => (
-            <Table.Tr key={d.id} opacity={d.completedAt || d.dueAt < new Date() ? 0.5 : 1}>
-              <Table.Td fw={600} td={d.completedAt ? 'line-through' : undefined}>
+            <Table.Tr key={d.id} opacity={d.done || d.dueAt < new Date() ? 0.5 : 1}>
+              <Table.Td fw={600} td={d.done ? 'line-through' : undefined}>
                 {d.title}
               </Table.Td>
-              <Table.Td>{d.classLabel ?? '—'}</Table.Td>
+              <Table.Td>
+                {d.classLabel ?? '—'}
+                {d.addedBy != null && (
+                  <Text size="xs" c="dimmed">
+                    {t('shared by {{name}}', { name: d.addedBy || t('a former student') })}
+                  </Text>
+                )}
+              </Table.Td>
               <Table.Td>
                 <KindBadge kind={d.kind} />
               </Table.Td>
               <Table.Td>{fmtDateTime(d.dueAt)}</Table.Td>
               <Table.Td>
-                <Group gap={4} justify="flex-end" wrap="nowrap">
-                  <ActionIcon variant="subtle" onClick={() => onEdit(d)} aria-label={t('Edit')}>
-                    <IconPencil size={16} />
-                  </ActionIcon>
-                  <ActionIcon variant="subtle" color="red" onClick={() => remove.mutate(d.id)} aria-label={t('Delete')}>
-                    <IconTrash size={16} />
-                  </ActionIcon>
-                </Group>
+                {d.mine && (
+                  <Group gap={4} justify="flex-end" wrap="nowrap">
+                    <ActionIcon variant="subtle" onClick={() => onEdit(d)} aria-label={t('Edit')}>
+                      <IconPencil size={16} />
+                    </ActionIcon>
+                    <ActionIcon variant="subtle" color="red" onClick={() => remove.mutate(d.id)} aria-label={t('Delete')}>
+                      <IconTrash size={16} />
+                    </ActionIcon>
+                  </Group>
+                )}
               </Table.Td>
             </Table.Tr>
           ))}
@@ -493,7 +503,7 @@ export function ClassSelect({ value, onChange, label = t('Class') }: { value: nu
       label={label}
       placeholder={t('None')}
       clearable
-      data={classes.data?.map((c) => ({ value: String(c.id), label: `${c.subject} ${c.number} · ${c.title}` })) ?? []}
+      data={classes.data?.map((c) => ({ value: String(c.id), label: `${c.code} · ${c.title}` })) ?? []}
       value={value == null ? null : String(value)}
       onChange={(v) => onChange(v ? Number(v) : null)}
     />
@@ -532,6 +542,11 @@ function DeadlineForm({ existing, onDone }: { existing: Deadline | null; onDone:
           <DateTimePicker label={t('Due')} valueFormat="ddd D MMM YYYY, HH:mm" {...form.getInputProps('dueAt')} />
         </Group>
         <ClassSelect value={form.values.classId} onChange={(v) => form.setFieldValue('classId', v)} />
+        <Text size="xs" c="dimmed" mt={-8}>
+          {form.values.classId
+            ? t('Everyone in this section will see it on their calendar.')
+            : t('With no class, only you see it.')}
+        </Text>
         <Textarea label={t('Notes')} autosize minRows={2} {...form.getInputProps('notes')} />
         <Group justify="flex-end">
           <Button type="submit" loading={save.isPending}>
