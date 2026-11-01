@@ -3,7 +3,7 @@
 UniLink for McGill students, running entirely in the browser: find your classes and classmates, share group
 chats, host study sessions, discuss course topics, and keep deadlines, grades and assignment plans in one place.
 
-**Version B** is a second take on the UniLink web port (`unilink-web`, "version A"). It has the same features,
+**Version B** is a second take on the UniLink web port ([`unilink-web`](https://github.com/austinjradi/unilink-web), "version A", [live here](https://austinjradi.github.io/unilink-web/)). It has the same features,
 the same look and the same code layout, but makes different decisions everywhere the requirements board leaves
 something open: what a class is, who sees what, how study sessions fill up, how the discussion board works,
 whether course info is personal or shared, how passwords are reset, and what "free time" means to the planner.
