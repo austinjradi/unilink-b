@@ -286,6 +286,20 @@ h3,
   }
 }
 
+.nav-menu {
+  display: none;
+}
+
+@media (max-width: 600px) {
+  .nav-tabs {
+    display: none;
+  }
+
+  .nav-menu {
+    display: inline-flex;
+  }
+}
+
 /* Phones: shorter month cells, and the week as a list of days. */
 @media (max-width: 640px) {
   .month-cell {

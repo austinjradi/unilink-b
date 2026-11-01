@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect } from 'react';
 import { ActionIcon, AppShell, Box, Group, Menu, Text, Tooltip, UnstyledButton } from '@mantine/core';
-import { IconChevronDown, IconFocus2, IconLogout, IconSettings, IconUser, IconX } from '@tabler/icons-react';
+import { IconChevronDown, IconFocus2, IconLogout, IconMenu2, IconSettings, IconUser, IconX } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { goatFor } from '@shared/goat';
@@ -99,6 +99,21 @@ export function Layout({ children }: { children: ReactNode }) {
 
           <Group gap="sm" wrap="nowrap">
             <StudyModePill />
+            {/* Phones: the tabs don't fit, so they're also in a menu. */}
+            <Menu position="bottom-end" width={220}>
+              <Menu.Target>
+                <ActionIcon variant="subtle" color="gray" size="lg" className="nav-menu" aria-label={t('Menu')}>
+                  <IconMenu2 size={20} />
+                </ActionIcon>
+              </Menu.Target>
+              <Menu.Dropdown>
+                {NAV.map((item) => (
+                  <Menu.Item key={item.to} component={Link} to={item.to} fw={item.match(pathname) ? 800 : undefined} c={item.match(pathname) ? 'periwinkle' : undefined}>
+                    {t(item.label)}
+                  </Menu.Item>
+                ))}
+              </Menu.Dropdown>
+            </Menu>
             <NotificationBell />
             <Menu position="bottom-end" width={220}>
               <Menu.Target>
