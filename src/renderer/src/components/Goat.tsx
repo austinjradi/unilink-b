@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import type { GoatConfig } from '@shared/goat';
+import { t } from '../lib/i18n';
 
 // The UniLink goat: a cartoon goat head drawn in SVG, with swappable parts.
 
@@ -136,7 +137,7 @@ function Hat({ kind }: { kind: GoatConfig['hat'] }) {
 export function GoatSvg({ goat, background = true }: { goat: GoatConfig; background?: boolean }) {
   const c = FUR[goat.fur];
   return (
-    <svg viewBox="0 0 120 120" width="100%" height="100%" role="img" aria-label="Goat avatar">
+    <svg viewBox="0 0 120 120" width="100%" height="100%" role="img" aria-label={t('Goat avatar')}>
       {background && <rect width={120} height={120} fill={BACKGROUNDS[goat.background]} />}
       {HORNS[goat.horns].map((d) => (
         <g key={d} fill="none" strokeLinecap="round" strokeLinejoin="round">

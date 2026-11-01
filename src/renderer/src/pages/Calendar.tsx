@@ -41,20 +41,21 @@ import { chipStyle, Empty, KindBadge, kindColor, Loading, PageHeader } from '../
 import { fmtDateTime, fmtTime, toDate } from '../lib/format';
 import { useAction } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
+import { t, term, tx } from '../lib/i18n';
 
 type Deadline = Out<typeof rpc.calendar.deadlines>[number];
 type CalEvent = Out<typeof rpc.calendar.range>[number];
 type View = 'month' | 'week' | 'semester';
 
 const KINDS = [
-  { value: 'assignment', label: 'Assignment' },
-  { value: 'exam', label: 'Exam' },
-  { value: 'quiz', label: 'Quiz' },
-  { value: 'other', label: 'Other' },
+  { value: 'assignment', label: tx('Assignment') },
+  { value: 'exam', label: tx('Exam') },
+  { value: 'quiz', label: tx('Quiz') },
+  { value: 'other', label: tx('Other') },
 ];
 
 const eventKind = (e: CalEvent) => (e.kind === 'deadline' ? e.detail : e.kind);
-const eventLabel = (e: CalEvent) => (e.kind === 'deadline' ? `Due: ${e.title}` : e.title);
+const eventLabel = (e: CalEvent) => (e.kind === 'deadline' ? t('Due: {{title}}', { title: e.title }) : e.title);
 const mondayOf = (day: string) => {
   const d = dayjs(day);
   return ymd(d.subtract((d.day() + 6) % 7, 'day').toDate());
@@ -70,17 +71,21 @@ export function CalendarPage() {
   const [showAll, setShowAll] = useState(false);
 
   const exportIcs = useAction(() => rpc.calendar.exportIcs(), {
-    success: (r) => (r ? `Exported ${r.count} events. Import the file into Google Calendar.` : ''),
+    success: (r) => (r ? t('Exported {{count}} events. Import the file into Google Calendar.', { count: r.count }) : ''),
   });
   const importIcs = useAction(() => rpc.calendar.importIcs({ classId: null }), {
-    success: (r) => (r ? `Imported ${r.imported} deadlines${r.skipped ? ` (skipped ${r.skipped} past or duplicate)` : ''}` : ''),
+    success: (r) =>
+      r
+        ? t('Imported {{count}} deadlines', { count: r.imported }) +
+          (r.skipped ? ` ${t('(skipped {{count}} past or duplicate)', { count: r.skipped })}` : '')
+        : '',
   });
 
   const step = (n: number) =>
     setCursor(view === 'week' ? addDays(cursor, 7 * n) : ymd(dayjs(cursor).add(n, 'month').startOf('month').toDate()));
   const title =
     view === 'semester'
-      ? CURRENT_TERM
+      ? term(CURRENT_TERM)
       : view === 'week'
         ? `${dayjs(mondayOf(cursor)).format('D MMM')} – ${dayjs(addDays(mondayOf(cursor), 6)).format('D MMM YYYY')}`
         : dayjs(cursor).format('MMMM YYYY');
@@ -88,33 +93,33 @@ export function CalendarPage() {
   return (
     <>
       <PageHeader
-        title="Calendar & Planner"
+        title={t('Calendar & Planner')}
         actions={
           <>
             <Menu position="bottom-end">
               <Menu.Target>
                 <Button variant="default" leftSection={<IconRefresh size={16} />}>
-                  Sync
+                  {t('Sync')}
                 </Button>
               </Menu.Target>
               <Menu.Dropdown>
                 <Menu.Item leftSection={<IconDownload size={14} />} onClick={() => exportIcs.mutate()}>
-                  Export for Google Calendar (.ics)
+                  {t('Export for Google Calendar (.ics)')}
                 </Menu.Item>
                 <Menu.Item leftSection={<IconUpload size={14} />} onClick={() => importIcs.mutate()}>
-                  Import from myCourses (.ics)
+                  {t('Import from myCourses (.ics)')}
                 </Menu.Item>
               </Menu.Dropdown>
             </Menu>
             <Menu position="bottom-end">
               <Menu.Target>
                 <Button size="md" leftSection={<IconPlus size={18} />}>
-                  Add event/assignment
+                  {t('Add event/assignment')}
                 </Button>
               </Menu.Target>
               <Menu.Dropdown>
-                <Menu.Item onClick={() => setEditing('new')}>Deadline, exam or quiz</Menu.Item>
-                <Menu.Item onClick={() => navigate('/planner?new=1')}>Assignment to plan out</Menu.Item>
+                <Menu.Item onClick={() => setEditing('new')}>{t('Deadline, exam or quiz')}</Menu.Item>
+                <Menu.Item onClick={() => navigate('/planner?new=1')}>{t('Assignment to plan out')}</Menu.Item>
               </Menu.Dropdown>
             </Menu>
           </>
@@ -127,7 +132,7 @@ export function CalendarPage() {
             <Group justify="space-between" mb="md">
               <Group gap={4}>
                 {view !== 'semester' && (
-                  <ActionIcon variant="subtle" onClick={() => step(-1)} aria-label="Previous">
+                  <ActionIcon variant="subtle" onClick={() => step(-1)} aria-label={t('Previous')}>
                     <IconChevronLeft size={20} />
                   </ActionIcon>
                 )}
@@ -135,13 +140,13 @@ export function CalendarPage() {
                   {title}
                 </Title>
                 {view !== 'semester' && (
-                  <ActionIcon variant="subtle" onClick={() => step(1)} aria-label="Next">
+                  <ActionIcon variant="subtle" onClick={() => step(1)} aria-label={t('Next')}>
                     <IconChevronRight size={20} />
                   </ActionIcon>
                 )}
                 {view !== 'semester' && cursor !== today && (
                   <Button size="compact-xs" variant="subtle" onClick={() => setCursor(today)}>
-                    Today
+                    {t('Today')}
                   </Button>
                 )}
               </Group>
@@ -150,9 +155,9 @@ export function CalendarPage() {
                 value={view}
                 onChange={(v) => setView(v as View)}
                 data={[
-                  { value: 'month', label: 'Month' },
-                  { value: 'week', label: 'Week' },
-                  { value: 'semester', label: 'Semester' },
+                  { value: 'month', label: t('Month') },
+                  { value: 'week', label: t('Week') },
+                  { value: 'semester', label: t('Semester') },
                 ]}
               />
             </Group>
@@ -169,10 +174,10 @@ export function CalendarPage() {
         </Grid.Col>
       </Grid>
 
-      <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing === 'new' ? 'Add deadline' : 'Edit deadline'}>
+      <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing === 'new' ? t('Add deadline') : t('Edit deadline')}>
         {editing && <DeadlineForm key={editing === 'new' ? 'new' : editing.id} existing={editing === 'new' ? null : editing} onDone={() => setEditing(null)} />}
       </Modal>
-      <Modal opened={showAll} onClose={() => setShowAll(false)} title="All your deadlines" size="xl">
+      <Modal opened={showAll} onClose={() => setShowAll(false)} title={t('All your deadlines')} size="xl">
         <AllDeadlines onEdit={(d) => setEditing(d)} />
       </Modal>
     </>
@@ -197,7 +202,7 @@ function MonthView({ cursor, today }: { cursor: string; today: string }) {
   return (
     <>
       <div className="month-grid" style={{ borderTop: 'none', borderLeft: 'none' }}>
-        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
+        {[1, 2, 3, 4, 5, 6, 0].map((i) => dayjs().day(i).format('ddd')).map((d) => (
           <Text key={d} size="xs" fw={800} c="dimmed" tt="uppercase" pb={4} pl={6}>
             {d}
           </Text>
@@ -214,7 +219,7 @@ function MonthView({ cursor, today }: { cursor: string; today: string }) {
                   {dayjs(day).date()}
                 </Text>
                 {classes > 0 && (
-                  <Tooltip label={`${classes} class${classes === 1 ? '' : 'es'}`}>
+                  <Tooltip label={t('{{count}} classes', { count: classes })}>
                     <Box w={7} h={7} style={{ borderRadius: 7, background: 'var(--mantine-color-periwinkle-4)' }} />
                   </Tooltip>
                 )}
@@ -228,7 +233,7 @@ function MonthView({ cursor, today }: { cursor: string; today: string }) {
               ))}
               {dayEvents.length > 3 && (
                 <Text size="xs" c="dimmed" fw={700} mt={2}>
-                  +{dayEvents.length - 3} more
+                  {t('+{{count}} more', { count: dayEvents.length - 3 })}
                 </Text>
               )}
             </div>
@@ -240,7 +245,7 @@ function MonthView({ cursor, today }: { cursor: string; today: string }) {
           <KindBadge key={k} kind={k} />
         ))}
         <Text size="xs" c="dimmed">
-          · dot = class times
+          {t('· dot = class times')}
         </Text>
       </Group>
     </>
@@ -290,14 +295,14 @@ function SemesterView() {
   if (events.isPending) return <Loading />;
   const items = (events.data ?? []).filter((e) => e.kind === 'deadline' || e.kind === 'session');
   const weeks = [...new Set(items.map((e) => mondayOf(ymd(e.start))))].sort();
-  if (!weeks.length) return <Empty>No deadlines or study sessions this term yet.</Empty>;
+  if (!weeks.length) return <Empty>{t('No deadlines or study sessions this term yet.')}</Empty>;
 
   return (
     <Stack gap="sm">
       {weeks.map((week) => (
         <Group key={week} align="flex-start" wrap="nowrap" gap="md">
           <Text size="sm" fw={800} w={110} style={{ flex: 'none' }}>
-            Week of {dayjs(week).format('MMM D')}
+            {t('Week of {{date}}', { date: dayjs(week).format(t('MMM D')) })}
           </Text>
           <Group gap={6}>
             {items
@@ -333,7 +338,7 @@ function Upcoming({ onViewAll }: { onViewAll: () => void }) {
   return (
     <Card padding={0} h="100%">
       <Text fw={800} size="lg" className="display" px="md" py="sm" style={{ borderBottom: '1.5px solid var(--ul-border)' }}>
-        Upcoming (next 7 days)
+        {t('Upcoming (next 7 days)')}
       </Text>
       {upcoming.isPending ? (
         <Loading />
@@ -351,30 +356,30 @@ function Upcoming({ onViewAll }: { onViewAll: () => void }) {
                 </Text>
               )}
               <Text size="xs" mt={2}>
-                {dayjs(i.when).format('ddd, MMM D · HH:mm')}
+                {dayjs(i.when).format(t('ddd, MMM D · HH:mm'))}
                 {i.end && `–${fmtTime(i.end)}`}
               </Text>
             </div>
             {i.deadlineId != null && (
-              <ActionIcon variant="subtle" color="gray" onClick={() => remove.mutate(i.deadlineId!)} aria-label={`Delete ${i.title}`}>
+              <ActionIcon variant="subtle" color="gray" onClick={() => remove.mutate(i.deadlineId!)} aria-label={t('Delete {{name}}', { name: i.title })}>
                 <IconTrash size={16} />
               </ActionIcon>
             )}
           </Group>
         ))
       ) : (
-        <Empty>Nothing in the next 7 days.</Empty>
+        <Empty>{t('Nothing in the next 7 days.')}</Empty>
       )}
       <Box p="sm">
         <Button variant="default" fullWidth rightSection={<IconArrowRight size={16} />} onClick={onViewAll}>
-          View all deadlines
+          {t('View all deadlines')}
         </Button>
       </Box>
     </Card>
   );
 }
 
-const PILL: Record<string, string> = { class: 'Lecture', session: 'Study', task: 'Task', deadline: 'Due' };
+const PILL: Record<string, string> = { class: tx('Lecture'), session: tx('Study'), task: tx('Task'), deadline: tx('Due') };
 
 function TodayList({ today }: { today: string }) {
   const events = useRange(today, today);
@@ -390,7 +395,7 @@ function TodayList({ today }: { today: string }) {
   return (
     <Card padding={0}>
       <Text fw={800} size="lg" className="display" px="md" py="sm" style={{ borderBottom: '1.5px solid var(--ul-border)', background: 'var(--ul-soft)' }}>
-        Today · {dayjs(today).format('ddd, MMM D')}
+        {t('Today')} · {dayjs(today).format(t('ddd, MMM D'))}
       </Text>
       {events.isPending ? (
         <Loading />
@@ -407,11 +412,11 @@ function TodayList({ today }: { today: string }) {
                     ? setTask.mutate({ id: taskId, done: ev.currentTarget.checked })
                     : setDeadline.mutate({ id: e.deadlineId!, done: ev.currentTarget.checked })
                 }
-                aria-label={`Done: ${e.title}`}
+                aria-label={t('Done: {{title}}', { title: e.title })}
               />
               <div style={{ width: 64 }}>
                 <Text size="sm" fw={800}>
-                  {e.allDay ? 'Any time' : fmtTime(e.start)}
+                  {e.allDay ? t('Any time') : fmtTime(e.start)}
                 </Text>
                 <Text size="xs" c="dimmed">
                   {e.allDay ? e.detail : duration(e)}
@@ -429,13 +434,13 @@ function TodayList({ today }: { today: string }) {
                 )}
               </div>
               <Badge variant="outline" color={kindColor(eventKind(e))} size="lg">
-                {PILL[e.kind] ?? e.kind}
+                {t(PILL[e.kind] ?? e.kind)}
               </Badge>
             </Group>
           );
         })
       ) : (
-        <Empty>Nothing on today. Add class times from each course's Overview tab.</Empty>
+        <Empty>{t("Nothing on today. Add class times from each course's Overview tab.")}</Empty>
       )}
     </Card>
   );
@@ -445,11 +450,11 @@ function AllDeadlines({ onEdit }: { onEdit: (d: Deadline) => void }) {
   const deadlines = useQuery({ queryKey: ['calendar', 'deadlines'], queryFn: () => rpc.calendar.deadlines() });
   const remove = useAction((id: number) => rpc.calendar.removeDeadline({ id }), { success: 'Deadline removed' });
   if (deadlines.isPending) return <Loading />;
-  if (!deadlines.data?.length) return <Empty>No deadlines added yet.</Empty>;
+  if (!deadlines.data?.length) return <Empty>{t('No deadlines added yet.')}</Empty>;
   return (
     <>
       <Text size="sm" c="dimmed" mb="sm">
-        Graded work from each course's Grades tab and planner due dates show on the calendar automatically.
+        {t("Graded work from each course's Grades tab and planner due dates show on the calendar automatically.")}
       </Text>
       <Table verticalSpacing="xs">
         <Table.Tbody>
@@ -465,10 +470,10 @@ function AllDeadlines({ onEdit }: { onEdit: (d: Deadline) => void }) {
               <Table.Td>{fmtDateTime(d.dueAt)}</Table.Td>
               <Table.Td>
                 <Group gap={4} justify="flex-end" wrap="nowrap">
-                  <ActionIcon variant="subtle" onClick={() => onEdit(d)} aria-label="Edit">
+                  <ActionIcon variant="subtle" onClick={() => onEdit(d)} aria-label={t('Edit')}>
                     <IconPencil size={16} />
                   </ActionIcon>
-                  <ActionIcon variant="subtle" color="red" onClick={() => remove.mutate(d.id)} aria-label="Delete">
+                  <ActionIcon variant="subtle" color="red" onClick={() => remove.mutate(d.id)} aria-label={t('Delete')}>
                     <IconTrash size={16} />
                   </ActionIcon>
                 </Group>
@@ -481,12 +486,12 @@ function AllDeadlines({ onEdit }: { onEdit: (d: Deadline) => void }) {
   );
 }
 
-export function ClassSelect({ value, onChange, label = 'Class' }: { value: number | null; onChange: (v: number | null) => void; label?: string }) {
+export function ClassSelect({ value, onChange, label = t('Class') }: { value: number | null; onChange: (v: number | null) => void; label?: string }) {
   const classes = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
   return (
     <Select
       label={label}
-      placeholder="None"
+      placeholder={t('None')}
       clearable
       data={classes.data?.map((c) => ({ value: String(c.id), label: `${c.subject} ${c.number} · ${c.title}` })) ?? []}
       value={value == null ? null : String(value)}
@@ -505,8 +510,8 @@ function DeadlineForm({ existing, onDone }: { existing: Deadline | null; onDone:
       notes: existing?.notes ?? '',
     },
     validate: {
-      title: (v) => (v.trim() ? null : 'Add a title'),
-      dueAt: (v) => (v ? null : 'Pick a date'),
+      title: (v) => (v.trim() ? null : t('Add a title')),
+      dueAt: (v) => (v ? null : t('Pick a date')),
     },
   });
   const save = useAction(
@@ -521,16 +526,16 @@ function DeadlineForm({ existing, onDone }: { existing: Deadline | null; onDone:
   return (
     <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
       <Stack>
-        <TextInput label="Title" placeholder="Assignment 3" data-autofocus {...form.getInputProps('title')} />
+        <TextInput label={t('Title')} placeholder={t('Assignment 3')} data-autofocus {...form.getInputProps('title')} />
         <Group grow>
-          <Select label="Type" data={KINDS} allowDeselect={false} {...form.getInputProps('kind')} />
-          <DateTimePicker label="Due" valueFormat="ddd D MMM YYYY, HH:mm" {...form.getInputProps('dueAt')} />
+          <Select label={t('Type')} data={KINDS.map((k) => ({ ...k, label: t(k.label) }))} allowDeselect={false} {...form.getInputProps('kind')} />
+          <DateTimePicker label={t('Due')} valueFormat="ddd D MMM YYYY, HH:mm" {...form.getInputProps('dueAt')} />
         </Group>
         <ClassSelect value={form.values.classId} onChange={(v) => form.setFieldValue('classId', v)} />
-        <Textarea label="Notes" autosize minRows={2} {...form.getInputProps('notes')} />
+        <Textarea label={t('Notes')} autosize minRows={2} {...form.getInputProps('notes')} />
         <Group justify="flex-end">
           <Button type="submit" loading={save.isPending}>
-            Save
+            {t('Save')}
           </Button>
         </Group>
       </Stack>

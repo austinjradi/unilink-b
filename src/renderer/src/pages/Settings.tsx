@@ -23,46 +23,46 @@ import { useAction, useMe } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
 import { IntegrationsPanel } from './Integrations';
 import { ChangePassword, DeleteAccount, NotificationSettings, PrivacyPanel, ProfileForm } from './Profile';
-import { StudyModePanel } from './StudyMode';
+import { LanguageSwitch } from '../components/LanguageSwitch';
+import { t, tx } from '../lib/i18n';
 
 const TABS = [
-  { value: 'general', label: 'General' },
-  { value: 'account', label: 'Account' },
-  { value: 'goat', label: 'Goat' },
-  { value: 'privacy', label: 'Privacy' },
-  { value: 'notifications', label: 'Notifications' },
-  { value: 'study-mode', label: 'Study mode' },
-  { value: 'integrations', label: 'Integrations' },
+  { value: 'general', label: tx('General') },
+  { value: 'account', label: tx('Account') },
+  { value: 'goat', label: tx('Goat') },
+  { value: 'privacy', label: tx('Privacy') },
+  { value: 'notifications', label: tx('Notifications') },
+  { value: 'integrations', label: tx('Integrations') },
 ] as const;
 
 // Settings in the layout of the wireframe (A2Team.pdf p. 11): sections on the left.
 export function SettingsPage() {
   const params = useParams();
   const navigate = useNavigate();
-  const tab = TABS.some((t) => t.value === params.tab) ? params.tab! : 'general';
+  const tab = TABS.some((tabItem) => tabItem.value === params.tab) ? params.tab! : 'general';
   const signOut = useAction(() => rpc.auth.signOut());
 
   return (
     <Tabs value={tab} onChange={(v) => navigate(`/settings/${v}`)} orientation="vertical" variant="pills" radius="lg" keepMounted={false}>
       <Box w={220} pr="lg" mr="lg" style={{ borderRight: '2px solid var(--ul-ink)', minHeight: 'calc(100vh - 140px)' }}>
         <Title order={1} fz={34} mb="lg">
-          Settings
+          {t('Settings')}
         </Title>
         <Tabs.List>
-          {TABS.map((t) => (
-            <Tabs.Tab key={t.value} value={t.value} fz="md" fw={700} py="sm">
-              {t.label}
+          {TABS.map((tabItem) => (
+            <Tabs.Tab key={tabItem.value} value={tabItem.value} fz="md" fw={700} py="sm">
+              {t(tabItem.label)}
             </Tabs.Tab>
           ))}
         </Tabs.List>
         <Button mt="xl" variant="subtle" color="gray" leftSection={<IconLogout size={16} />} onClick={() => signOut.mutate()}>
-          Sign out
+          {t('Sign out')}
         </Button>
       </Box>
 
       <Box style={{ flex: 1, minWidth: 0 }}>
         <Title order={2} mb="md">
-          {TABS.find((t) => t.value === tab)!.label}
+          {t(TABS.find((tabItem) => tabItem.value === tab)!.label)}
         </Title>
         <Tabs.Panel value="general">
           <GeneralPanel />
@@ -87,9 +87,6 @@ export function SettingsPage() {
             <NotificationSettings />
           </Box>
         </Tabs.Panel>
-        <Tabs.Panel value="study-mode">
-          <StudyModePanel />
-        </Tabs.Panel>
         <Tabs.Panel value="integrations">
           <IntegrationsPanel />
         </Tabs.Panel>
@@ -102,21 +99,26 @@ function GeneralPanel() {
   const { colorScheme, setColorScheme } = useMantineColorScheme();
   return (
     <Stack gap="lg" maw={760}>
-      <SectionCard title="Appearance">
+      <SectionCard title={t('Language')}>
+        <Text size="sm" c="dimmed" mb="sm">
+          {t('Used for the whole app, your notifications and emails.')}
+        </Text>
+        <LanguageSwitch signedIn />
+      </SectionCard>
+      <SectionCard title={t('Appearance')}>
         <SegmentedControl
           value={colorScheme}
           onChange={(v) => setColorScheme(v as 'light' | 'dark' | 'auto')}
           data={[
-            { value: 'light', label: 'Light' },
-            { value: 'dark', label: 'Dark' },
-            { value: 'auto', label: 'Match system' },
+            { value: 'light', label: t('Light') },
+            { value: 'dark', label: t('Dark') },
+            { value: 'auto', label: t('Match system') },
           ]}
         />
       </SectionCard>
-      <SectionCard title="About UniLink">
+      <SectionCard title={t('About UniLink')}>
         <Text size="sm" c="dimmed">
-          UniLink brings McGill students' classes, classmates, deadlines, grades and study planning into one place. Built
-          by the pls.sleep(NOW) team.
+          {t("UniLink brings McGill students' classes, classmates, deadlines, grades and study planning into one place. Built by the pls.sleep(NOW) team.")}
         </Text>
       </SectionCard>
     </Stack>
@@ -124,14 +126,14 @@ function GeneralPanel() {
 }
 
 const PART_TABS: { part: GoatPart; label: string }[] = [
-  { part: 'hat', label: 'Hat' },
-  { part: 'eyes', label: 'Eyes' },
-  { part: 'horns', label: 'Horns' },
-  { part: 'fur', label: 'Fur' },
-  { part: 'background', label: 'Background' },
+  { part: 'hat', label: tx('Hat') },
+  { part: 'eyes', label: tx('Eyes') },
+  { part: 'horns', label: tx('Horns') },
+  { part: 'fur', label: tx('Fur') },
+  { part: 'background', label: tx('Background') },
 ];
 
-const optionLabel = (option: string) => GOAT_LABELS[option] ?? option[0].toUpperCase() + option.slice(1);
+const optionLabel = (option: string) => t(GOAT_LABELS[option] ?? option[0].toUpperCase() + option.slice(1));
 
 // The goat dress-up screen from the wireframe: preview on top, part tabs, option tiles.
 function GoatEditor() {
@@ -149,15 +151,15 @@ function GoatEditor() {
         <GoatSvg goat={shown} />
       </Box>
       <Text c="dimmed" size="sm">
-        Your goat shows up next to your posts, replies and study sessions.
+        {t('Your goat shows up next to your posts, replies and study sessions.')}
       </Text>
 
       <Box w="100%" maw={760}>
         <Group gap={0} grow>
-          {PART_TABS.map((t) => (
+          {PART_TABS.map((tabItem) => (
             <UnstyledButton
-              key={t.part}
-              onClick={() => setPart(t.part)}
+              key={tabItem.part}
+              onClick={() => setPart(tabItem.part)}
               py="sm"
               ta="center"
               style={{
@@ -166,11 +168,11 @@ function GoatEditor() {
                 border: '2px solid var(--ul-ink)',
                 borderBottom: 'none',
                 marginRight: -2,
-                background: part === t.part ? 'var(--ul-soft)' : 'transparent',
+                background: part === tabItem.part ? 'var(--ul-soft)' : 'transparent',
               }}
             >
               <Text fw={700} className="display" fz="lg">
-                {t.label}
+                {t(tabItem.label)}
               </Text>
             </UnstyledButton>
           ))}
@@ -185,7 +187,7 @@ function GoatEditor() {
                   key={option}
                   onClick={() => save.mutate(preview)}
                   aria-pressed={selected}
-                  aria-label={`${PART_TABS.find((t) => t.part === part)!.label}: ${optionLabel(option)}`}
+                  aria-label={`${t(PART_TABS.find((tabItem) => tabItem.part === part)!.label)}: ${optionLabel(option)}`}
                   style={{ position: 'relative' }}
                 >
                   <Box

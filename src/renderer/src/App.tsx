@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useState } from 'react';
 import { Center, Loader, MantineProvider } from '@mantine/core';
 import { DatesProvider } from '@mantine/dates';
 import { ModalsProvider } from '@mantine/modals';
@@ -5,7 +6,9 @@ import { Notifications } from '@mantine/notifications';
 import { QueryCache, QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { HashRouter, Navigate, Route, Routes, useParams } from 'react-router';
 import { Layout } from './components/Layout';
+import type { Locale } from '@shared/i18n';
 import { MeContext } from './lib/hooks';
+import { applyLocale, getLocale, LocaleContext, useLocale } from './lib/i18n';
 import { rpc, RpcError } from './lib/rpc';
 import { ResetPassword, SignIn, SignUp } from './pages/Auth';
 import { CalculatorPage } from './pages/Calculator';
@@ -16,6 +19,7 @@ import { Home } from './pages/Home';
 import { PlannerPage } from './pages/Planner';
 import { SessionSearchPage, SessionsPage } from './pages/Sessions';
 import { SettingsPage } from './pages/Settings';
+import { StudyModePage } from './pages/StudyMode';
 import { theme } from './theme';
 
 const queryClient: QueryClient = new QueryClient({
@@ -30,6 +34,13 @@ const queryClient: QueryClient = new QueryClient({
 
 function Root() {
   const me = useQuery({ queryKey: ['me'], queryFn: () => rpc.auth.me() });
+  const { locale, setLocale } = useLocale();
+
+  // A signed-in student's saved language wins over this device's last choice.
+  const saved = me.data?.locale;
+  useEffect(() => {
+    if (saved && saved !== locale) setLocale(saved);
+  }, [saved, locale, setLocale]);
 
   if (me.isPending) {
     return (
@@ -62,10 +73,12 @@ function Root() {
           <Route path="/calculator" element={<CalculatorPage />} />
           <Route path="/sessions" element={<SessionsPage />} />
           <Route path="/sessions/search" element={<SessionSearchPage />} />
+          <Route path="/study-mode" element={<StudyModePage />} />
           <Route path="/settings/:tab?" element={<SettingsPage />} />
           {/* Older routes, still used by links in existing notifications. */}
           <Route path="/academics/:tab?" element={<RedirectAcademics />} />
-          <Route path="/focus" element={<Navigate to="/settings/study-mode" replace />} />
+          <Route path="/focus" element={<Navigate to="/study-mode" replace />} />
+          <Route path="/settings/study-mode" element={<Navigate to="/study-mode" replace />} />
           <Route path="/profile" element={<Navigate to="/settings/account" replace />} />
           <Route path="/integrations" element={<Navigate to="/settings/integrations" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
@@ -81,18 +94,27 @@ function RedirectAcademics() {
 }
 
 export function App() {
+  const [locale, setLocaleState] = useState<Locale>(getLocale());
+  const setLocale = useCallback((next: Locale) => {
+    applyLocale(next);
+    setLocaleState(next);
+  }, []);
+
   return (
-    <MantineProvider theme={theme} defaultColorScheme="auto">
-      <DatesProvider settings={{ firstDayOfWeek: 1 }}>
-        <Notifications position="top-right" />
-        <QueryClientProvider client={queryClient}>
-          <ModalsProvider>
-            <HashRouter>
-              <Root />
-            </HashRouter>
-          </ModalsProvider>
-        </QueryClientProvider>
-      </DatesProvider>
-    </MantineProvider>
+    <LocaleContext.Provider value={{ locale, setLocale }}>
+      <MantineProvider theme={theme} defaultColorScheme="auto">
+        <DatesProvider settings={{ firstDayOfWeek: 1, locale }}>
+          <Notifications position="top-right" />
+          <QueryClientProvider client={queryClient}>
+            {/* Re-mount everything on a language change so every label re-renders. */}
+            <ModalsProvider key={locale}>
+              <HashRouter>
+                <Root />
+              </HashRouter>
+            </ModalsProvider>
+          </QueryClientProvider>
+        </DatesProvider>
+      </MantineProvider>
+    </LocaleContext.Provider>
   );
 }

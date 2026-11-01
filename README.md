@@ -26,7 +26,7 @@ The yellow features, with what couldn't be fully built:
 | A1  | Course, credit and grade tracking    | Academics → Course record                | `shared/academics.ts`, `services/academics.ts` | None |
 | A2  | Degree requirements and planning     | Academics → Degree plan                  | `shared/degree.ts`, `db/programs.ts`          | **Sample programs only**: no McGill program data source exists yet |
 | G3  | Notifications / email                | Bell in the sidebar; Profile → Notifications | `services/notifications.ts`              | **Email isn't delivered**: no mail server, so emails wait in an outbox |
-| ST1 | Study mode                           | Study mode page; sidebar chip            | `shared/studyMode.ts`, `services/studyMode.ts` | **Can't block websites**; runs only while the app is open; system Do Not Disturb on GNOME only |
+| ST1 | Study mode                           | Study Mode tab; pill in the top bar      | `shared/studyMode.ts`, `services/studyMode.ts` | **Can't block websites**; runs only while the app is open; system Do Not Disturb on GNOME only |
 | ST3 | To-do list                           | Home (first thing you see)               | `services/todos.ts`, `pages/Dashboard.tsx`    | None |
 
 ## UI design
@@ -41,7 +41,8 @@ The interface follows the team's wireframes in `A2Team.pdf`:
 - **Grade Calculator:** a "You need at least X%" bubble and a scenarios table.
 - **Calendar & Planner:** Month, Week and Semester views.
 - **Group chat links:** cards with Open/Report buttons.
-- **Study sessions:** your upcoming sessions, plus a search page.
+- **Study Sessions:** your upcoming sessions, plus a search page.
+- **Study Mode:** its own tab, with a pill in the top bar while it's on.
 - **Settings:** sections down the side.
 
 The design uses rounded fonts (Nunito, with Fredoka for headings), bundled locally through Fontsource, and
@@ -115,7 +116,9 @@ src/
   preload/         exposes window.unilink.call(path, input), and nothing else
   renderer/src/    React app: pages/, components/, lib/rpc.ts (typed client)
   shared/          pure logic used by both sides: grades, planner, links, ics, validation, dates
-tests/             shared.test.ts (pure logic), services.test.ts (real router + in-memory SQLite)
+    i18n/          translate(), plural English forms (en.ts), French dictionary (fr/*.json)
+tests/             shared.test.ts (pure logic), services.test.ts (real router + in-memory SQLite),
+                   i18n.test.ts (every UI string has a French translation)
 ```
 
 The renderer calls the main process through a small tRPC-style layer. A procedure is declared once in a
@@ -127,11 +130,29 @@ join: procedure(z.object({ classId: idSchema }), ({ classId }, ctx) => { … })
 
 The renderer calls it as `rpc.classes.join({ classId })`, fully typed from that declaration. Every call
 goes over one IPC channel, is validated with zod, and runs as the signed-in user (`ctx.userId`). Errors
-come back as `{ code, message }` and show up as notifications. To add a feature, add a procedure to a
+come back as `{ code, message, key, params }` and show up as notifications, translated in the renderer. To add a feature, add a procedure to a
 service and call it from a page; there's no other wiring.
 
 Native OS features (file pickers, opening files) are behind the `Platform` interface in `rpc/core.ts`,
 so the services can be tested without Electron.
+
+### Languages (English and French)
+
+Language is chosen on the sign-in screen or under Settings → General, and saved on the account, so
+notifications and emails go out in the same language. The English text is the translation key:
+
+```tsx
+<Text>{t('Add a deadline')}</Text>
+<Text>{t('{{count}} credits', { count })}</Text>   // plural: needs `_one` / `_other` forms
+```
+
+- `t()` translates now, `tx()` only marks a string for translation (for labels in constants).
+- English plural forms live in `shared/i18n/en.ts`; every French string lives in `shared/i18n/fr/*.json`.
+- The main process stores messages as `{ key, params }` (notifications, errors) so they can be shown in
+  whichever language the reader picks. Errors are `new AppError('English text', code, params)`.
+- `node scripts/i18n-keys.mjs` lists strings that are missing a French translation. `npm test` fails if
+  any are missing, if placeholders don't match, or if the French file has entries nothing uses.
+- User content (posts, titles, course names from the catalogue) isn't translated.
 
 ## Decisions on the board's open questions
 

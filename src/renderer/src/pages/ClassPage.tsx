@@ -3,8 +3,8 @@ import { IconBrandWhatsapp, IconInfoCircle, IconMessages, IconPercentage, IconUs
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router';
 import { Loading, PageHeader, Tag } from '../components/ui';
-import { plural } from '../lib/format';
 import { useAction } from '../lib/hooks';
+import { t, term, tx } from '../lib/i18n';
 import { rpc } from '../lib/rpc';
 import { Discussion } from './class/Discussion';
 import { Grades } from './class/Grades';
@@ -13,18 +13,18 @@ import { Overview } from './class/Overview';
 import { StudySessions } from './class/StudySessions';
 
 const TABS = [
-  { value: 'overview', label: 'Overview', icon: IconInfoCircle },
-  { value: 'discussion', label: 'Discussion', icon: IconMessages },
-  { value: 'chats', label: 'Group chats', icon: IconBrandWhatsapp },
-  { value: 'sessions', label: 'Study sessions', icon: IconUsersGroup },
-  { value: 'grades', label: 'Grades', icon: IconPercentage },
+  { value: 'overview', label: tx('Overview'), icon: IconInfoCircle },
+  { value: 'discussion', label: tx('Discussion'), icon: IconMessages },
+  { value: 'chats', label: tx('Group chats'), icon: IconBrandWhatsapp },
+  { value: 'sessions', label: tx('Study Sessions'), icon: IconUsersGroup },
+  { value: 'grades', label: tx('Grades'), icon: IconPercentage },
 ] as const;
 
 export function ClassPage() {
   const params = useParams();
   const navigate = useNavigate();
   const classId = Number(params.classId);
-  const tab = TABS.some((t) => t.value === params.tab) ? params.tab! : 'overview';
+  const tab = TABS.some((tabItem) => tabItem.value === params.tab) ? params.tab! : 'overview';
 
   const cls = useQuery({ queryKey: ['classes', classId], queryFn: () => rpc.classes.get({ classId }) });
   const join = useAction(() => rpc.classes.join({ classId }), { success: 'Joined!' });
@@ -37,20 +37,21 @@ export function ClassPage() {
   return (
     <>
       <PageHeader
-        crumbs={[{ label: 'Courses', to: '/courses' }, { label: code }]}
+        crumbs={[{ label: t('Courses'), to: '/courses' }, { label: code }]}
         title={code}
         subtitle={
           <>
-            {c.title} · {c.credits} credits · {plural(c.memberCount, 'student')} on UniLink <Tag>{c.term}</Tag>
+            {c.title} · {t('{{count}} credits', { count: c.credits })} · {t('{{count}} students on UniLink', { count: c.memberCount })}{' '}
+            <Tag>{term(c.term)}</Tag>
           </>
         }
       />
 
       {!c.joined ? (
         <Card padding="xl">
-          <Text mb="md">Join this class to see its group chats, study sessions and discussions.</Text>
+          <Text mb="md">{t('Join this class to see its group chats, study sessions and discussions.')}</Text>
           <Button onClick={() => join.mutate()} loading={join.isPending}>
-            Join {code}
+            {t('Join {{code}}', { code })}
           </Button>
         </Card>
       ) : (
@@ -58,7 +59,7 @@ export function ClassPage() {
           <Tabs.List mb="lg">
             {TABS.map(({ value, label, icon: Icon }) => (
               <Tabs.Tab key={value} value={value} leftSection={<Icon size={16} />}>
-                {label}
+                {t(label)}
               </Tabs.Tab>
             ))}
           </Tabs.List>

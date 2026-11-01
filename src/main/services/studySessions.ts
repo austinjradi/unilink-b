@@ -1,13 +1,12 @@
 import { and, asc, eq, gte, inArray, isNull, like, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { fmtWhen } from '@shared/dates';
 import { goatFor } from '@shared/goat';
 import type { DB } from '../db/client';
 import { classes, courses, enrollments, studySessionMembers, studySessions, users } from '../db/schema';
 import { AppError, idSchema, nonEmpty, procedure } from '../rpc/core';
 import { classLabel, notFound, requireMember } from './access';
 import { enrolledUsersByEmail } from './classes';
-import { notify } from './notifications';
+import { m, notify } from './notifications';
 
 // S3: host, join and invite classmates to study sessions.
 
@@ -177,12 +176,15 @@ export const studySessionsRouter = {
       .from(studySessionMembers)
       .where(eq(studySessionMembers.sessionId, sessionId))
       .all();
-    for (const m of members) {
-      if (m.userId === ctx.userId) continue;
-      notify(ctx.db, m.userId, {
+    for (const member of members) {
+      if (member.userId === ctx.userId) continue;
+      notify(ctx.db, member.userId, {
         type: 'session-cancelled',
-        title: `"${session.title}" was cancelled`,
-        body: `${classLabel(ctx.db, session.classId) ?? ''} · was planned for ${fmtWhen(session.startsAt)}`,
+        title: m('"{{title}}" was cancelled', { title: session.title }),
+        body: m('{{class}} · was planned for {{when}}', {
+          class: classLabel(ctx.db, session.classId) ?? '',
+          when: { date: session.startsAt.getTime() },
+        }),
         link: `/classes/${session.classId}/sessions`,
       });
     }
@@ -237,8 +239,12 @@ export const studySessionsRouter = {
         for (const u of fresh) {
           notify(ctx.db, u.id, {
             type: 'session-invite',
-            title: `${inviter ?? 'A classmate'} invited you to "${session.title}"`,
-            body: `${classLabel(ctx.db, session.classId) ?? ''} · ${fmtWhen(session.startsAt)} · ${session.location}`,
+            title: m('{{name}} invited you to "{{title}}"', { name: inviter ?? { t: 'A classmate' }, title: session.title }),
+            body: m('{{class}} · {{when}} · {{location}}', {
+              class: classLabel(ctx.db, session.classId) ?? '',
+              when: { date: session.startsAt.getTime() },
+              location: session.location,
+            }),
             link: `/classes/${session.classId}/sessions`,
           });
         }

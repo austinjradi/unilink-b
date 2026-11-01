@@ -1,10 +1,12 @@
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
+import { t } from './i18n';
 
 dayjs.extend(relativeTime);
 
-export const fmtDateTime = (d: Date) => dayjs(d).format('ddd D MMM, HH:mm');
-export const fmtDate = (d: Date | string) => dayjs(d).format('ddd D MMM');
+// Date patterns are translated too, since French puts the day before the month.
+export const fmtDateTime = (d: Date) => dayjs(d).format(t('ddd, MMM D, HH:mm'));
+export const fmtDate = (d: Date | string) => dayjs(d).format(t('ddd, MMM D'));
 export const fmtTime = (d: Date) => dayjs(d).format('HH:mm');
 export const fromNow = (d: Date) => dayjs(d).fromNow();
 
@@ -13,10 +15,9 @@ export const toDate = (value: string | Date | null | undefined) => (value ? dayj
 
 export function dayLabel(day: string, today: string) {
   const diff = dayjs(day).diff(dayjs(today), 'day');
-  if (diff === 0) return 'Today';
-  if (diff === 1) return 'Tomorrow';
-  if (diff === -1) return 'Yesterday';
+  if (diff === 0) return t('Today');
+  if (diff === 1) return t('Tomorrow');
+  if (diff === -1) return t('Yesterday');
   return fmtDate(day);
 }
 
-export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;

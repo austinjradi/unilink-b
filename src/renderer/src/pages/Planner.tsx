@@ -39,10 +39,11 @@ import dayjs from 'dayjs';
 import { Link, useSearchParams } from 'react-router';
 import { addDays, ymd } from '@shared/dates';
 import { Empty, Loading, PageHeader } from '../components/ui';
-import { dayLabel, fmtDateTime, fromNow, plural, toDate } from '../lib/format';
+import { dayLabel, fmtDateTime, fromNow, toDate } from '../lib/format';
 import { useAction, useMe } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
 import { ClassSelect } from './Calendar';
+import { t } from '../lib/i18n';
 
 type Assignment = Out<typeof rpc.planner.list>[number];
 type Task = Assignment['tasks'][number];
@@ -65,17 +66,22 @@ export function PlannerPage() {
   return (
     <>
       <PageHeader
-        title="Assignment planner"
+        title={t('Assignment planner')}
         subtitle={
           <>
-            Work is spread across the days before each deadline, within your {me.studyMinutesPerDay} minutes of study
-            time a day (<Anchor component={Link} to="/settings/account" size="sm">change</Anchor>). Missed tasks move forward
-            automatically.
+            {t('Work is spread across the days before each deadline, within your {{minutes}} minutes of study time a day', {
+              minutes: me.studyMinutesPerDay,
+            })}{' '}
+            (
+            <Anchor component={Link} to="/settings/account" size="sm">
+              {t('change')}
+            </Anchor>
+            ). {t('Missed tasks move forward automatically.')}
           </>
         }
         actions={
           <Button leftSection={<IconPlus size={16} />} onClick={() => setEditing('new')}>
-            New assignment
+            {t('New assignment')}
           </Button>
         }
       />
@@ -85,8 +91,7 @@ export function PlannerPage() {
       ) : !list.data?.length ? (
         <Card withBorder>
           <Empty icon={<IconChecklist size={22} />}>
-            Add an assignment, split it into tasks (e.g. one per problem), and UniLink will schedule them before the
-            deadline with a spare day as a buffer.
+            {t('Add an assignment, split it into tasks (e.g. one per problem), and UniLink will schedule them before the deadline with a spare day as a buffer.')}
           </Empty>
         </Card>
       ) : (
@@ -97,7 +102,7 @@ export function PlannerPage() {
           {finished.length > 0 && (
             <Accordion variant="contained">
               <Accordion.Item value="finished">
-                <Accordion.Control>Finished or past due ({finished.length})</Accordion.Control>
+                <Accordion.Control>{t('Finished or past due ({{count}})', { count: finished.length })}</Accordion.Control>
                 <Accordion.Panel>
                   <Stack gap="md">
                     {finished.map((a) => (
@@ -111,7 +116,7 @@ export function PlannerPage() {
         </Stack>
       )}
 
-      <Modal opened={editing != null} onClose={close} title={editing === 'new' ? 'New assignment' : 'Edit assignment'} size="lg">
+      <Modal opened={editing != null} onClose={close} title={editing === 'new' ? t('New assignment') : t('Edit assignment')} size="lg">
         {editing === 'new' && <NewAssignmentForm onDone={close} />}
         {editing && editing !== 'new' && <EditAssignmentForm assignment={editing} onDone={close} />}
       </Modal>
@@ -129,12 +134,12 @@ function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onE
     onSuccess: () => setAdding(''),
   });
 
-  const days = [...new Set(a.tasks.map((t) => t.scheduledFor))].sort();
+  const days = [...new Set(a.tasks.map((task) => task.scheduledFor))].sort();
   const confirmDelete = () =>
     modals.openConfirmModal({
-      title: `Delete "${a.title}"?`,
-      children: <Text size="sm">Its tasks and attachment are deleted too.</Text>,
-      labels: { confirm: 'Delete', cancel: 'Keep' },
+      title: t('Delete "{{title}}"?', { title: a.title }),
+      children: <Text size="sm">{t('Its tasks and attachment are deleted too.')}</Text>,
+      labels: { confirm: t('Delete'), cancel: t('Keep') },
       confirmProps: { color: 'red' },
       onConfirm: () => remove.mutate(),
     });
@@ -150,7 +155,8 @@ function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onE
             {a.classLabel && <Badge variant="light">{a.classLabel}</Badge>}
           </Group>
           <Text size="sm" c={a.pastDue ? 'red' : 'dimmed'}>
-            Due {fmtDateTime(a.dueAt)} ({fromNow(a.dueAt)}) · {plural(a.bufferDays, 'buffer day')}
+            {t('Due {{when}} ({{relative}})', { when: fmtDateTime(a.dueAt), relative: fromNow(a.dueAt) })} ·{' '}
+            {t('{{count}} buffer days', { count: a.bufferDays })}
           </Text>
         </div>
         <Group gap="xs">
@@ -161,19 +167,19 @@ function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onE
           )}
           <Menu position="bottom-end">
             <Menu.Target>
-              <ActionIcon variant="subtle" aria-label="Assignment options">
+              <ActionIcon variant="subtle" aria-label={t('Assignment options')}>
                 <IconDots size={18} />
               </ActionIcon>
             </Menu.Target>
             <Menu.Dropdown>
               <Menu.Item leftSection={<IconPencil size={14} />} onClick={onEdit}>
-                Edit details and due date
+                {t('Edit details and due date')}
               </Menu.Item>
               <Menu.Item leftSection={<IconRefresh size={14} />} onClick={() => replan.mutate()}>
-                Re-plan from scratch
+                {t('Re-plan from scratch')}
               </Menu.Item>
               <Menu.Item leftSection={<IconTrash size={14} />} color="red" onClick={confirmDelete}>
-                Delete
+                {t('Delete')}
               </Menu.Item>
             </Menu.Dropdown>
           </Menu>
@@ -183,15 +189,15 @@ function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onE
       <Group gap="xs" mb="md">
         <Progress value={a.tasks.length ? (a.doneCount / a.tasks.length) * 100 : 0} style={{ flex: 1 }} color="teal" />
         <Text size="xs" c="dimmed">
-          {a.doneCount}/{a.tasks.length} done
+          {t('{{done}}/{{total}} done', { done: a.doneCount, total: a.tasks.length })}
         </Text>
       </Group>
 
       {!a.pastDue && (a.tight || a.overloaded) && (
         <Alert color="yellow" variant="light" icon={<IconAlertTriangle size={18} />} mb="md" p="xs">
           <Text size="sm">
-            {a.tight && 'Some work lands on your buffer day before the deadline. '}
-            {a.overloaded && 'Some days have more work than your daily study time. Consider starting early or moving tasks.'}
+            {a.tight && `${t('Some work lands on your buffer day before the deadline.')} `}
+            {a.overloaded && t('Some days have more work than your daily study time. Consider starting early or moving tasks.')}
           </Text>
         </Alert>
       )}
@@ -204,9 +210,9 @@ function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onE
             </Text>
             <Stack gap={4}>
               {a.tasks
-                .filter((t) => t.scheduledFor === day)
-                .map((t) => (
-                  <TaskRow key={t.id} task={t} dueDay={ymd(a.dueAt)} />
+                .filter((task) => task.scheduledFor === day)
+                .map((task) => (
+                  <TaskRow key={task.id} task={task} dueDay={ymd(a.dueAt)} />
                 ))}
             </Stack>
           </div>
@@ -220,9 +226,9 @@ function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onE
         }}
       >
         <Group mt="md" gap="xs">
-          <TextInput size="xs" placeholder="Add a task…" value={adding} onChange={(e) => setAdding(e.currentTarget.value)} style={{ flex: 1 }} />
+          <TextInput size="xs" placeholder={t('Add a task…')} value={adding} onChange={(e) => setAdding(e.currentTarget.value)} style={{ flex: 1 }} />
           <Button size="xs" variant="light" type="submit" disabled={!adding.trim()} loading={addTask.isPending}>
-            Add
+            {t('Add')}
           </Button>
         </Group>
       </form>
@@ -230,36 +236,36 @@ function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onE
   );
 }
 
-function TaskRow({ task: t, dueDay }: { task: Task; dueDay: string }) {
-  const setDone = useAction((done: boolean) => rpc.planner.setDone({ taskId: t.id, done }));
-  const move = useAction((day: string) => rpc.planner.moveTask({ taskId: t.id, day }), { success: 'Task moved. It will stay on that day.' });
-  const remove = useAction(() => rpc.planner.removeTask({ taskId: t.id }));
+function TaskRow({ task, dueDay }: { task: Task; dueDay: string }) {
+  const setDone = useAction((done: boolean) => rpc.planner.setDone({ taskId: task.id, done }));
+  const move = useAction((day: string) => rpc.planner.moveTask({ taskId: task.id, day }), { success: 'Task moved. It will stay on that day.' });
+  const remove = useAction(() => rpc.planner.removeTask({ taskId: task.id }));
 
   return (
     <Group gap="sm" wrap="nowrap" pl="xs">
-      <Checkbox checked={!!t.doneAt} onChange={(e) => setDone.mutate(e.currentTarget.checked)} aria-label="Done" />
-      <Text size="sm" style={{ flex: 1 }} td={t.doneAt ? 'line-through' : undefined} c={t.doneAt ? 'dimmed' : undefined}>
-        {t.title}
+      <Checkbox checked={!!task.doneAt} onChange={(e) => setDone.mutate(e.currentTarget.checked)} aria-label={t('Done')} />
+      <Text size="sm" style={{ flex: 1 }} td={task.doneAt ? 'line-through' : undefined} c={task.doneAt ? 'dimmed' : undefined}>
+        {task.title}
       </Text>
-      {t.pinned && (
-        <Tooltip label="You placed this task by hand, so re-plans leave it here">
+      {task.pinned && (
+        <Tooltip label={t('You placed this task by hand, so re-plans leave it here')}>
           <IconPin size={14} color="var(--mantine-color-dimmed)" />
         </Tooltip>
       )}
       <Badge size="sm" variant="default">
-        {t.minutes} min
+        {task.minutes} min
       </Badge>
       <DateInput
         size="xs"
         w={120}
-        value={t.scheduledFor}
+        value={task.scheduledFor}
         onChange={(v) => v && move.mutate(ymd(toDate(v)!))}
         valueFormat="ddd D MMM"
         maxDate={dueDay}
-        aria-label="Move to day"
-        disabled={!!t.doneAt}
+        aria-label={t('Move to day')}
+        disabled={!!task.doneAt}
       />
-      <ActionIcon variant="subtle" color="red" size="sm" onClick={() => remove.mutate()} aria-label="Delete task">
+      <ActionIcon variant="subtle" color="red" size="sm" onClick={() => remove.mutate()} aria-label={t('Delete task')}>
         <IconTrash size={14} />
       </ActionIcon>
     </Group>
@@ -279,20 +285,20 @@ function NewAssignmentForm({ onDone }: { onDone: () => void }) {
       notes: '',
       mode: 'parts' as 'parts' | 'custom',
       parts: 3,
-      partLabel: 'Problem',
+      partLabel: t('Problem'),
       partMinutes: 60,
       custom: [{ title: '', minutes: 60 }] as TaskDraft[],
     },
     validate: {
-      title: (v) => (v.trim() ? null : 'Name the assignment'),
-      dueAt: (v) => (toDate(v) && toDate(v)! > new Date() ? null : 'Pick a due date in the future'),
+      title: (v) => (v.trim() ? null : t('Name the assignment')),
+      dueAt: (v) => (toDate(v) && toDate(v)! > new Date() ? null : t('Pick a due date in the future')),
     },
   });
   const v = form.values;
   const tasks: TaskDraft[] =
     v.mode === 'parts'
-      ? Array.from({ length: Math.max(1, v.parts) }, (_, i) => ({ title: `${v.partLabel.trim() || 'Part'} ${i + 1}`, minutes: v.partMinutes }))
-      : v.custom.filter((t) => t.title.trim());
+      ? Array.from({ length: Math.max(1, v.parts) }, (_, i) => ({ title: `${v.partLabel.trim() || t('Part')} ${i + 1}`, minutes: v.partMinutes }))
+      : v.custom.filter((task) => task.title.trim());
 
   const choose = useAction(() => rpc.planner.chooseAttachment(), { onSuccess: (file) => file && setAttachment(file) });
   const create = useAction(
@@ -306,7 +312,7 @@ function NewAssignmentForm({ onDone }: { onDone: () => void }) {
         tasks,
         attachmentPath: attachment?.path ?? null,
       }),
-    { success: `Planned ${plural(tasks.length, 'task')} before the deadline`, onSuccess: onDone },
+    { success: t('Planned {{count}} tasks before the deadline', { count: tasks.length }), onSuccess: onDone },
   );
 
   const due = toDate(v.dueAt);
@@ -315,14 +321,14 @@ function NewAssignmentForm({ onDone }: { onDone: () => void }) {
   return (
     <form onSubmit={form.onSubmit(() => create.mutate())}>
       <Stack>
-        <TextInput label="Assignment" placeholder="Problem set 3" data-autofocus {...form.getInputProps('title')} />
+        <TextInput label={t('Assignment')} placeholder={t('Problem set 3')} data-autofocus {...form.getInputProps('title')} />
         <Group grow align="flex-start">
           <ClassSelect value={v.classId} onChange={(id) => form.setFieldValue('classId', id)} />
-          <DateTimePicker label="Due" valueFormat="ddd D MMM YYYY, HH:mm" minDate={new Date()} {...form.getInputProps('dueAt')} />
+          <DateTimePicker label={t('Due')} valueFormat="ddd D MMM YYYY, HH:mm" minDate={new Date()} {...form.getInputProps('dueAt')} />
         </Group>
         <NumberInput
-          label="Buffer days"
-          description="Days kept free right before the deadline"
+          label={t('Buffer days')}
+          description={t('Days kept free right before the deadline')}
           min={0}
           max={7}
           w={220}
@@ -331,47 +337,47 @@ function NewAssignmentForm({ onDone }: { onDone: () => void }) {
 
         <div>
           <Text size="sm" fw={500} mb={6}>
-            How should it be split?
+            {t('How should it be split?')}
           </Text>
           <SegmentedControl
             data={[
-              { value: 'parts', label: 'Equal parts' },
-              { value: 'custom', label: 'My own tasks' },
+              { value: 'parts', label: t('Equal parts') },
+              { value: 'custom', label: t('My own tasks') },
             ]}
             {...form.getInputProps('mode')}
             mb="sm"
           />
           {v.mode === 'parts' ? (
             <Group grow>
-              <NumberInput label="Number of parts" min={1} max={50} {...form.getInputProps('parts')} />
-              <TextInput label="Each part is a…" {...form.getInputProps('partLabel')} />
-              <NumberInput label="Minutes each" min={5} max={600} step={15} {...form.getInputProps('partMinutes')} />
+              <NumberInput label={t('Number of parts')} min={1} max={50} {...form.getInputProps('parts')} />
+              <TextInput label={t('Each part is a…')} {...form.getInputProps('partLabel')} />
+              <NumberInput label={t('Minutes each')} min={5} max={600} step={15} {...form.getInputProps('partMinutes')} />
             </Group>
           ) : (
             <Stack gap="xs">
               {v.custom.map((_, i) => (
                 <Group key={i} gap="xs" wrap="nowrap">
-                  <TextInput placeholder={`Task ${i + 1}`} style={{ flex: 1 }} {...form.getInputProps(`custom.${i}.title`)} />
+                  <TextInput placeholder={t('Task {{number}}', { number: i + 1 })} style={{ flex: 1 }} {...form.getInputProps(`custom.${i}.title`)} />
                   <NumberInput w={110} suffix=" min" min={5} max={600} step={15} {...form.getInputProps(`custom.${i}.minutes`)} />
-                  <ActionIcon variant="subtle" color="red" onClick={() => form.removeListItem('custom', i)} disabled={v.custom.length === 1} aria-label="Remove task">
+                  <ActionIcon variant="subtle" color="red" onClick={() => form.removeListItem('custom', i)} disabled={v.custom.length === 1} aria-label={t('Remove task')}>
                     <IconTrash size={16} />
                   </ActionIcon>
                 </Group>
               ))}
               <Button size="xs" variant="subtle" leftSection={<IconPlus size={14} />} onClick={() => form.insertListItem('custom', { title: '', minutes: 60 })} w="fit-content">
-                Add task
+                {t('Add task')}
               </Button>
             </Stack>
           )}
           <Text size="xs" c="dimmed" mt="xs">
-            {plural(tasks.length, 'task')} over {plural(workDays, 'working day')} before the deadline
-            {workDays > 0 && tasks.length > 0 && `: about ${Math.ceil(tasks.length / workDays)} per day`}.
+            {t('{{count}} tasks', { count: tasks.length })} · {t('{{count}} working days before the deadline', { count: workDays })}
+            {workDays > 0 && tasks.length > 0 && ` · ${t('about {{count}} per day', { count: Math.ceil(tasks.length / workDays) })}`}
           </Text>
         </div>
 
         <Group gap="xs">
           <Button variant="default" size="xs" leftSection={<IconPaperclip size={14} />} onClick={() => choose.mutate()}>
-            {attachment ? 'Change file' : 'Attach the assignment file'}
+            {attachment ? t('Change file') : t('Attach the assignment file')}
           </Button>
           {attachment && (
             <Text size="sm" c="dimmed">
@@ -379,10 +385,10 @@ function NewAssignmentForm({ onDone }: { onDone: () => void }) {
             </Text>
           )}
         </Group>
-        <Textarea label="Notes" autosize minRows={2} {...form.getInputProps('notes')} />
+        <Textarea label={t('Notes')} autosize minRows={2} {...form.getInputProps('notes')} />
         <Group justify="flex-end">
           <Button type="submit" loading={create.isPending} disabled={!tasks.length}>
-            Plan it
+            {t('Plan it')}
           </Button>
         </Group>
       </Stack>
@@ -399,7 +405,7 @@ function EditAssignmentForm({ assignment: a, onDone }: { assignment: Assignment;
       bufferDays: a.bufferDays,
       notes: a.notes,
     },
-    validate: { title: (v) => (v.trim() ? null : 'Name the assignment'), dueAt: (v) => (v ? null : 'Pick a due date') },
+    validate: { title: (v) => (v.trim() ? null : t('Name the assignment')), dueAt: (v) => (v ? null : t('Pick a due date')) },
   });
   const save = useAction(
     (v: typeof form.values) => rpc.planner.update({ assignmentId: a.id, ...v, dueAt: toDate(v.dueAt)! }),
@@ -409,16 +415,16 @@ function EditAssignmentForm({ assignment: a, onDone }: { assignment: Assignment;
   return (
     <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
       <Stack>
-        <TextInput label="Assignment" {...form.getInputProps('title')} />
+        <TextInput label={t('Assignment')} {...form.getInputProps('title')} />
         <Group grow align="flex-start">
           <ClassSelect value={form.values.classId} onChange={(id) => form.setFieldValue('classId', id)} />
-          <DateTimePicker label="Due" valueFormat="ddd D MMM YYYY, HH:mm" {...form.getInputProps('dueAt')} />
+          <DateTimePicker label={t('Due')} valueFormat="ddd D MMM YYYY, HH:mm" {...form.getInputProps('dueAt')} />
         </Group>
-        <NumberInput label="Buffer days" min={0} max={7} w={220} {...form.getInputProps('bufferDays')} />
-        <Textarea label="Notes" autosize minRows={2} {...form.getInputProps('notes')} />
+        <NumberInput label={t('Buffer days')} min={0} max={7} w={220} {...form.getInputProps('bufferDays')} />
+        <Textarea label={t('Notes')} autosize minRows={2} {...form.getInputProps('notes')} />
         <Group justify="flex-end">
           <Button type="submit" loading={save.isPending}>
-            Save
+            {t('Save')}
           </Button>
         </Group>
       </Stack>

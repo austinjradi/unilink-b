@@ -10,6 +10,7 @@ import { Empty, Loading } from '../components/ui';
 import { dayLabel, fmtDateTime } from '../lib/format';
 import { useAction, useMe } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
+import { t } from '../lib/i18n';
 
 type TodayItem = Out<typeof rpc.todos.today>['today'][number];
 
@@ -20,9 +21,9 @@ export function Home() {
   return (
     <>
       <Text fz={30} fw={600} className="display" mb="md">
-        Hi {me.name.split(' ')[0]} <span aria-hidden>👋</span>
+        {t('Hi {{name}}', { name: me.name.split(' ')[0] })} <span aria-hidden>👋</span>
         <Text span c="dimmed" fz="md" fw={500} ml="sm">
-          {dayjs().format('dddd, MMMM D')}
+          {dayjs().format(t('dddd, MMMM D'))}
         </Text>
       </Text>
       <Feed
@@ -51,7 +52,7 @@ function TodayTasks() {
     <Card padding="md">
       <Group justify="space-between" mb="sm">
         <Text fw={800} size="lg" className="display">
-          Today
+          {t('Today')}
         </Text>
         {items.length > 0 && (
           <Group gap={6}>
@@ -68,7 +69,7 @@ function TodayTasks() {
         <Stack gap={8}>
           {items.length === 0 && (
             <Text size="sm" c="dimmed">
-              Nothing planned today.
+              {t('Nothing planned today.')}
             </Text>
           )}
           {items.map((item) => (
@@ -83,11 +84,11 @@ function TodayTasks() {
             <TextInput
               size="xs"
               radius="xl"
-              placeholder="Add a task…"
+              placeholder={t('Add a task…')}
               value={title}
               onChange={(e) => setTitle(e.currentTarget.value)}
               rightSection={
-                <ActionIcon size="sm" variant="subtle" type="submit" disabled={!title.trim()} aria-label="Add task">
+                <ActionIcon size="sm" variant="subtle" type="submit" disabled={!title.trim()} aria-label={t('Add task')}>
                   <IconPlus size={14} />
                 </ActionIcon>
               }
@@ -103,7 +104,7 @@ function TodayTasks() {
                 leftSection={showLater ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
                 onClick={() => setShowLater((s) => !s)}
               >
-                Later ({data.data.later.length})
+                {t('Later ({{count}})', { count: data.data.later.length })}
               </Button>
               <Collapse expanded={showLater}>
                 <Stack gap={8}>
@@ -128,7 +129,7 @@ function TaskRow({ item, today }: { item: TodayItem; today: string }) {
 
   return (
     <Group gap={8} wrap="nowrap" align="flex-start">
-      <Checkbox mt={2} size="xs" checked={item.done} onChange={(e) => toggle.mutate(e.currentTarget.checked)} aria-label={`Done: ${item.title}`} />
+      <Checkbox mt={2} size="xs" checked={item.done} onChange={(e) => toggle.mutate(e.currentTarget.checked)} aria-label={t('Done: {{title}}', { title: item.title })} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <Text size="sm" fw={600} td={item.done ? 'line-through' : undefined} c={item.done ? 'dimmed' : undefined} lineClamp={2}>
           {item.title}
@@ -141,12 +142,12 @@ function TaskRow({ item, today }: { item: TodayItem; today: string }) {
           )}
           {item.progress && (
             <Badge size="xs" variant="light" color="teal">
-              {item.progress.done} of {item.progress.total} done
+              {t('{{done}} of {{total}} done', { done: item.progress.done, total: item.progress.total })}
             </Badge>
           )}
           {item.overdue && (
             <Badge size="xs" color="red" variant="light">
-              {item.kind === 'task' ? 'missed' : `due ${dayLabel(item.due!, today).toLowerCase()}`}
+              {item.kind === 'task' ? t('missed') : t('due {{day}}', { day: dayLabel(item.due!, today).toLowerCase() })}
             </Badge>
           )}
           {!item.overdue && item.kind === 'todo' && item.due && item.due !== today && (
@@ -157,7 +158,7 @@ function TaskRow({ item, today }: { item: TodayItem; today: string }) {
         </Group>
       </div>
       {item.kind === 'todo' && (
-        <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => remove.mutate()} aria-label="Delete task">
+        <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => remove.mutate()} aria-label={t('Delete task')}>
           <IconTrash size={13} />
         </ActionIcon>
       )}
@@ -172,17 +173,17 @@ function Deadlines() {
 
   const left = (d: Date) => {
     const days = dayjs(d).startOf('day').diff(dayjs().startOf('day'), 'day');
-    return days <= 0 ? 'today' : `${days} d. left`;
+    return days <= 0 ? null : days;
   };
 
   return (
     <Card padding="md">
       <Group justify="space-between" mb="sm">
         <Text fw={800} size="lg" className="display">
-          Deadlines
+          {t('Deadlines')}
         </Text>
         <Anchor component={Link} to="/calendar" size="xs" fw={700}>
-          Calendar
+          {t('Calendar')}
         </Anchor>
       </Group>
       {upcoming.isPending ? (
@@ -193,9 +194,8 @@ function Deadlines() {
             const label = left(e.start);
             return (
               <Group key={e.key} gap="sm" wrap="nowrap" align="flex-start">
-                <div className="countdown" data-urgent={label === 'today' || label === '1 d. left' || undefined}>
-                  {label === 'today' ? 'today' : label.replace(' left', '')}
-                  {label !== 'today' && <div>left</div>}
+                <div className="countdown" data-urgent={label == null || label === 1 || undefined}>
+                  {label == null ? t('today') : t('{{count}} d. left', { count: label })}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <Text size="sm" fw={700} lineClamp={2}>
@@ -207,14 +207,14 @@ function Deadlines() {
                   </Text>
                 </div>
                 {e.deadlineId != null && (
-                  <Checkbox size="xs" mt={2} onChange={() => setDone.mutate(e.deadlineId!)} aria-label={`Mark ${e.title} done`} />
+                  <Checkbox size="xs" mt={2} onChange={() => setDone.mutate(e.deadlineId!)} aria-label={t('Mark {{title}} done', { title: e.title })} />
                 )}
               </Group>
             );
           })}
         </Stack>
       ) : (
-        <Empty>Nothing due in the next three weeks.</Empty>
+        <Empty>{t('Nothing due in the next three weeks.')}</Empty>
       )}
     </Card>
   );

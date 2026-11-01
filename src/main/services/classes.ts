@@ -203,6 +203,6 @@ export function enrolledUsersByEmail(db: DB, classId: number, emails: string[]) 
     .where(inArray(users.email, wanted))
     .all();
   const missing = wanted.filter((e) => !found.some((f) => f.email === e));
-  if (missing.length) throw new AppError(`Not in this class: ${missing.join(', ')}`, 'NOT_FOUND');
+  if (missing.length) throw new AppError('Not in this class: {{emails}}', 'NOT_FOUND', { emails: missing.join(', ') });
   return found;
 }

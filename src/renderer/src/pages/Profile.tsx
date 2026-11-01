@@ -23,16 +23,15 @@ import { SectionCard } from '../components/ui';
 import { fromNow } from '../lib/format';
 import { useAction, useMe } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
+import { t } from '../lib/i18n';
 
 // G4 account settings and G3 notification settings, shown as Settings tabs.
 
 export function PrivacyPanel() {
   return (
-    <SectionCard title="What classmates see">
+    <SectionCard title={t('What classmates see')}>
       <Alert variant="light" icon={<IconEye size={18} />}>
-        Your name, McGill email and goat are shown to classmates only when you post or reply on a discussion board,
-        add a public group chat link, or join a study session. There's no member list for your classes. Your grades,
-        notes, course record and planner are private to you.
+        {t("Your name, McGill email and goat are shown to classmates only when you post or reply on a discussion board, add a public group chat link, or join a study session. There's no member list for your classes. Your grades, notes, course record and planner are private to you.")}
       </Alert>
     </SectionCard>
   );
@@ -47,26 +46,25 @@ export function NotificationSettings() {
 
   return (
     <SectionCard
-      title="Notifications"
+      title={t('Notifications')}
       actions={
         <Button size="xs" variant="subtle" leftSection={<IconMail size={14} />} onClick={() => setShowOutbox(true)}>
-          Email outbox ({outbox.data?.length ?? 0})
+          {t('Email outbox ({{count}})', { count: outbox.data?.length ?? 0 })}
         </Button>
       }
     >
       <Text size="sm" c="dimmed" mb="sm">
-        Everything appears under the bell in the sidebar. Choose what also shows as a desktop notification or is
-        emailed to your McGill address.
+        {t('Everything appears under the bell at the top. Choose what also shows as a desktop notification or is emailed to your McGill address.')}
       </Text>
       <Table verticalSpacing={6}>
         <Table.Thead>
           <Table.Tr>
             <Table.Th />
             <Table.Th ta="center" w={90}>
-              Desktop
+              {t('Desktop')}
             </Table.Th>
             <Table.Th ta="center" w={90}>
-              Email
+              {t('Email')}
             </Table.Th>
           </Table.Tr>
         </Table.Thead>
@@ -74,14 +72,14 @@ export function NotificationSettings() {
           {prefs.data?.map((p) => (
             <Table.Tr key={p.type}>
               <Table.Td>
-                <Text size="sm">{p.label}</Text>
+                <Text size="sm">{t(p.label)}</Text>
               </Table.Td>
               <Table.Td>
                 <Center>
                   <Switch
                     checked={p.desktop}
                     onChange={(e) => set.mutate({ type: p.type, desktop: e.currentTarget.checked, email: p.email })}
-                    aria-label={`${p.label}: desktop`}
+                    aria-label={`${t(p.label)}: ${t('Desktop')}`}
                   />
                 </Center>
               </Table.Td>
@@ -90,7 +88,7 @@ export function NotificationSettings() {
                   <Switch
                     checked={p.email}
                     onChange={(e) => set.mutate({ type: p.type, desktop: p.desktop, email: e.currentTarget.checked })}
-                    aria-label={`${p.label}: email`}
+                    aria-label={`${t(p.label)}: ${t('Email')}`}
                   />
                 </Center>
               </Table.Td>
@@ -99,10 +97,9 @@ export function NotificationSettings() {
         </Table.Tbody>
       </Table>
 
-      <Modal opened={showOutbox} onClose={() => setShowOutbox(false)} title="Email outbox" size="lg">
+      <Modal opened={showOutbox} onClose={() => setShowOutbox(false)} title={t('Email outbox')} size="lg">
         <Alert variant="light" color="yellow" icon={<IconAlertTriangle size={18} />} mb="md">
-          Emails aren't actually sent yet: that needs a mail server, which this local-only version of UniLink doesn't
-          have. This is what would have been sent to you.
+          {t("Emails aren't actually sent yet: that needs a mail server, which this local-only version of UniLink doesn't have. This is what would have been sent to you.")}
         </Alert>
         {outbox.data?.length ? (
           <Stack gap="sm">
@@ -112,7 +109,7 @@ export function NotificationSettings() {
                   {m.subject}
                 </Text>
                 <Text size="xs" c="dimmed" mb={4}>
-                  To {m.toEmail} · {fromNow(m.createdAt)}
+                  {t('To {{email}}', { email: m.toEmail })} · {fromNow(m.createdAt)}
                 </Text>
                 <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
                   {m.body}
@@ -122,7 +119,7 @@ export function NotificationSettings() {
           </Stack>
         ) : (
           <Text c="dimmed" size="sm">
-            No emails yet.
+            {t('No emails yet.')}
           </Text>
         )}
       </Modal>
@@ -139,7 +136,7 @@ export function ProfileForm() {
       year: me.year == null ? null : String(me.year),
       studyMinutesPerDay: me.studyMinutesPerDay,
     },
-    validate: { name: (v) => (v.trim() ? null : 'Enter your name') },
+    validate: { name: (v) => (v.trim() ? null : t('Enter your name')) },
   });
   const save = useAction(
     (v: typeof form.values) => rpc.profile.update({ ...v, year: v.year ? Number(v.year) : null, studyMinutesPerDay: Number(v.studyMinutesPerDay) }),
@@ -147,20 +144,20 @@ export function ProfileForm() {
   );
 
   return (
-    <SectionCard title="Profile">
+    <SectionCard title={t('Profile')}>
       <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
         <Stack>
           <Group grow>
-            <TextInput label="Name" {...form.getInputProps('name')} />
-            <TextInput label="McGill email" value={me.email} disabled />
+            <TextInput label={t('Name')} {...form.getInputProps('name')} />
+            <TextInput label={t('McGill email')} value={me.email} disabled />
           </Group>
           <Group grow>
-            <TextInput label="Program" placeholder="e.g. Computer Science" {...form.getInputProps('program')} />
-            <Select label="Year" placeholder="—" clearable data={['1', '2', '3', '4', '5', '6']} {...form.getInputProps('year')} />
+            <TextInput label={t('Program')} placeholder={t('e.g. Computer Science')} {...form.getInputProps('program')} />
+            <Select label={t('Year')} placeholder="—" clearable data={['1', '2', '3', '4', '5', '6']} {...form.getInputProps('year')} />
           </Group>
           <NumberInput
-            label="Study time per day"
-            description="How much time the assignment planner can schedule on a day"
+            label={t('Study time per day')}
+            description={t('How much time the assignment planner can schedule on a day')}
             suffix=" min"
             min={15}
             max={960}
@@ -170,7 +167,7 @@ export function ProfileForm() {
           />
           <Group justify="flex-end">
             <Button type="submit" disabled={!form.isDirty()} loading={save.isPending}>
-              Save profile
+              {t('Save profile')}
             </Button>
           </Group>
         </Stack>
@@ -183,8 +180,11 @@ export function ChangePassword() {
   const form = useForm({
     initialValues: { currentPassword: '', newPassword: '', confirm: '' },
     validate: {
-      newPassword: (v) => (passwordProblems(v).length ? `Needs: ${passwordProblems(v).join(', ').toLowerCase()}` : null),
-      confirm: (v, values) => (v === values.newPassword ? null : 'Passwords do not match'),
+      newPassword: (v) =>
+        passwordProblems(v).length
+          ? t('Needs: {{rules}}', { rules: passwordProblems(v).map((rule) => t(rule).toLowerCase()).join(', ') })
+          : null,
+      confirm: (v, values) => (v === values.newPassword ? null : t('Passwords do not match')),
     },
   });
   const save = useAction(
@@ -193,17 +193,17 @@ export function ChangePassword() {
   );
 
   return (
-    <SectionCard title="Change password">
+    <SectionCard title={t('Change password')}>
       <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
         <Stack>
-          <PasswordInput label="Current password" {...form.getInputProps('currentPassword')} />
+          <PasswordInput label={t('Current password')} {...form.getInputProps('currentPassword')} />
           <Group grow>
-            <PasswordInput label="New password" {...form.getInputProps('newPassword')} />
-            <PasswordInput label="Confirm new password" {...form.getInputProps('confirm')} />
+            <PasswordInput label={t('New password')} {...form.getInputProps('newPassword')} />
+            <PasswordInput label={t('Confirm new password')} {...form.getInputProps('confirm')} />
           </Group>
           <Group justify="flex-end">
             <Button type="submit" variant="default" loading={save.isPending}>
-              Change password
+              {t('Change password')}
             </Button>
           </Group>
         </Stack>
@@ -218,14 +218,14 @@ export function DeleteAccount() {
   const remove = useAction(() => rpc.profile.deleteAccount({ password }), { success: 'Your account and data were deleted.' });
 
   return (
-    <SectionCard title="Delete account">
+    <SectionCard title={t('Delete account')}>
       <Text size="sm" c="dimmed" mb="md">
-        Permanently deletes your account, classes, links, posts, study sessions, grades and plans. This can't be undone.
+        {t("Permanently deletes your account, classes, links, posts, study sessions, grades and plans. This can't be undone.")}
       </Text>
       <Button color="red" variant="light" onClick={() => setOpen(true)}>
-        Delete my account
+        {t('Delete my account')}
       </Button>
-      <Modal opened={open} onClose={() => setOpen(false)} title="Delete your account?">
+      <Modal opened={open} onClose={() => setOpen(false)} title={t('Delete your account?')}>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -233,14 +233,14 @@ export function DeleteAccount() {
           }}
         >
           <Stack>
-            <Text size="sm">Enter your password to confirm. Everything you've added to UniLink will be deleted.</Text>
-            <PasswordInput label="Password" value={password} onChange={(e) => setPassword(e.currentTarget.value)} data-autofocus />
+            <Text size="sm">{t("Enter your password to confirm. Everything you've added to UniLink will be deleted.")}</Text>
+            <PasswordInput label={t('Password')} value={password} onChange={(e) => setPassword(e.currentTarget.value)} data-autofocus />
             <Group justify="flex-end">
               <Button variant="default" onClick={() => setOpen(false)}>
-                Cancel
+                {t('Cancel')}
               </Button>
               <Button type="submit" color="red" disabled={!password} loading={remove.isPending}>
-                Delete everything
+                {t('Delete everything')}
               </Button>
             </Group>
           </Stack>

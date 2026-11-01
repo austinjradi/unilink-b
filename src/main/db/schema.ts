@@ -1,5 +1,6 @@
 import { type AnySQLiteColumn, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import type { GoatConfig } from '@shared/goat';
+import type { Message } from '@shared/i18n';
 import type { NotificationPrefs } from '@shared/notifications';
 
 const id = () => integer('id').primaryKey({ autoIncrement: true });
@@ -31,6 +32,8 @@ export const users = sqliteTable('users', {
   notificationPrefs: text('notification_prefs', { mode: 'json' }).$type<NotificationPrefs>(),
   // The student's goat avatar; null until customized (see shared/goat.ts).
   avatar: text('avatar', { mode: 'json' }).$type<GoatConfig>(),
+  // Language for the UI, notifications and emails.
+  locale: text('locale', { enum: ['en', 'fr'] }).notNull().default('en'),
   createdAt: createdAt(),
 });
 
@@ -344,6 +347,8 @@ export const notifications = sqliteTable(
     title: text('title').notNull(),
     body: text('body').notNull().default(''),
     link: text('link'), // app route to open, e.g. "/classes/3/sessions"
+    // Title and body as translatable messages; `title`/`body` hold the English text.
+    i18n: text('i18n', { mode: 'json' }).$type<{ title: Message; body: Message | null }>(),
     // Reminders carry a key so the same reminder is never created twice.
     dedupeKey: text('dedupe_key'),
     createdAt: createdAt(),

@@ -95,7 +95,7 @@ export const recordRouter = {
       .from(courseRecords)
       .where(and(eq(courseRecords.userId, ctx.userId), eq(courseRecords.code, fields.code), eq(courseRecords.term, fields.term)))
       .get();
-    if (dup) throw new AppError(`${fields.code} is already in your record for ${fields.term}.`, 'CONFLICT');
+    if (dup) throw new AppError('{{code}} is already in your record for {{term}}.', 'CONFLICT', { code: fields.code, term: { term: fields.term } });
     ctx.db
       .insert(courseRecords)
       .values({ ...fields, title: fields.title || catalogueTitle(ctx.db, fields.code), userId: ctx.userId })

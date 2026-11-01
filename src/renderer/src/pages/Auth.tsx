@@ -25,6 +25,8 @@ import { GoatAvatar } from '../components/Goat';
 import { Logo } from '../components/Layout';
 import { useAction } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
+import { LanguageSwitch } from '../components/LanguageSwitch';
+import { getLocale, t } from '../lib/i18n';
 
 function AuthCard({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return (
@@ -33,6 +35,9 @@ function AuthCard({ title, subtitle, children }: { title: string; subtitle: stri
         <Group justify="space-between" mb="lg">
           <Logo />
           <GoatAvatar goat={{ hat: 'grad', eyes: 'happy', horns: 'classic', fur: 'white', background: 'mint' }} size={72} />
+        </Group>
+        <Group justify="flex-end" mb="sm">
+          <LanguageSwitch size="xs" />
         </Group>
         <Title order={3}>{title}</Title>
         <Text c="dimmed" size="sm" mb="lg">
@@ -44,8 +49,8 @@ function AuthCard({ title, subtitle, children }: { title: string; subtitle: stri
   );
 }
 
-const emailRule = (v: string) => (MCGILL_EMAIL.test(v.trim()) ? null : 'Use your McGill email (@mail.mcgill.ca)');
-const passwordRule = (v: string) => (passwordProblems(v).length ? 'Password does not meet the requirements' : null);
+const emailRule = (v: string) => (MCGILL_EMAIL.test(v.trim()) ? null : t('Use your McGill email (@mail.mcgill.ca)'));
+const passwordRule = (v: string) => (passwordProblems(v).length ? t('Password does not meet the requirements') : null);
 
 function PasswordChecklist({ password }: { password: string }) {
   return (
@@ -62,7 +67,7 @@ function PasswordChecklist({ password }: { password: string }) {
               </ThemeIcon>
             }
           >
-            {label}
+            {t(label)}
           </List.Item>
         );
       })}
@@ -76,31 +81,31 @@ export function SignIn() {
   const devInfo = useQuery({ queryKey: ['devInfo'], queryFn: () => rpc.auth.devInfo() });
 
   return (
-    <AuthCard title="Welcome back" subtitle="Sign in with your McGill email.">
+    <AuthCard title={t('Welcome back')} subtitle={t('Sign in with your McGill email.')}>
       <form onSubmit={form.onSubmit((v) => signIn.mutate(v))}>
         <Stack>
-          <TextInput label="McGill email" placeholder="first.last@mail.mcgill.ca" required {...form.getInputProps('email')} />
-          <PasswordInput label="Password" required {...form.getInputProps('password')} />
+          <TextInput label={t('McGill email')} placeholder={t('first.last@mail.mcgill.ca')} required {...form.getInputProps('email')} />
+          <PasswordInput label={t('Password')} required {...form.getInputProps('password')} />
           <Group justify="space-between">
             <Anchor component={Link} to="/reset" size="sm">
-              Forgot password?
+              {t('Forgot password?')}
             </Anchor>
             <Button type="submit" loading={signIn.isPending}>
-              Sign in
+              {t('Sign in')}
             </Button>
           </Group>
           <Text size="sm" ta="center">
-            New to UniLink?{' '}
+            {t('New to UniLink?')}{' '}
             <Anchor component={Link} to="/signup">
-              Create an account
+              {t('Create an account')}
             </Anchor>
           </Text>
           {devInfo.data && (
-            <Alert variant="light" icon={<IconInfoCircle />} title="Dev build: demo classmates">
+            <Alert variant="light" icon={<IconInfoCircle />} title={t('Dev build: demo classmates')}>
               <Text size="xs">
                 {devInfo.data.emails.join(', ')}
                 <br />
-                Password: <Code>{devInfo.data.password}</Code>
+                {t('Password:')} <Code>{devInfo.data.password}</Code>
               </Text>
             </Alert>
           )}
@@ -114,34 +119,34 @@ export function SignUp() {
   const form = useForm({
     initialValues: { name: '', email: '', password: '', confirm: '' },
     validate: {
-      name: (v) => (v.trim() ? null : 'Enter your name'),
+      name: (v) => (v.trim() ? null : t('Enter your name')),
       email: emailRule,
       password: passwordRule,
-      confirm: (v, values) => (v === values.password ? null : 'Passwords do not match'),
+      confirm: (v, values) => (v === values.password ? null : t('Passwords do not match')),
     },
   });
-  const signUp = useAction(({ name, email, password }: typeof form.values) => rpc.auth.signUp({ name, email, password }), {
+  const signUp = useAction(({ name, email, password }: typeof form.values) => rpc.auth.signUp({ name, email, password, locale: getLocale() }), {
     success: 'Welcome to UniLink! Start by joining your classes.',
   });
 
   return (
-    <AuthCard title="Create your account" subtitle="UniLink is for McGill students. Use your McGill email.">
+    <AuthCard title={t('Create your account')} subtitle={t('UniLink is for McGill students. Use your McGill email.')}>
       <form onSubmit={form.onSubmit((v) => signUp.mutate(v))}>
         <Stack>
-          <TextInput label="Full name" required {...form.getInputProps('name')} />
-          <TextInput label="McGill email" placeholder="first.last@mail.mcgill.ca" required {...form.getInputProps('email')} />
+          <TextInput label={t('Full name')} required {...form.getInputProps('name')} />
+          <TextInput label={t('McGill email')} placeholder={t('first.last@mail.mcgill.ca')} required {...form.getInputProps('email')} />
           <div>
-            <PasswordInput label="Password" required mb={6} {...form.getInputProps('password')} />
+            <PasswordInput label={t('Password')} required mb={6} {...form.getInputProps('password')} />
             <PasswordChecklist password={form.values.password} />
           </div>
-          <PasswordInput label="Confirm password" required {...form.getInputProps('confirm')} />
+          <PasswordInput label={t('Confirm password')} required {...form.getInputProps('confirm')} />
           <Button type="submit" loading={signUp.isPending}>
-            Create account
+            {t('Create account')}
           </Button>
           <Text size="sm" ta="center">
-            Already have an account?{' '}
+            {t('Already have an account?')}{' '}
             <Anchor component={Link} to="/">
-              Sign in
+              {t('Sign in')}
             </Anchor>
           </Text>
         </Stack>
@@ -156,7 +161,7 @@ export function ResetPassword() {
   const [sent, setSent] = useState<{ devCode: string | null } | null>(null);
   const form = useForm({
     initialValues: { code: '', password: '' },
-    validate: { code: (v) => (v.length === 6 ? null : 'Enter the 6-digit code'), password: passwordRule },
+    validate: { code: (v) => (v.length === 6 ? null : t('Enter the 6-digit code')), password: passwordRule },
   });
 
   const request = useAction((address: string) => rpc.auth.requestPasswordReset({ email: address }), {
@@ -168,7 +173,7 @@ export function ResetPassword() {
   });
 
   return (
-    <AuthCard title="Reset your password" subtitle="We'll send a one-time code to your McGill email.">
+    <AuthCard title={t('Reset your password')} subtitle={t("We'll send a one-time code to your McGill email.")}>
       {!sent ? (
         <form
           onSubmit={(e) => {
@@ -177,13 +182,13 @@ export function ResetPassword() {
           }}
         >
           <Stack>
-            <TextInput label="McGill email" required value={email} onChange={(e) => setEmail(e.currentTarget.value)} />
+            <TextInput label={t('McGill email')} required value={email} onChange={(e) => setEmail(e.currentTarget.value)} />
             <Group justify="space-between">
               <Anchor component={Link} to="/" size="sm">
-                Back to sign in
+                {t('Back to sign in')}
               </Anchor>
               <Button type="submit" loading={request.isPending}>
-                Send code
+                {t('Send code')}
               </Button>
             </Group>
           </Stack>
@@ -192,16 +197,16 @@ export function ResetPassword() {
         <form onSubmit={form.onSubmit((v) => reset.mutate(v))}>
           <Stack>
             <Text size="sm">
-              If <b>{email}</b> has an account, a code is on its way. It expires in 15 minutes.
+              {t('If {{email}} has an account, a code is on its way. It expires in 15 minutes.', { email })}
             </Text>
             {sent.devCode && (
-              <Alert variant="light" icon={<IconInfoCircle />} title="Dev build: email isn't wired up yet">
-                Your code is <Code>{sent.devCode}</Code>
+              <Alert variant="light" icon={<IconInfoCircle />} title={t("Dev build: email isn't wired up yet")}>
+                {t('Your code is')} <Code>{sent.devCode}</Code>
               </Alert>
             )}
             <div>
               <Text size="sm" fw={500} mb={4}>
-                Code
+                {t('Code')}
               </Text>
               <PinInput length={6} type="number" {...form.getInputProps('code')} />
               {form.errors.code && (
@@ -211,11 +216,11 @@ export function ResetPassword() {
               )}
             </div>
             <div>
-              <PasswordInput label="New password" required mb={6} {...form.getInputProps('password')} />
+              <PasswordInput label={t('New password')} required mb={6} {...form.getInputProps('password')} />
               <PasswordChecklist password={form.values.password} />
             </div>
             <Button type="submit" loading={reset.isPending}>
-              Set new password
+              {t('Set new password')}
             </Button>
           </Stack>
         </form>

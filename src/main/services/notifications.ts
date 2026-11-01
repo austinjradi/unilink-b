@@ -1,6 +1,7 @@
 import { type AnyColumn, and, asc, count, desc, eq, gt, inArray, isNull, lte, or } from 'drizzle-orm';
 import { z } from 'zod';
-import { addDays, fmtClock, fmtWhen, ymd } from '@shared/dates';
+import { addDays, ymd } from '@shared/dates';
+import { type Locale, type Message, type Params, render, translate } from '@shared/i18n';
 import { channelsFor, NOTIFICATION_TYPES, type NotificationType } from '@shared/notifications';
 import type { DB } from '../db/client';
 import {
@@ -24,8 +25,8 @@ import { classLabel } from './access';
 
 export interface NotifyInput {
   type: NotificationType;
-  title: string;
-  body?: string;
+  title: Message;
+  body?: Message;
   link?: string | null;
   // Reminders pass a key so re-running the sweep never duplicates them.
   dedupeKey?: string;
@@ -33,34 +34,67 @@ export interface NotifyInput {
 
 const isType = (t: string): t is NotificationType => t in NOTIFICATION_TYPES;
 
+// Messages are translated when shown, so they follow the reader's language.
+export const m = (key: string, params?: Params): Message => ({ key, params });
+// User-written text (titles, places) that must never be looked up in the dictionary.
+export const raw = (text: string): Message => ({ key: '{{text}}', params: { text } });
+
+function recipient(db: DB, userId: number) {
+  return db
+    .select({ email: users.email, prefs: users.notificationPrefs, locale: users.locale })
+    .from(users)
+    .where(eq(users.id, userId))
+    .get();
+}
+
 export function notify(db: DB, userId: number, n: NotifyInput): boolean {
-  const user = db.select({ email: users.email, prefs: users.notificationPrefs }).from(users).where(eq(users.id, userId)).get();
+  const user = recipient(db, userId);
   if (!user) return false;
   const inserted = db
     .insert(notifications)
-    .values({ userId, type: n.type, title: n.title, body: n.body ?? '', link: n.link ?? null, dedupeKey: n.dedupeKey ?? null })
+    .values({
+      userId,
+      type: n.type,
+      title: render('en', n.title),
+      body: n.body ? render('en', n.body) : '',
+      i18n: { title: n.title, body: n.body ?? null },
+      link: n.link ?? null,
+      dedupeKey: n.dedupeKey ?? null,
+    })
     .onConflictDoNothing()
     .returning({ id: notifications.id })
     .get();
   if (!inserted) return false;
   if (channelsFor(user.prefs, n.type).email) {
-    sendEmail(db, { userId, to: user.email, subject: `UniLink: ${n.title}`, body: n.body ?? '' });
+    sendEmail(db, {
+      userId,
+      to: user.email,
+      locale: user.locale,
+      subject: `UniLink: ${render(user.locale, n.title)}`,
+      body: n.body ? render(user.locale, n.body) : '',
+    });
   }
   return true;
 }
 
-export function sendEmail(db: DB, { userId, to, subject, body }: { userId: number | null; to: string; subject: string; body: string }) {
+export function sendEmail(
+  db: DB,
+  { userId, to, locale, subject, body }: { userId: number | null; to: string; locale: Locale; subject: string; body: string },
+) {
   db.insert(outbox)
-    .values({ userId, toEmail: to, subject, body: `${body}\n\nOpen UniLink to see more.`.trim() })
+    .values({ userId, toEmail: to, subject, body: `${body}\n\n${translate(locale, 'Open UniLink to see more.')}`.trim() })
     .run();
 }
 
-const relative = (date: Date, now: Date) => {
+// "… is due today at 23:59" / "… tomorrow at 10:00" / "… Tue 3 Nov, 23:59".
+function soon(kind: 'due' | 'starts', title: string, date: Date, now: Date): Message {
   const day = ymd(date);
-  if (day === ymd(now)) return `today at ${fmtClock(date)}`;
-  if (day === addDays(ymd(now), 1)) return `tomorrow at ${fmtClock(date)}`;
-  return fmtWhen(date);
-};
+  const params: Params = { title, time: { date: date.getTime(), style: 'time' }, when: { date: date.getTime() } };
+  if (day === ymd(now)) return kind === 'due' ? m('{{title}} is due today at {{time}}', params) : m('"{{title}}" starts today at {{time}}', params);
+  if (day === addDays(ymd(now), 1))
+    return kind === 'due' ? m('{{title}} is due tomorrow at {{time}}', params) : m('"{{title}}" starts tomorrow at {{time}}', params);
+  return kind === 'due' ? m('{{title}} is due {{when}}', params) : m('"{{title}}" starts {{when}}', params);
+}
 
 // Time-based reminders for the signed-in user; run every tick by the main process.
 export function sweepReminders(ctx: AuthedContext) {
@@ -68,17 +102,17 @@ export function sweepReminders(ctx: AuthedContext) {
   const now = ctx.now();
   const in24h = new Date(now.getTime() + 24 * 3_600_000);
   const in30m = new Date(now.getTime() + 30 * 60_000);
-  const soon = (dueAt: AnyColumn) => and(gt(dueAt, now), lte(dueAt, in24h));
+  const within24h = (dueAt: AnyColumn) => and(gt(dueAt, now), lte(dueAt, in24h));
 
   for (const d of db
     .select()
     .from(deadlines)
-    .where(and(eq(deadlines.userId, userId), isNull(deadlines.completedAt), soon(deadlines.dueAt)))
+    .where(and(eq(deadlines.userId, userId), isNull(deadlines.completedAt), within24h(deadlines.dueAt)))
     .all()) {
     notify(db, userId, {
       type: 'deadline-soon',
-      title: `${d.title} is due ${relative(d.dueAt, now)}`,
-      body: classLabel(db, d.classId) ?? '',
+      title: soon('due', d.title, d.dueAt, now),
+      body: raw(classLabel(db, d.classId) ?? ''),
       link: '/',
       dedupeKey: `deadline:${d.id}:${d.dueAt.getTime()}`,
     });
@@ -87,12 +121,12 @@ export function sweepReminders(ctx: AuthedContext) {
   for (const a of db
     .select()
     .from(assessments)
-    .where(and(eq(assessments.userId, userId), isNull(assessments.score), soon(assessments.dueAt)))
+    .where(and(eq(assessments.userId, userId), isNull(assessments.score), within24h(assessments.dueAt)))
     .all()) {
     notify(db, userId, {
       type: 'deadline-soon',
-      title: `${a.name} is due ${relative(a.dueAt!, now)}`,
-      body: `${classLabel(db, a.classId) ?? ''} · worth ${a.weight}%`,
+      title: soon('due', a.name, a.dueAt!, now),
+      body: m('{{class}} · worth {{weight}}%', { class: classLabel(db, a.classId) ?? '', weight: a.weight }),
       link: `/classes/${a.classId}/grades`,
       dedupeKey: `assessment:${a.id}:${a.dueAt!.getTime()}`,
     });
@@ -101,7 +135,7 @@ export function sweepReminders(ctx: AuthedContext) {
   for (const p of db
     .select()
     .from(plannerAssignments)
-    .where(and(eq(plannerAssignments.userId, userId), soon(plannerAssignments.dueAt)))
+    .where(and(eq(plannerAssignments.userId, userId), within24h(plannerAssignments.dueAt)))
     .all()) {
     const open = db
       .select({ n: count() })
@@ -111,8 +145,8 @@ export function sweepReminders(ctx: AuthedContext) {
     if (!open) continue;
     notify(db, userId, {
       type: 'deadline-soon',
-      title: `${p.title} is due ${relative(p.dueAt, now)}`,
-      body: `${open} planned task${open === 1 ? '' : 's'} left`,
+      title: soon('due', p.title, p.dueAt, now),
+      body: m('{{count}} planned tasks left', { count: open }),
       link: '/planner',
       dedupeKey: `planner:${p.id}:${p.dueAt.getTime()}`,
     });
@@ -134,8 +168,8 @@ export function sweepReminders(ctx: AuthedContext) {
   for (const { session: s } of starting) {
     notify(db, userId, {
       type: 'session-starting',
-      title: `"${s.title}" starts ${relative(s.startsAt, now)}`,
-      body: s.location,
+      title: soon('starts', s.title, s.startsAt, now),
+      body: raw(s.location),
       link: `/classes/${s.classId}/sessions`,
       dedupeKey: `session-start:${s.id}:${s.startsAt.getTime()}`,
     });
@@ -159,8 +193,8 @@ export function sweepReminders(ctx: AuthedContext) {
     if (tasks + due > 0) {
       notify(db, userId, {
         type: 'tasks-today',
-        title: `You have ${tasks + due} task${tasks + due === 1 ? '' : 's'} for today`,
-        body: 'Open your to-do list to get started.',
+        title: m('You have {{count}} tasks for today', { count: tasks + due }),
+        body: m('Open your to-do list to get started.'),
         link: '/',
         dedupeKey: `tasks:${today}`,
       });
@@ -168,8 +202,8 @@ export function sweepReminders(ctx: AuthedContext) {
   }
 }
 
-// Notifications not yet shown on the desktop. While study mode silences notifications,
-// they wait (except study mode's own) and are shown once it ends.
+// Notifications not yet shown on the desktop, in the student's language. While study
+// mode silences notifications, they wait (except study mode's own) until it ends.
 export function takeDesktopNotifications(ctx: AuthedContext, { silenced }: { silenced: boolean }) {
   const { db, userId } = ctx;
   const pending = db
@@ -186,12 +220,23 @@ export function takeDesktopNotifications(ctx: AuthedContext, { silenced }: { sil
     .where(inArray(notifications.id, pending.map((n) => n.id)))
     .run();
 
-  const prefs = db.select({ prefs: users.notificationPrefs }).from(users).where(eq(users.id, userId)).get()?.prefs;
-  const shown = pending.filter((n) => isType(n.type) && channelsFor(prefs, n.type).desktop);
+  const user = recipient(db, userId);
+  const locale = user?.locale ?? 'en';
+  const text = (n: (typeof pending)[number]) => ({
+    title: n.i18n ? render(locale, n.i18n.title) : n.title,
+    body: n.i18n?.body ? render(locale, n.i18n.body) : n.body,
+  });
+  const shown = pending.filter((n) => isType(n.type) && channelsFor(user?.prefs, n.type).desktop);
   if (shown.length > 3) {
-    return [{ title: `${shown.length} new notifications`, body: shown.slice(-3).map((n) => n.title).join('\n'), link: '/' }];
+    return [
+      {
+        title: translate(locale, '{{count}} new notifications', { count: shown.length }),
+        body: shown.slice(-3).map((n) => text(n).title).join('\n'),
+        link: '/',
+      },
+    ];
   }
-  return shown.map((n) => ({ title: n.title, body: n.body, link: n.link }));
+  return shown.map((n) => ({ ...text(n), link: n.link }));
 }
 
 export const notificationsRouter = {

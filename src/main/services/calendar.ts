@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { and, asc, eq, gte, isNotNull, isNull, lt } from 'drizzle-orm';
 import { z } from 'zod';
 import { addDays, atTime, eachDay, parseYmd, termRange, ymd } from '@shared/dates';
+import { translate } from '@shared/i18n';
 import { buildCalendar, type IcsEvent, parseCalendar } from '@shared/ics';
 import type { DB } from '../db/client';
 import {
@@ -15,6 +16,7 @@ import {
   plannerTasks,
   studySessionMembers,
   studySessions,
+  users,
 } from '../db/schema';
 import { AppError, idSchema, nonEmpty, procedure } from '../rpc/core';
 import { notFound, requireMember } from './access';
@@ -300,11 +302,12 @@ export const calendarRouter = {
 
     const now = ctx.now();
     const horizon = new Date(now.getTime() + 365 * 86_400_000);
+    const locale = ctx.db.select({ locale: users.locale }).from(users).where(eq(users.id, ctx.userId)).get()?.locale ?? 'en';
     const events: IcsEvent[] = collect(ctx.db, ctx.userId, now, horizon)
       .filter((e) => e.kind !== 'class' && e.kind !== 'task')
       .map((e) => ({
         uid: `${e.key}@unilink`,
-        title: e.kind === 'deadline' ? `Due: ${e.title}` : e.title,
+        title: e.kind === 'deadline' ? translate(locale, 'Due: {{title}}', { title: e.title }) : e.title,
         start: e.start,
         end: e.end ?? e.start,
         location: e.location,

@@ -20,13 +20,12 @@ import { IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { finalIfRemainingAverages, letterFor, MCGILL_SCALE, minimumFor, summarize } from '@shared/grades';
 import { toDate } from '../lib/format';
+import { t } from '../lib/i18n';
 import { useAction } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
 import { Empty, Loading } from './ui';
 
 type Assessment = Out<typeof rpc.courses.assessments>[number];
-
-const article = (letter: string) => (/^A/.test(letter) ? 'an' : 'a');
 
 // A4 + A5 in the layout of the wireframe (A2Team.pdf p. 6): the grading scheme with
 // your grades, a target grade, what you need, and a table of scenarios.
@@ -46,25 +45,26 @@ export function GradeCalculator({ classId }: { classId: number }) {
   const target = info.data.targetGrade;
   const goal = summary.requirements.find((r) => r.letter === target);
   const remaining = list.filter((a) => a.score == null);
-  const rest = remaining.length === 1 ? `the ${remaining[0].name.toLowerCase()}` : `the remaining ${summary.remainingWeight}% of the course`;
+  const single = remaining.length === 1 ? remaining[0].name : null;
+  const restParams = { name: single?.toLowerCase() ?? '', weight: summary.remainingWeight, min: minimumFor(target) };
 
   return (
     <Stack gap="lg">
       <Card padding="lg">
         <Group justify="space-between" mb="md">
-          <Title order={2}>Current grades</Title>
+          <Title order={2}>{t('Current grades')}</Title>
           <Button variant="default" leftSection={<IconPlus size={16} />} onClick={() => setEditing('new')}>
-            Add component
+            {t('Add component')}
           </Button>
         </Group>
         {list.length ? (
           <Table withTableBorder withColumnBorders verticalSpacing="sm" fz="md">
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Component</Table.Th>
-                <Table.Th w={120}>Weight (%)</Table.Th>
-                <Table.Th w={170}>Your grade (%)</Table.Th>
-                <Table.Th w={220}>Weighted contribution (%)</Table.Th>
+                <Table.Th>{t('Component')}</Table.Th>
+                <Table.Th w={120}>{t('Weight (%)')}</Table.Th>
+                <Table.Th w={170}>{t('Your grade (%)')}</Table.Th>
+                <Table.Th w={220}>{t('Weighted contribution (%)')}</Table.Th>
                 <Table.Th w={90} />
               </Table.Tr>
             </Table.Thead>
@@ -85,7 +85,7 @@ export function GradeCalculator({ classId }: { classId: number }) {
                       hideControls
                       placeholder="—"
                       defaultValue={a.score ?? ''}
-                      aria-label={`Your grade for ${a.name}`}
+                      aria-label={t('Your grade for {{name}}', { name: a.name })}
                       onBlur={(e) => {
                         const raw = e.currentTarget.value.trim();
                         const score = raw === '' ? null : Number(raw);
@@ -96,10 +96,10 @@ export function GradeCalculator({ classId }: { classId: number }) {
                   <Table.Td>{a.score == null ? '—' : ((a.weight * a.score) / 100).toFixed(1)}</Table.Td>
                   <Table.Td>
                     <Group gap={4} justify="flex-end" wrap="nowrap">
-                      <ActionIcon variant="subtle" onClick={() => setEditing(a)} aria-label={`Edit ${a.name}`}>
+                      <ActionIcon variant="subtle" onClick={() => setEditing(a)} aria-label={t('Edit {{name}}', { name: a.name })}>
                         <IconPencil size={16} />
                       </ActionIcon>
-                      <ActionIcon variant="subtle" color="red" onClick={() => remove.mutate(a.id)} aria-label={`Delete ${a.name}`}>
+                      <ActionIcon variant="subtle" color="red" onClick={() => remove.mutate(a.id)} aria-label={t('Delete {{name}}', { name: a.name })}>
                         <IconTrash size={16} />
                       </ActionIcon>
                     </Group>
@@ -109,17 +109,17 @@ export function GradeCalculator({ classId }: { classId: number }) {
             </Table.Tbody>
           </Table>
         ) : (
-          <Empty>Add each graded component from the syllabus with its weight, e.g. "Midterm, 25%".</Empty>
+          <Empty>{t('Add each graded component from the syllabus with its weight, e.g. "Midterm, 25%".')}</Empty>
         )}
         {list.length > 0 && (
           <Group mt="sm" gap="lg">
             <Text size="sm" c="dimmed">
-              Average so far:{' '}
+              {t('Average so far:')}{' '}
               <b>{summary.currentAverage == null ? '—' : `${summary.currentAverage}% (${letterFor(summary.currentAverage).letter})`}</b>
             </Text>
             <Text size="sm" c={summary.totalWeight === 100 ? 'dimmed' : 'orange'}>
-              Weights total <b>{summary.totalWeight}%</b>
-              {summary.totalWeight !== 100 && ' (grades are scaled to this)'}
+              {t('Weights total')} <b>{summary.totalWeight}%</b>
+              {summary.totalWeight !== 100 && ` ${t('(grades are scaled to this)')}`}
             </Text>
           </Group>
         )}
@@ -129,7 +129,7 @@ export function GradeCalculator({ classId }: { classId: number }) {
         <Grid gap="lg" align="stretch">
           <Grid.Col span={{ base: 12, md: 3 }}>
             <Title order={3} mb="sm">
-              Target grade
+              {t('Target grade')}
             </Title>
             <Select
               radius="xl"
@@ -138,7 +138,7 @@ export function GradeCalculator({ classId }: { classId: number }) {
               value={target}
               onChange={(v) => v && setTarget.mutate(v)}
               allowDeselect={false}
-              aria-label="Target grade"
+              aria-label={t('Target grade')}
             />
           </Grid.Col>
           <Grid.Col span={{ base: 12, md: 5 }}>
@@ -151,30 +151,39 @@ export function GradeCalculator({ classId }: { classId: number }) {
               <Stack align="center" justify="center" gap={4} h="100%" ta="center">
                 {!goal || goal.status === 'secured' ? (
                   <>
-                    <Text fw={700}>You've already secured</Text>
+                    <Text fw={700}>{t("You've already secured")}</Text>
                     <Text fz={44} fw={700} className="display">
                       {target} 🎉
                     </Text>
-                    <Text size="sm">even with 0% on {rest}.</Text>
+                    <Text size="sm">
+                      {single
+                        ? t('even with 0% on the {{name}}.', restParams)
+                        : t('even with 0% on the remaining {{weight}}% of the course.', restParams)}
+                    </Text>
                   </>
                 ) : goal.status === 'out-of-reach' ? (
                   <>
-                    <Text fw={700}>Out of reach</Text>
+                    <Text fw={700}>{t('Out of reach')}</Text>
                     <Text size="sm">
-                      Even 100% on {rest} won't reach {minimumFor(target)}%. Your best possible grade is {summary.bestFinal}% (
-                      {letterFor(summary.bestFinal).letter}).
+                      {single
+                        ? t("Even 100% on the {{name}} won't reach {{min}}%.", restParams)
+                        : t("Even 100% on the remaining {{weight}}% of the course won't reach {{min}}%.", restParams)}{' '}
+                      {t('Your best possible grade is {{best}}% ({{letter}}).', {
+                        best: summary.bestFinal,
+                        letter: letterFor(summary.bestFinal).letter,
+                      })}
                     </Text>
                   </>
                 ) : (
                   <>
-                    <Text fw={700}>You need at least</Text>
+                    <Text fw={700}>{t('You need at least')}</Text>
                     <Text fz={48} fw={700} className="display" lh={1}>
                       {goal.needed}%
                     </Text>
                     <Text fw={700}>
-                      on {rest}
+                      {single ? t('on the {{name}}', restParams) : t('on the remaining {{weight}}% of the course', restParams)}
                       <br />
-                      to achieve {article(target)} {target} in the course
+                      {t('to achieve {{grade}} in the course', { grade: target })}
                     </Text>
                   </>
                 )}
@@ -182,12 +191,12 @@ export function GradeCalculator({ classId }: { classId: number }) {
             </Card>
           </Grid.Col>
           <Grid.Col span={{ base: 12, md: 4 }}>
-            <Scenarios items={list} needed={goal?.status === 'possible' ? goal.needed : null} single={remaining.length === 1 ? remaining[0].name : null} />
+            <Scenarios items={list} needed={goal?.status === 'possible' ? goal.needed : null} single={single} />
           </Grid.Col>
         </Grid>
       )}
 
-      <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing && editing !== 'new' ? 'Edit component' : 'Add component'}>
+      <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing && editing !== 'new' ? t('Edit component') : t('Add component')}>
         {editing && (
           <ComponentForm key={editing === 'new' ? 'new' : editing.id} classId={classId} existing={editing === 'new' ? null : editing} onDone={() => setEditing(null)} />
         )}
@@ -202,16 +211,18 @@ function Scenarios({ items, needed, single }: { items: Assessment[]; needed: num
   return (
     <Card padding="md" h="100%">
       <Text fw={800} className="display">
-        Explore different scenarios
+        {t('Explore different scenarios')}
       </Text>
       <Text size="xs" c="dimmed" mb="xs">
-        How your {single ? single.toLowerCase() : 'remaining'} grade changes your overall grade.
+        {single
+          ? t('How your {{name}} grade changes your overall grade.', { name: single.toLowerCase() })
+          : t('How your remaining grades change your overall grade.')}
       </Text>
       <Table withTableBorder withColumnBorders fz="sm" verticalSpacing={4}>
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>{single ? `${single} grade` : 'Average on the rest'}</Table.Th>
-            <Table.Th>Overall grade (%)</Table.Th>
+            <Table.Th>{single ? t('{{name}} grade', { name: single }) : t('Average on the rest')}</Table.Th>
+            <Table.Th>{t('Overall grade (%)')}</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -241,8 +252,8 @@ function ComponentForm({ classId, existing, onDone }: { classId: number; existin
       dueAt: (existing?.dueAt ?? null) as Date | string | null,
     },
     validate: {
-      name: (v) => (v.trim() ? null : 'Name it, e.g. "Midterm"'),
-      weight: (v) => (typeof v === 'number' && v > 0 ? null : 'Enter its weight'),
+      name: (v) => (v.trim() ? null : t('Name it, e.g. "Midterm"')),
+      weight: (v) => (typeof v === 'number' && v > 0 ? null : t('Enter its weight')),
     },
   });
   const save = useAction(
@@ -257,15 +268,15 @@ function ComponentForm({ classId, existing, onDone }: { classId: number; existin
   return (
     <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
       <Stack>
-        <TextInput label="Component" placeholder="Midterm" data-autofocus {...form.getInputProps('name')} />
+        <TextInput label={t('Component')} placeholder={t('Midterm')} data-autofocus {...form.getInputProps('name')} />
         <Group grow>
-          <NumberInput label="Weight" suffix="%" min={0} max={100} decimalScale={2} {...form.getInputProps('weight')} />
-          <NumberInput label="Your grade" description="Empty until graded" suffix="%" min={0} max={150} decimalScale={2} {...form.getInputProps('score')} />
+          <NumberInput label={t('Weight')} suffix="%" min={0} max={100} decimalScale={2} {...form.getInputProps('weight')} />
+          <NumberInput label={t('Your grade')} description={t('Empty until graded')} suffix="%" min={0} max={150} decimalScale={2} {...form.getInputProps('score')} />
         </Group>
-        <DateTimePicker label="Due date" description="Shows on your calendar" placeholder="Optional" clearable valueFormat="ddd D MMM YYYY, HH:mm" {...form.getInputProps('dueAt')} />
+        <DateTimePicker label={t('Due date')} description={t('Shows on your calendar')} placeholder={t('Optional')} clearable valueFormat="ddd D MMM YYYY, HH:mm" {...form.getInputProps('dueAt')} />
         <Group justify="flex-end">
           <Button type="submit" loading={save.isPending}>
-            Save
+            {t('Save')}
           </Button>
         </Group>
       </Stack>

@@ -28,6 +28,7 @@ import { IconLock, IconMessageCircle, IconMessages, IconPencil, IconPlus, IconSe
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import { fromNow } from '../lib/format';
+import { t, tx } from '../lib/i18n';
 import { useAction } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
 import { GoatAvatar } from './Goat';
@@ -48,7 +49,11 @@ const TOPIC_COLORS: Record<string, string> = {
   'Study group': 'teal',
   'Just yapping': 'yellow',
 };
-export const TopicTag = ({ topic }: { topic: string }) => <Tag color={TOPIC_COLORS[topic] ?? 'gray'}>{topic}</Tag>;
+export const TopicTag = ({ topic }: { topic: string }) => <Tag color={TOPIC_COLORS[topic] ?? 'gray'}>{t(topic)}</Tag>;
+
+// Suggested types are stored in English so filters work for everyone; map a translated pick back.
+export const toStoredTopic = (value: string, suggestions: string[]) =>
+  suggestions.find((s) => t(s).toLowerCase() === value.trim().toLowerCase()) ?? value.trim();
 
 function ReactionBar({
   goats,
@@ -65,13 +70,13 @@ function ReactionBar({
 }) {
   return (
     <div className="reaction-bar">
-      <Tooltip label={goated ? 'Take back your goat' : 'Give a goat'}>
-        <button type="button" onClick={onGoat} data-on={goated || undefined} aria-label={`Goat reactions: ${goats}`}>
+      <Tooltip label={goated ? t('Take back your goat') : t('Give a goat')}>
+        <button type="button" onClick={onGoat} data-on={goated || undefined} aria-label={t('Goat reactions: {{count}}', { count: goats })}>
           <span aria-hidden>🐐</span> {goats}
         </button>
       </Tooltip>
       {onComments && (
-        <button type="button" onClick={onComments} aria-label={`Replies: ${comments ?? 0}`}>
+        <button type="button" onClick={onComments} aria-label={t('Replies: {{count}}', { count: comments ?? 0 })}>
           <IconMessageCircle size={16} /> {comments}
         </button>
       )}
@@ -97,7 +102,7 @@ function PostCard({ post, onOpen }: { post: FeedPost; onOpen: () => void }) {
             </Group>
             <Group gap={6} wrap="nowrap">
               {post.visibility === 'selected' && (
-                <Tooltip label="Only visible to selected classmates">
+                <Tooltip label={t('Only visible to selected classmates')}>
                   <IconLock size={14} />
                 </Tooltip>
               )}
@@ -127,9 +132,9 @@ function PostCard({ post, onOpen }: { post: FeedPost; onOpen: () => void }) {
 }
 
 const SINCE_OPTIONS: { value: Exclude<Since, null>; label: string }[] = [
-  { value: 'today', label: 'Today' },
-  { value: 'week', label: 'This week' },
-  { value: 'month', label: 'This month' },
+  { value: 'today', label: tx('Today') },
+  { value: 'week', label: tx('This week') },
+  { value: 'month', label: tx('This month') },
 ];
 
 function ChipSection({ title, children }: { title: string; children: ReactNode }) {
@@ -158,7 +163,7 @@ function MoreChips<T extends string>({ items, render }: { items: T[]; render: (i
             </Stack>
           </Collapse>
           <Button variant="subtle" color="gray" size="compact-xs" onClick={() => setOpen((o) => !o)}>
-            {open ? 'less' : `more (${rest.length})`}
+            {open ? t('less') : t('more ({{count}})', { count: rest.length })}
           </Button>
         </>
       )}
@@ -203,17 +208,17 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
   const filters = (
     <Stack gap="md">
       <Text fw={800} size="xl" ta="center" className="display">
-        Filters
+        {t('Filters')}
       </Text>
       <TextInput
-        placeholder="Search posts"
+        placeholder={t('Search posts')}
         leftSection={<IconSearch size={16} />}
         radius="xl"
         value={search}
         onChange={(e) => setSearch(e.currentTarget.value)}
       />
       {!classId && (
-        <ChipSection title="Classes">
+        <ChipSection title={t('Classes')}>
           <Chip.Group multiple value={classIds} onChange={setClassIds}>
             <MoreChips
               items={classes.data?.map((c) => String(c.id)) ?? []}
@@ -229,24 +234,24 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
           </Chip.Group>
         </ChipSection>
       )}
-      <ChipSection title="Type">
+      <ChipSection title={t('Type')}>
         <Chip.Group multiple value={topics} onChange={setTopics}>
           <MoreChips
             items={allTopics.data ?? []}
-            render={(t) => (
-              <Chip key={t} value={t} size="sm" variant="outline">
-                {t}
+            render={(topic) => (
+              <Chip key={topic} value={topic} size="sm" variant="outline">
+                {t(topic)}
               </Chip>
             )}
           />
         </Chip.Group>
       </ChipSection>
-      <ChipSection title="Time">
+      <ChipSection title={t('Time')}>
         <Chip.Group value={since ?? ''} onChange={(v) => setSince(((v as string) || null) as Since)}>
           <Stack gap={6} align="flex-start">
             {SINCE_OPTIONS.map((o) => (
               <Chip key={o.value} value={o.value} size="sm" variant="outline" onClick={() => since === o.value && setSince(null)}>
-                {o.label}
+                {t(o.label)}
               </Chip>
             ))}
           </Stack>
@@ -261,9 +266,9 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
         {left && <Grid.Col span={{ base: 24, lg: 6 }}>{left}</Grid.Col>}
         <Grid.Col span={{ base: 24, lg: left ? 13 : 18 }}>
           <Group justify="space-between" mb="md">
-            <Title order={3}>{classId ? 'Discussion' : 'Class discussions'}</Title>
+            <Title order={3}>{classId ? t('Discussion') : t('Class discussions')}</Title>
             <Button leftSection={<IconPlus size={16} />} onClick={() => setComposing('new')} disabled={!classes.data?.length}>
-              New post
+              {t('New post')}
             </Button>
           </Group>
           {feed.isPending ? (
@@ -278,10 +283,10 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
             <Card>
               <Empty icon={<IconMessages size={22} />}>
                 {search || topics.length || classIds.length || since
-                  ? 'No posts match these filters.'
+                  ? t('No posts match these filters.')
                   : classes.data?.length
-                    ? 'No posts yet. Ask a question or start a discussion!'
-                    : 'Join your classes to see their discussions here.'}
+                    ? t('No posts yet. Ask a question or start a discussion!')
+                    : t('Join your classes to see their discussions here.')}
               </Empty>
             </Card>
           )}
@@ -293,11 +298,11 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
         </Grid.Col>
       </Grid>
 
-      <Drawer opened={openPost != null} onClose={() => setOpenPost(null)} position="right" size="xl" title={<Text fw={800}>Post</Text>}>
+      <Drawer opened={openPost != null} onClose={() => setOpenPost(null)} position="right" size="xl" title={<Text fw={800}>{t('Post')}</Text>}>
         {openPost != null && <PostThread postId={openPost} onEdit={(p) => setComposing(p)} onDeleted={() => setOpenPost(null)} />}
       </Drawer>
 
-      <Modal opened={composing != null} onClose={() => setComposing(null)} title={composing === 'new' ? 'New post' : 'Edit post'} size="lg">
+      <Modal opened={composing != null} onClose={() => setComposing(null)} title={composing === 'new' ? t('New post') : t('Edit post')} size="lg">
         {composing && (
           <PostForm
             key={composing === 'new' ? 'new' : composing.id}
@@ -328,7 +333,7 @@ function ReplyBox({ postId, parentId, onDone, autoFocus }: { postId: number; par
   return (
     <Group align="flex-end" gap="xs" wrap="nowrap">
       <Textarea
-        placeholder={parentId ? 'Reply to this…' : 'Write a reply…'}
+        placeholder={parentId ? t('Reply to this…') : t('Write a reply…')}
         autosize
         minRows={1}
         value={body}
@@ -337,7 +342,7 @@ function ReplyBox({ postId, parentId, onDone, autoFocus }: { postId: number; par
         autoFocus={autoFocus}
       />
       <Button onClick={() => send.mutate()} disabled={!body.trim()} loading={send.isPending}>
-        Reply
+        {t('Reply')}
       </Button>
     </Group>
   );
@@ -368,10 +373,10 @@ function ReplyItem({ reply, postId, children }: { reply: Reply; postId: number; 
           <Group gap="xs" mt={6}>
             <ReactionBar goats={reply.goats} goated={reply.goated} onGoat={() => react.mutate()} />
             <Button size="compact-xs" variant="subtle" color="gray" onClick={() => setReplying((r) => !r)}>
-              Reply
+              {t('Reply')}
             </Button>
             {reply.mine && (
-              <ActionIcon size="sm" variant="subtle" color="red" onClick={() => remove.mutate()} aria-label="Delete reply">
+              <ActionIcon size="sm" variant="subtle" color="red" onClick={() => remove.mutate()} aria-label={t('Delete reply')}>
                 <IconTrash size={14} />
               </ActionIcon>
             )}
@@ -400,9 +405,9 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
 
   const confirmDelete = () =>
     modals.openConfirmModal({
-      title: 'Delete this post?',
-      children: <Text size="sm">Its replies will be deleted too.</Text>,
-      labels: { confirm: 'Delete', cancel: 'Keep' },
+      title: t('Delete this post?'),
+      children: <Text size="sm">{t('Its replies will be deleted too.')}</Text>,
+      labels: { confirm: t('Delete'), cancel: t('Keep') },
       confirmProps: { color: 'red' },
       onConfirm: () => remove.mutate(),
     });
@@ -417,7 +422,7 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
               <Text fw={700}>{p.authorName}</Text>
               <Text size="sm" c="dimmed">
                 {fromNow(p.createdAt)}
-                {p.editedAt && ' · edited'}
+                {p.editedAt && ` · ${t('edited')}`}
               </Text>
             </Group>
             <Group gap={6} wrap="nowrap">
@@ -425,10 +430,10 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
               <TopicTag topic={p.topic} />
               {p.mine && (
                 <>
-                  <ActionIcon variant="subtle" onClick={() => onEdit(p)} aria-label="Edit post">
+                  <ActionIcon variant="subtle" onClick={() => onEdit(p)} aria-label={t('Edit post')}>
                     <IconPencil size={16} />
                   </ActionIcon>
-                  <ActionIcon variant="subtle" color="red" onClick={confirmDelete} aria-label="Delete post">
+                  <ActionIcon variant="subtle" color="red" onClick={confirmDelete} aria-label={t('Delete post')}>
                     <IconTrash size={16} />
                   </ActionIcon>
                 </>
@@ -441,7 +446,9 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
           {p.visibility === 'selected' && (
             <Group gap={4} mt={2} c="dimmed">
               <IconLock size={12} />
-              <Text size="xs">Visible to {p.mine ? p.audience.map((a) => a.name).join(', ') : 'you and a few classmates'}</Text>
+              <Text size="xs">
+                {t('Visible to {{who}}', { who: p.mine ? p.audience.map((a) => a.name).join(', ') : t('you and a few classmates') })}
+              </Text>
             </Group>
           )}
           <Text mt="xs" style={{ whiteSpace: 'pre-wrap' }}>
@@ -488,18 +495,18 @@ function PostForm({
   const form = useForm({
     initialValues: {
       classId: String(existing?.classId ?? classId ?? ''),
-      topic: existing?.topic ?? '',
+      topic: existing ? t(existing.topic) : '',
       title: existing?.title ?? '',
       body: existing?.body ?? '',
       visibility: (existing?.visibility ?? 'class') as 'class' | 'selected',
       audienceEmails: [] as string[],
     },
     validate: {
-      classId: (v) => (v ? null : 'Pick a class'),
-      topic: (v) => (v.trim() ? null : 'Pick or type a type, e.g. "Assignment"'),
-      title: (v) => (v.trim() ? null : 'Add a title'),
-      body: (v) => (v.trim() ? null : 'Write something'),
-      audienceEmails: (v, values) => (values.visibility === 'selected' && !existing && !v.length ? 'Add at least one classmate' : null),
+      classId: (v) => (v ? null : t('Pick a class')),
+      topic: (v) => (v.trim() ? null : t('Pick or type a type, e.g. "Assignment"')),
+      title: (v) => (v.trim() ? null : t('Add a title')),
+      body: (v) => (v.trim() ? null : t('Write something')),
+      audienceEmails: (v, values) => (values.visibility === 'selected' && !existing && !v.length ? t('Add at least one classmate') : null),
     },
   });
   const classmates = useQuery({
@@ -509,11 +516,12 @@ function PostForm({
   });
   const save = useAction(
     async (v: typeof form.values) => {
+      const topic = toStoredTopic(v.topic, topics);
       if (existing) {
-        await rpc.board.update({ postId: existing.id, topic: v.topic, title: v.title, body: v.body });
+        await rpc.board.update({ postId: existing.id, topic, title: v.title, body: v.body });
         return { id: existing.id };
       }
-      return rpc.board.create({ ...v, classId: Number(v.classId) });
+      return rpc.board.create({ ...v, topic, classId: Number(v.classId) });
     },
     { success: existing ? 'Post updated' : 'Posted', onSuccess: (r) => onDone(r.id) },
   );
@@ -523,29 +531,34 @@ function PostForm({
       <Stack>
         <Group grow align="flex-start">
           <Select
-            label="Class"
+            label={t('Class')}
             data={myClasses.data?.map((c) => ({ value: String(c.id), label: `${c.subject} ${c.number}` })) ?? []}
             disabled={!!existing || !!classId}
             allowDeselect={false}
             {...form.getInputProps('classId')}
           />
-          <Autocomplete label="Type" placeholder="Assignment, Midterm, Just yapping…" data={topics} {...form.getInputProps('topic')} />
+          <Autocomplete
+            label={t('Type')}
+            placeholder={t('Assignment, Midterm, Just yapping…')}
+            data={topics.map((topic) => t(topic))}
+            {...form.getInputProps('topic')}
+          />
         </Group>
-        <TextInput label="Title" data-autofocus {...form.getInputProps('title')} />
-        <Textarea label="Post" autosize minRows={5} {...form.getInputProps('body')} />
+        <TextInput label={t('Title')} data-autofocus {...form.getInputProps('title')} />
+        <Textarea label={t('Post')} autosize minRows={5} {...form.getInputProps('body')} />
         {!existing && (
           <>
             <SegmentedControl
               data={[
-                { value: 'class', label: 'Whole class' },
-                { value: 'selected', label: 'Selected classmates' },
+                { value: 'class', label: t('Whole class') },
+                { value: 'selected', label: t('Selected classmates') },
               ]}
               {...form.getInputProps('visibility')}
             />
             {form.values.visibility === 'selected' && (
               <TagsInput
-                label="Who can see it"
-                description="McGill emails of classmates in this class. Press Enter after each."
+                label={t('Who can see it')}
+                description={t('McGill emails of classmates in this class. Press Enter after each.')}
                 data={classmates.data?.map((c) => ({ value: c.email, label: `${c.name} (${c.email})` })) ?? []}
                 {...form.getInputProps('audienceEmails')}
               />
@@ -554,7 +567,7 @@ function PostForm({
         )}
         <Group justify="flex-end">
           <Button type="submit" loading={save.isPending}>
-            {existing ? 'Save' : 'Post'}
+            {existing ? t('Save') : t('Post')}
           </Button>
         </Group>
       </Stack>

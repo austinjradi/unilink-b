@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
 import { notifications } from '@mantine/notifications';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { t } from './i18n';
 import { type Out, rpc } from './rpc';
 
 export type Me = NonNullable<Out<typeof rpc.auth.me>>;
@@ -26,10 +27,11 @@ export function useAction<I = void, O = unknown>(fn: (input: I) => Promise<O>, o
     mutationFn: fn,
     onSuccess: async (data, input) => {
       await queryClient.invalidateQueries();
-      const message = typeof options.success === 'function' ? options.success(data, input) : options.success;
+      // Plain-string messages are English keys; functions return already-translated text.
+      const message = typeof options.success === 'function' ? options.success(data, input) : options.success && t(options.success);
       if (message) notifications.show({ color: 'teal', message });
       options.onSuccess?.(data, input);
     },
-    onError: (error) => notifications.show({ color: 'red', title: "That didn't work", message: error.message }),
+    onError: (error) => notifications.show({ color: 'red', title: t("That didn't work"), message: error.message }),
   });
 }

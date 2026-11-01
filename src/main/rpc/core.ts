@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { type Params, translate } from '@shared/i18n';
 import type { DB } from '../db/client';
 
 // A tiny tRPC-style layer: the renderer calls `rpc.classes.join({ classId })`, the
@@ -7,12 +8,15 @@ import type { DB } from '../db/client';
 
 export type ErrorCode = 'BAD_INPUT' | 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'CONFLICT' | 'INTERNAL';
 
+// `key` is the English message (a template when there are params); the renderer
+// translates it into the student's language.
 export class AppError extends Error {
   constructor(
-    message: string,
+    readonly key: string,
     readonly code: ErrorCode = 'BAD_INPUT',
+    readonly params?: Params,
   ) {
-    super(message);
+    super(translate('en', key, params));
   }
 }
 
@@ -72,7 +76,9 @@ export function procedure<S extends z.ZodType, O>(
   return { input, requiresAuth: true, handler };
 }
 
-export type RpcResult = { ok: true; data: unknown } | { ok: false; error: { code: ErrorCode; message: string } };
+export type RpcResult =
+  | { ok: true; data: unknown }
+  | { ok: false; error: { code: ErrorCode; message: string; key: string; params?: Params } };
 
 export type RpcClient<R> = {
   [K in keyof R]: R[K] extends Procedure<infer S, infer O>
@@ -80,7 +86,10 @@ export type RpcClient<R> = {
     : RpcClient<R[K]>;
 };
 
-const fail = (code: ErrorCode, message: string): RpcResult => ({ ok: false, error: { code, message } });
+const fail = (code: ErrorCode, message: string, params?: Params): RpcResult => ({
+  ok: false,
+  error: { code, message: translate('en', message, params), key: message, params },
+});
 
 function isProcedure(node: unknown): node is Procedure {
   return typeof node === 'object' && node != null && 'handler' in node;
@@ -99,7 +108,7 @@ export async function dispatch(router: Router, path: string, rawInput: unknown, 
     return { ok: true, data };
   } catch (err) {
     if (err instanceof z.ZodError) return fail('BAD_INPUT', err.issues[0]?.message ?? 'Invalid input');
-    if (err instanceof AppError) return fail(err.code, err.message);
+    if (err instanceof AppError) return fail(err.code, err.key, err.params);
     console.error(`[rpc] ${path} failed:`, err);
     return fail('INTERNAL', 'Something went wrong. Please try again.');
   }

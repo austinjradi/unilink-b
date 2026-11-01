@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { Anchor, Badge, Breadcrumbs, Card, Center, Group, Loader, Stack, Text, ThemeIcon, Title } from '@mantine/core';
 import { IconMoodEmpty } from '@tabler/icons-react';
 import { Link } from 'react-router';
+import { t, tx } from '../lib/i18n';
 import { KIND_COLORS } from '../theme';
 
 export function PageHeader({
@@ -109,11 +110,22 @@ export const chipStyle = (kind: string): CSSProperties =>
     '--chip-fg': `var(--mantine-color-${kindColor(kind)}-light-color)`,
   }) as CSSProperties;
 
+const KIND_LABELS: Record<string, string> = {
+  class: tx('class'),
+  session: tx('session'),
+  task: tx('task'),
+  assignment: tx('assignment'),
+  exam: tx('exam'),
+  quiz: tx('quiz'),
+  other: tx('other'),
+  graded: tx('graded work'),
+  planner: tx('planner'),
+};
+
 export function KindBadge({ kind }: { kind: string }) {
-  const label = kind === 'graded' ? 'graded work' : kind;
   return (
     <Badge variant="light" color={kindColor(kind)} size="sm">
-      {label}
+      {t(KIND_LABELS[kind] ?? kind)}
     </Badge>
   );
 }

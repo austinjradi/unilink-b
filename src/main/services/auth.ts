@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import { and, desc, eq, gt, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { GOAT_OPTIONS, type GoatPart, isGoatConfig } from '@shared/goat';
+import { LOCALES, translate } from '@shared/i18n';
 import { MCGILL_EMAIL, passwordProblems } from '@shared/validation';
 import type { DB } from '../db/client';
 import { DEMO_PASSWORD, DEMO_USERS } from '../db/demo';
@@ -40,7 +41,7 @@ const email = z
 
 const newPassword = z.string().superRefine((pw, ctx) => {
   const problems = passwordProblems(pw);
-  if (problems.length) ctx.addIssue({ code: 'custom', message: `Password needs: ${problems.join(', ').toLowerCase()}` });
+  if (problems.length) ctx.addIssue({ code: 'custom', message: 'Password needs at least 8 characters, a letter and a number' });
 });
 
 export function publicUser(user: typeof users.$inferSelect) {
@@ -104,14 +105,14 @@ export const authRouter = {
   }),
 
   signUp: publicProcedure(
-    z.object({ name: nonEmpty('Name', 100), email, password: newPassword }),
-    async ({ name, email, password }, ctx) => {
+    z.object({ name: nonEmpty('Name', 100), email, password: newPassword, locale: z.enum(LOCALES).default('en') }),
+    async ({ name, email, password, locale }, ctx) => {
       if (ctx.db.select().from(users).where(eq(users.email, email)).get()) {
         throw new AppError('An account with this email already exists. Try signing in.', 'CONFLICT');
       }
       const user = ctx.db
         .insert(users)
-        .values({ name, email, passwordHash: await hashPassword(password) })
+        .values({ name, email, locale, passwordHash: await hashPassword(password) })
         .returning()
         .get();
       startSession(ctx, user.id);
@@ -146,8 +147,9 @@ export const authRouter = {
     sendEmail(ctx.db, {
       userId: user.id,
       to: user.email,
-      subject: 'Your UniLink password reset code',
-      body: `Your code is ${code}. It expires in 15 minutes. If you didn't ask to reset your password, ignore this email.`,
+      locale: user.locale,
+      subject: translate(user.locale, 'Your UniLink password reset code'),
+      body: translate(user.locale, "Your code is {{code}}. It expires in 15 minutes. If you didn't ask to reset your password, ignore this email.", { code }),
     });
     return { devCode: ctx.isDev ? code : null };
   }),
@@ -193,6 +195,11 @@ export const profileRouter = {
     }),
     (input, ctx) => publicUser(ctx.db.update(users).set(input).where(eq(users.id, ctx.userId)).returning().get()),
   ),
+
+  // Settings → General: language for the UI, notifications and emails.
+  setLocale: procedure(z.object({ locale: z.enum(LOCALES) }), ({ locale }, ctx) => {
+    ctx.db.update(users).set({ locale }).where(eq(users.id, ctx.userId)).run();
+  }),
 
   // Settings → Goat.
   setAvatar: procedure(

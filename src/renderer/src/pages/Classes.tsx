@@ -6,10 +6,10 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router';
 import { CURRENT_TERM } from '@shared/dates';
 import { Empty, Loading, PageHeader, SectionCard, Tag } from '../components/ui';
-import { plural } from '../lib/format';
 import { useAction } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
 import { AcademicsPanel } from './Academics';
+import { t, term } from '../lib/i18n';
 
 const TABS = ['mine', 'find', 'record', 'degree'] as const;
 type CoursesTab = (typeof TABS)[number];
@@ -22,20 +22,20 @@ export function CoursesPage() {
 
   return (
     <>
-      <PageHeader title="Courses" subtitle="Your classes, finding new ones, and how they add up toward your degree." />
+      <PageHeader title={t('Courses')} subtitle={t('Your classes, finding new ones, and how they add up toward your degree.')} />
       <Tabs value={tab} onChange={(v) => navigate(`/courses/${v}`)} keepMounted={false} variant="pills" radius="xl">
         <Tabs.List mb="lg">
           <Tabs.Tab value="mine" leftSection={<IconSchool size={16} />}>
-            My courses
+            {t('My courses')}
           </Tabs.Tab>
           <Tabs.Tab value="find" leftSection={<IconSearch size={16} />}>
-            Find courses
+            {t('Find courses')}
           </Tabs.Tab>
           <Tabs.Tab value="record" leftSection={<IconListDetails size={16} />}>
-            Course record
+            {t('Course record')}
           </Tabs.Tab>
           <Tabs.Tab value="degree" leftSection={<IconCertificate size={16} />}>
-            Degree plan
+            {t('Degree plan')}
           </Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="mine">
@@ -62,9 +62,9 @@ function MyCourses() {
     return (
       <Card>
         <Empty icon={<IconSchool size={22} />}>
-          You haven't joined any courses yet.{' '}
+          {t("You haven't joined any courses yet.")}{' '}
           <Text span inherit c="periwinkle" fw={700} component={Link} to="/courses/find">
-            Find your courses
+            {t('Find your courses')}
           </Text>
         </Empty>
       </Card>
@@ -78,12 +78,12 @@ function MyCourses() {
             <Text fw={700} fz={24} className="display">
               {c.subject} {c.number}
             </Text>
-            <Tag>{c.term}</Tag>
+            <Tag>{term(c.term)}</Tag>
           </Group>
           <Text>{c.title}</Text>
           <Group gap={4} mt="md" c="dimmed">
             <IconUsers size={16} />
-            <Text size="sm">{plural(c.memberCount, 'student')} on UniLink</Text>
+            <Text size="sm">{t('{{count}} students on UniLink', { count: c.memberCount })}</Text>
           </Group>
         </Card>
       ))}
@@ -111,11 +111,11 @@ function FindCourses() {
   });
 
   return (
-    <SectionCard title="Find your courses">
+    <SectionCard title={t('Find your courses')}>
       <Group mb="md" align="flex-end">
         <TextInput
-          label="Course code or name"
-          placeholder="e.g. COMP 251 or algorithms"
+          label={t('Course code or name')}
+          placeholder={t('e.g. COMP 251 or algorithms')}
           leftSection={<IconSearch size={16} />}
           radius="xl"
           value={query}
@@ -123,8 +123,8 @@ function FindCourses() {
           style={{ flex: 1 }}
           autoFocus
         />
-        <Select label="Term" radius="xl" data={terms.data ?? [CURRENT_TERM]} value={term} onChange={(v) => v && setTerm(v)} w={160} allowDeselect={false} />
-        <Select label="Subject" radius="xl" placeholder="Any" data={subjects.data ?? []} value={subject} onChange={setSubject} clearable searchable w={140} />
+        <Select label={t('Term')} radius="xl" data={terms.data ?? [CURRENT_TERM]} value={term} onChange={(v) => v && setTerm(v)} w={160} allowDeselect={false} />
+        <Select label={t('Subject')} radius="xl" placeholder={t('Any')} data={subjects.data ?? []} value={subject} onChange={setSubject} clearable searchable w={140} />
       </Group>
       {results.isPending ? (
         <Loading />
@@ -132,10 +132,10 @@ function FindCourses() {
         <Table highlightOnHover verticalSpacing="sm">
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>Course</Table.Th>
-              <Table.Th>Title</Table.Th>
-              <Table.Th>Credits</Table.Th>
-              <Table.Th>Students</Table.Th>
+              <Table.Th>{t('Course')}</Table.Th>
+              <Table.Th>{t('Title')}</Table.Th>
+              <Table.Th>{t('Credits')}</Table.Th>
+              <Table.Th>{t('Students')}</Table.Th>
               <Table.Th />
             </Table.Tr>
           </Table.Thead>
@@ -151,11 +151,11 @@ function FindCourses() {
                 <Table.Td ta="right">
                   {c.joined ? (
                     <Button size="xs" variant="light" component={Link} to={`/classes/${c.id}`}>
-                      Open
+                      {t('Open')}
                     </Button>
                   ) : (
                     <Button size="xs" onClick={() => join.mutate(c.id)} loading={join.isPending && join.variables === c.id}>
-                      Join
+                      {t('Join')}
                     </Button>
                   )}
                 </Table.Td>
@@ -165,9 +165,9 @@ function FindCourses() {
         </Table>
       ) : (
         <Empty>
-          No courses match. Try a code like "MATH 240". The built-in catalogue is a sample of McGill courses for now.
+          {t('No courses match. Try a code like "MATH 240". The built-in catalogue is a sample of McGill courses for now.')}
           <Badge ml={6} size="xs" variant="light" color="yellow">
-            sample
+            {t('sample')}
           </Badge>
         </Empty>
       )}

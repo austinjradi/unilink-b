@@ -6,6 +6,7 @@ import { MCGILL_SCALE } from '@shared/grades';
 import { GradeCalculator } from '../components/GradeCalculator';
 import { Empty, Loading, PageHeader } from '../components/ui';
 import { rpc } from '../lib/rpc';
+import { t } from '../lib/i18n';
 
 // A4: the grade calculator as its own page, with a course picker.
 export function CalculatorPage() {
@@ -18,19 +19,19 @@ export function CalculatorPage() {
   return (
     <>
       <PageHeader
-        title="Grade Calculator"
+        title={t('Grade Calculator')}
         actions={
           <HoverCard width={260} position="bottom-end" shadow="md">
             <HoverCard.Target>
               <Anchor size="sm" fw={700} underline="always">
                 <Group gap={4}>
-                  <IconExternalLink size={14} /> McGill grading scheme <IconInfoCircle size={14} />
+                  <IconExternalLink size={14} /> {t('McGill grading scheme')} <IconInfoCircle size={14} />
                 </Group>
               </Anchor>
             </HoverCard.Target>
             <HoverCard.Dropdown>
               <Text size="xs" c="dimmed" mb={6}>
-                Letter grades and grade points the calculator uses.
+                {t('Letter grades and grade points the calculator uses.')}
               </Text>
               <Table fz="xs" verticalSpacing={2}>
                 <Table.Tbody>
@@ -52,9 +53,9 @@ export function CalculatorPage() {
       {!classes.data?.length ? (
         <Card>
           <Empty>
-            Join your courses first, then add their grading schemes here.{' '}
+            {t('Join your courses first, then add their grading schemes here.')}{' '}
             <Anchor component={Link} to="/courses/find">
-              Find courses
+              {t('Find courses')}
             </Anchor>
           </Empty>
         </Card>
@@ -62,7 +63,7 @@ export function CalculatorPage() {
         <>
           <Group mb="lg" gap="sm">
             <Text fz="xl" fw={600} className="display">
-              Select a course
+              {t('Select a course')}
             </Text>
             <Select
               radius="xl"
@@ -71,7 +72,7 @@ export function CalculatorPage() {
               value={chosen ? String(chosen) : null}
               onChange={(v) => v && setParams({ class: v })}
               allowDeselect={false}
-              aria-label="Course"
+              aria-label={t('Course')}
             />
           </Group>
           {chosen && <GradeCalculator key={chosen} classId={chosen} />}

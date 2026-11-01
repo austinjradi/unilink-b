@@ -24,18 +24,21 @@ import { modals } from '@mantine/modals';
 import { IconClock, IconMapPin, IconMessageDots, IconUsers } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { plural, toDate } from '../lib/format';
+import { toDate } from '../lib/format';
 import { useAction } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
 import { GoatAvatar } from './Goat';
 import { Tag } from './ui';
+import { t, tx } from '../lib/i18n';
+import { toStoredTopic } from './Feed';
 
 // S3 study sessions in the layout of the wireframes (A2Team.pdf p. 12–13): rows with the
 // class and type tags, when and where, how many are going, and a join/details action.
 
 export type Session = Out<typeof rpc.studySessions.list>[number];
 
-export const SESSION_TAGS = ['Assignment', 'Midterm', 'Final', 'Lab', 'Project', 'Review'];
+// Stored in English (so search and tags match for everyone), shown translated.
+export const SESSION_TAGS = [tx('Assignment'), tx('Midterm'), tx('Final'), tx('Lab'), tx('Project'), tx('Review')];
 
 function when(s: Session) {
   const start = dayjs(s.startsAt);
@@ -50,9 +53,9 @@ export function SessionRow({ session: s, onDetails }: { session: Session; onDeta
       <div style={{ flex: 1.4, minWidth: 0 }}>
         <Group gap={6} mb={6}>
           <Tag>{s.classLabel}</Tag>
-          {s.tag && <Tag color="periwinkle">{s.tag}</Tag>}
-          {s.cancelledAt && <Tag color="red">Cancelled</Tag>}
-          {!s.cancelledAt && s.myStatus === 'invited' && <Tag color="yellow">Invited</Tag>}
+          {s.tag && <Tag color="periwinkle">{t(s.tag)}</Tag>}
+          {s.cancelledAt && <Tag color="red">{t('Cancelled')}</Tag>}
+          {!s.cancelledAt && s.myStatus === 'invited' && <Tag color="yellow">{t('Invited')}</Tag>}
         </Group>
         <Text fw={800} td={s.cancelledAt ? 'line-through' : undefined} lineClamp={1}>
           {s.title}
@@ -72,32 +75,32 @@ export function SessionRow({ session: s, onDetails }: { session: Session; onDeta
           {s.capacity ? `/${s.capacity}` : ''}
         </Text>
         <Text size="sm" c="dimmed">
-          members
+          {t('members')}
         </Text>
       </div>
       <Group gap="xs" wrap="nowrap" w={170} justify="flex-end">
         {!s.cancelledAt && s.myStatus === null && (
           <Button onClick={() => join.mutate()} disabled={s.isFull} loading={join.isPending}>
-            {s.isFull ? 'Full' : 'Join'}
+            {s.isFull ? t('Full') : t('Join')}
           </Button>
         )}
         {!s.cancelledAt && s.myStatus === 'invited' && (
           <>
             <Button size="xs" onClick={() => join.mutate()} disabled={s.isFull}>
-              Accept
+              {t('Accept')}
             </Button>
             <Button size="xs" variant="default" onClick={() => decline.mutate()}>
-              Decline
+              {t('Decline')}
             </Button>
           </>
         )}
         {s.myStatus === 'going' && (
           <Text size="sm" fw={800} c="teal">
-            {s.isHost ? 'Hosting' : 'Going'}
+            {s.isHost ? t('Hosting') : t('Going')}
           </Text>
         )}
-        <Tooltip label="Details, people and invites">
-          <ActionIcon variant="subtle" size="xl" radius="xl" onClick={onDetails} aria-label={`Details for ${s.title}`}>
+        <Tooltip label={t('Details, people and invites')}>
+          <ActionIcon variant="subtle" size="xl" radius="xl" onClick={onDetails} aria-label={t('Details for {{title}}', { title: s.title })}>
             <IconMessageDots size={30} stroke={1.6} />
           </ActionIcon>
         </Tooltip>
@@ -114,9 +117,9 @@ export function SessionDetails({ session: s, onEdit, onClose }: { session: Sessi
 
   const confirmCancel = () =>
     modals.openConfirmModal({
-      title: 'Cancel this session?',
-      children: <Text size="sm">Everyone going or invited will be told it's cancelled.</Text>,
-      labels: { confirm: 'Cancel session', cancel: 'Keep it' },
+      title: t('Cancel this session?'),
+      children: <Text size="sm">{t("Everyone going or invited will be told it's cancelled.")}</Text>,
+      labels: { confirm: t('Cancel session'), cancel: t('Keep it') },
       confirmProps: { color: 'red' },
       onConfirm: () => cancel.mutate(),
     });
@@ -125,7 +128,7 @@ export function SessionDetails({ session: s, onEdit, onClose }: { session: Sessi
     <Stack>
       <Group gap={6}>
         <Tag>{s.classLabel}</Tag>
-        {s.tag && <Tag color="periwinkle">{s.tag}</Tag>}
+        {s.tag && <Tag color="periwinkle">{t(s.tag)}</Tag>}
       </Group>
       <Title order={2}>{s.title}</Title>
       <Group gap="lg" c="dimmed">
@@ -139,14 +142,24 @@ export function SessionDetails({ session: s, onEdit, onClose }: { session: Sessi
         </Group>
       </Group>
       {s.description && <Text style={{ whiteSpace: 'pre-wrap' }}>{s.description}</Text>}
-      <Divider label={`${s.going.length}${s.capacity ? ` of ${s.capacity}` : ''} going${s.invitedCount ? ` · ${plural(s.invitedCount, 'invite')} pending` : ''}`} labelPosition="left" />
+      <Divider
+        label={[
+          s.capacity
+            ? t('{{count}} of {{capacity}} going', { count: s.going.length, capacity: s.capacity })
+            : t('{{count}} going', { count: s.going.length }),
+          s.invitedCount ? t('{{count}} invites pending', { count: s.invitedCount }) : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
+        labelPosition="left"
+      />
       <Stack gap="xs">
         {s.going.map((g) => (
           <Group key={g.userId} gap="sm">
             <GoatAvatar goat={g.goat} size={36} />
             <div>
               <Text size="sm" fw={700}>
-                {g.name} {g.userId === s.hostId && <Text span size="xs" c="dimmed">(host)</Text>}
+                {g.name} {g.userId === s.hostId && <Text span size="xs" c="dimmed">{t('(host)')}</Text>}
               </Text>
               <Text size="xs" c="dimmed">
                 {g.email}
@@ -159,33 +172,33 @@ export function SessionDetails({ session: s, onEdit, onClose }: { session: Sessi
         <Group mt="md">
           {s.myStatus !== 'going' && (
             <Button onClick={() => join.mutate()} disabled={s.isFull}>
-              {s.myStatus === 'invited' ? 'Accept invitation' : 'Join'}
+              {s.myStatus === 'invited' ? t('Accept invitation') : t('Join')}
             </Button>
           )}
           {s.myStatus === 'going' && (
             <Button variant="light" leftSection={<IconUsers size={16} />} onClick={() => setInviting(true)}>
-              Invite classmates
+              {t('Invite classmates')}
             </Button>
           )}
           {s.isHost ? (
             <>
               <Button variant="default" onClick={onEdit}>
-                Edit
+                {t('Edit')}
               </Button>
               <Button variant="subtle" color="red" onClick={confirmCancel}>
-                Cancel session
+                {t('Cancel session')}
               </Button>
             </>
           ) : (
             s.myStatus && (
               <Button variant="default" onClick={() => leave.mutate()}>
-                {s.myStatus === 'invited' ? 'Decline' : 'Leave'}
+                {s.myStatus === 'invited' ? t('Decline') : t('Leave')}
               </Button>
             )
           )}
         </Group>
       )}
-      <Modal opened={inviting} onClose={() => setInviting(false)} title="Invite classmates">
+      <Modal opened={inviting} onClose={() => setInviting(false)} title={t('Invite classmates')}>
         <InviteForm session={s} onDone={() => setInviting(false)} />
       </Modal>
     </Stack>
@@ -200,10 +213,10 @@ export function SessionList({ sessions, empty }: { sessions: Session[]; empty: R
   return (
     <>
       {sessions.length ? sessions.map((s) => <SessionRow key={s.id} session={s} onDetails={() => setOpenId(s.id)} />) : empty}
-      <Drawer opened={open != null} onClose={() => setOpenId(null)} position="right" size="lg" title={<Text fw={800}>Study session</Text>}>
+      <Drawer opened={open != null} onClose={() => setOpenId(null)} position="right" size="lg" title={<Text fw={800}>{t('Study session')}</Text>}>
         {open && <SessionDetails session={open} onEdit={() => setEditing(open)} onClose={() => setOpenId(null)} />}
       </Drawer>
-      <Modal opened={editing != null} onClose={() => setEditing(null)} title="Edit session" size="lg">
+      <Modal opened={editing != null} onClose={() => setEditing(null)} title={t('Edit session')} size="lg">
         {editing && <SessionForm classId={editing.classId} existing={editing} onDone={() => setEditing(null)} />}
       </Modal>
     </>
@@ -216,7 +229,7 @@ export function SessionForm({ classId, existing, onDone }: { classId: number | n
   const form = useForm({
     initialValues: {
       classId: String(existing?.classId ?? classId ?? ''),
-      tag: existing?.tag ?? '',
+      tag: existing?.tag ? t(existing.tag) : '',
       title: existing?.title ?? '',
       description: existing?.description ?? '',
       location: existing?.location ?? '',
@@ -225,10 +238,10 @@ export function SessionForm({ classId, existing, onDone }: { classId: number | n
       capacity: existing?.capacity ?? ('' as number | string),
     },
     validate: {
-      classId: (v) => (v ? null : 'Pick a class'),
-      title: (v) => (v.trim() ? null : 'Give it a title'),
-      location: (v) => (v.trim() ? null : 'Where is it? A room, a library, or a call link'),
-      endsAt: (v, values) => (toDate(v) && toDate(values.startsAt) && toDate(v)! > toDate(values.startsAt)! ? null : 'Must end after it starts'),
+      classId: (v) => (v ? null : t('Pick a class')),
+      title: (v) => (v.trim() ? null : t('Give it a title')),
+      location: (v) => (v.trim() ? null : t('Where is it? A room, a library, or a call link')),
+      endsAt: (v, values) => (toDate(v) && toDate(values.startsAt) && toDate(v)! > toDate(values.startsAt)! ? null : t('Must end after it starts')),
     },
   });
   const save = useAction(
@@ -240,12 +253,12 @@ export function SessionForm({ classId, existing, onDone }: { classId: number | n
         startsAt: toDate(v.startsAt)!,
         endsAt: toDate(v.endsAt)!,
         capacity: v.capacity === '' ? null : Number(v.capacity),
-        tag: v.tag.trim() || null,
+        tag: v.tag.trim() ? toStoredTopic(v.tag, SESSION_TAGS) : null,
       };
       if (existing) await rpc.studySessions.update({ sessionId: existing.id, ...fields });
       else await rpc.studySessions.create({ classId: Number(v.classId), ...fields });
     },
-    { success: existing ? 'Session updated' : 'Session created. Invite some classmates!', onSuccess: onDone },
+    { success: existing ? t('Session updated') : t('Session created. Invite some classmates!'), onSuccess: onDone },
   );
 
   return (
@@ -253,25 +266,25 @@ export function SessionForm({ classId, existing, onDone }: { classId: number | n
       <Stack>
         <Group grow align="flex-start">
           <Select
-            label="Class"
+            label={t('Class')}
             data={classes.data?.map((c) => ({ value: String(c.id), label: `${c.subject} ${c.number}` })) ?? []}
             disabled={!!existing || !!classId}
             allowDeselect={false}
             {...form.getInputProps('classId')}
           />
-          <Autocomplete label="Type" placeholder="Assignment, Midterm…" data={SESSION_TAGS} {...form.getInputProps('tag')} />
+          <Autocomplete label={t('Type')} placeholder={t('Assignment, Midterm…')} data={SESSION_TAGS.map((tag) => t(tag))} {...form.getInputProps('tag')} />
         </Group>
-        <TextInput label="Topic" placeholder="Do Assignment 2 together" data-autofocus {...form.getInputProps('title')} />
-        <Textarea label="What's the plan?" autosize minRows={2} {...form.getInputProps('description')} />
-        <TextInput label="Location or call link" placeholder="Cybertheque Room 2, or a Zoom link" {...form.getInputProps('location')} />
+        <TextInput label={t('Topic')} placeholder={t('Do Assignment 2 together')} data-autofocus {...form.getInputProps('title')} />
+        <Textarea label={t("What's the plan?")} autosize minRows={2} {...form.getInputProps('description')} />
+        <TextInput label={t('Location or call link')} placeholder={t('Cybertheque Room 2, or a Zoom link')} {...form.getInputProps('location')} />
         <Group grow>
-          <DateTimePicker label="Starts" valueFormat="ddd D MMM, HH:mm" minDate={new Date()} {...form.getInputProps('startsAt')} />
-          <DateTimePicker label="Ends" valueFormat="ddd D MMM, HH:mm" minDate={new Date()} {...form.getInputProps('endsAt')} />
+          <DateTimePicker label={t('Starts')} valueFormat="ddd D MMM, HH:mm" minDate={new Date()} {...form.getInputProps('startsAt')} />
+          <DateTimePicker label={t('Ends')} valueFormat="ddd D MMM, HH:mm" minDate={new Date()} {...form.getInputProps('endsAt')} />
         </Group>
-        <NumberInput label="Max people" description="Leave empty for no limit" min={2} max={500} w={200} {...form.getInputProps('capacity')} />
+        <NumberInput label={t('Max people')} description={t('Leave empty for no limit')} min={2} max={500} w={200} {...form.getInputProps('capacity')} />
         <Group justify="flex-end">
           <Button type="submit" loading={save.isPending}>
-            {existing ? 'Save' : 'Create session'}
+            {existing ? t('Save') : t('Create session')}
           </Button>
         </Group>
       </Stack>
@@ -283,16 +296,17 @@ function InviteForm({ session, onDone }: { session: Session; onDone: () => void 
   const [emails, setEmails] = useState<string[]>([]);
   const classmates = useQuery({ queryKey: ['classes', 'classmates', session.classId], queryFn: () => rpc.classes.classmates({ classId: session.classId }) });
   const invite = useAction(() => rpc.studySessions.invite({ sessionId: session.id, emails }), {
-    success: (r) => `Invited ${plural(r.invited, 'classmate')}${r.alreadyIn ? ` (${r.alreadyIn} already in)` : ''}`,
+    success: (r) =>
+      t('Invited {{count}} classmates', { count: r.invited }) + (r.alreadyIn ? ` ${t('({{count}} already in)', { count: r.alreadyIn })}` : ''),
     onSuccess: onDone,
   });
 
   return (
     <Stack>
       <TagsInput
-        label="Their McGill emails"
-        description="Classmates must be in this class on UniLink. Press Enter after each email."
-        placeholder="first.last@mail.mcgill.ca"
+        label={t('Their McGill emails')}
+        description={t('Classmates must be in this class on UniLink. Press Enter after each email.')}
+        placeholder={t('first.last@mail.mcgill.ca')}
         data={classmates.data?.map((c) => ({ value: c.email, label: `${c.name} (${c.email})` })) ?? []}
         value={emails}
         onChange={setEmails}
@@ -300,7 +314,7 @@ function InviteForm({ session, onDone }: { session: Session; onDone: () => void 
       />
       <Group justify="flex-end">
         <Button onClick={() => invite.mutate()} disabled={!emails.length} loading={invite.isPending}>
-          Send invites
+          {t('Send invites')}
         </Button>
       </Group>
     </Stack>

@@ -5,7 +5,7 @@ import type { DB } from '../db/client';
 import { chatLinkFlags, chatLinks, users } from '../db/schema';
 import { AppError, idSchema, procedure } from '../rpc/core';
 import { classLabel, notFound, requireMember } from './access';
-import { notify } from './notifications';
+import { m, notify } from './notifications';
 
 // S2: group chat links per class.
 
@@ -126,8 +126,11 @@ export const linksRouter = {
     if (isNew) {
       notify(ctx.db, link.ownerId, {
         type: 'link-flagged',
-        title: `Your ${link.platform} link in ${classLabel(ctx.db, link.classId) ?? 'a class'} was reported`,
-        body: `Reason: ${reason}. Check it still works, or update it to clear the reports.`,
+        title: m('Your {{platform}} link in {{class}} was reported', {
+          platform: link.platform,
+          class: classLabel(ctx.db, link.classId) ?? { t: 'a class' },
+        }),
+        body: m('Reason: {{reason}}. Check it still works, or update it to clear the reports.', { reason: { t: reason } }),
         link: `/classes/${link.classId}/chats`,
       });
     }

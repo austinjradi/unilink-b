@@ -6,7 +6,7 @@ import { classes, courses, enrollments, postAudience, postReactions, posts, repl
 import { AppError, idSchema, nonEmpty, procedure } from '../rpc/core';
 import { notFound, requireMember } from './access';
 import { enrolledUsersByEmail } from './classes';
-import { notify } from './notifications';
+import { m, notify, raw } from './notifications';
 
 // S4: Ed-style discussion board. Posts have a class, a type ("topic": Assignment,
 // Midterm, Just yapping…), 🐐 reactions and threaded replies, and are visible to the
@@ -258,16 +258,22 @@ export const boardRouter = {
         .values({ postId, body, authorId: ctx.userId, parentId: parent ? (parent.parentId ?? parent.id) : null })
         .run();
 
-      const replier = ctx.db.select({ name: users.name }).from(users).where(eq(users.id, ctx.userId)).get()?.name ?? 'A classmate';
-      const excerpt = body.length > 140 ? `${body.slice(0, 140)}…` : body;
+      const replierName = ctx.db.select({ name: users.name }).from(users).where(eq(users.id, ctx.userId)).get()?.name;
+      const name = replierName ?? { t: 'A classmate' };
+      const excerpt = raw(body.length > 140 ? `${body.slice(0, 140)}…` : body);
       const link = `/classes/${post.classId}/discussion?post=${postId}`;
       const told = new Set([ctx.userId]);
       if (parent && !told.has(parent.authorId)) {
-        notify(ctx.db, parent.authorId, { type: 'reply', title: `${replier} replied to your reply on "${post.title}"`, body: excerpt, link });
+        notify(ctx.db, parent.authorId, {
+          type: 'reply',
+          title: m('{{name}} replied to your reply on "{{title}}"', { name, title: post.title }),
+          body: excerpt,
+          link,
+        });
         told.add(parent.authorId);
       }
       if (!told.has(post.authorId)) {
-        notify(ctx.db, post.authorId, { type: 'reply', title: `${replier} replied to "${post.title}"`, body: excerpt, link });
+        notify(ctx.db, post.authorId, { type: 'reply', title: m('{{name}} replied to "{{title}}"', { name, title: post.title }), body: excerpt, link });
       }
     },
   ),

@@ -1,6 +1,6 @@
 import { and, eq, gte, isNull, lt } from 'drizzle-orm';
 import { z } from 'zod';
-import { addDays, atTime, fmtClock, parseYmd, termRange, ymd } from '@shared/dates';
+import { addDays, atTime, parseYmd, termRange, ymd } from '@shared/dates';
 import { type FocusWindow, studyModeStatus } from '@shared/studyMode';
 import type { DB } from '../db/client';
 import {
@@ -15,7 +15,7 @@ import {
 } from '../db/schema';
 import { type AuthedContext, type Context, idSchema, procedure } from '../rpc/core';
 import { requireMember } from './access';
-import { notify, sweepReminders, takeDesktopNotifications } from './notifications';
+import { m, notify, sweepReminders, takeDesktopNotifications } from './notifications';
 
 // ST1: study mode switches on during class times and study sessions (or by hand),
 // holds back notifications while it's on, and can turn on GNOME's Do Not Disturb.
@@ -182,11 +182,15 @@ export async function backgroundTick(ctx: Context, state: TickState) {
     state.studyActive = status.active;
     notify(ctx.db, userId, {
       type: 'study-mode',
-      title: status.active ? `Study mode on: ${status.label}` : 'Study mode off',
+      title: status.active
+        ? m('Study mode on: {{label}}', { label: status.reason === 'manual' ? { t: 'Focus session' } : status.label! })
+        : m('Study mode off'),
       body: status.active
-        ? `Until ${fmtClock(status.until!)}.${settings.silenceNotifications ? ' Notifications are held until it ends.' : ''}`
-        : 'Notifications are back on.',
-      link: '/settings/study-mode',
+        ? m(settings.silenceNotifications ? 'Until {{time}}. Notifications are held until it ends.' : 'Until {{time}}.', {
+            time: { date: status.until!.getTime(), style: 'time' },
+          })
+        : m('Notifications are back on.'),
+      link: '/study-mode',
     });
   }
 

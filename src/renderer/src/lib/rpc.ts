@@ -1,12 +1,16 @@
+import type { Params } from '@shared/i18n';
 import type { ErrorCode, RpcClient } from '../../../main/rpc/core';
 import type { AppRouter } from '../../../main/rpc/router';
+import { t } from './i18n';
 
+// The main process sends the English message as a key; show it in the current language.
 export class RpcError extends Error {
   constructor(
-    message: string,
     readonly code: ErrorCode,
+    readonly key: string,
+    readonly params?: Params,
   ) {
-    super(message);
+    super(t(key, params));
     this.name = 'RpcError';
   }
 }
@@ -18,7 +22,7 @@ function proxy(path: string[]): unknown {
     get: (_target, key) => (typeof key === 'string' && key !== 'then' ? proxy([...path, key]) : undefined),
     apply: async (_target, _this, args: unknown[]) => {
       const result = await window.unilink.call(path.join('.'), args[0]);
-      if (!result.ok) throw new RpcError(result.error.message, result.error.code);
+      if (!result.ok) throw new RpcError(result.error.code, result.error.key ?? result.error.message, result.error.params);
       return result.data;
     },
   });
