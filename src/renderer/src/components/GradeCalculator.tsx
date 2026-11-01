@@ -61,62 +61,64 @@ export function GradeCalculator({ classId }: { classId: number }) {
           {t('The grading scheme is shared with your section, so anyone in it can add or fix a component. Your grades are private.')}
         </Text>
         {list.length ? (
-          <Table withTableBorder withColumnBorders verticalSpacing="sm" fz="md">
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>{t('Component')}</Table.Th>
-                <Table.Th w={120}>{t('Weight (%)')}</Table.Th>
-                <Table.Th w={170}>{t('Your grade (%)')}</Table.Th>
-                <Table.Th w={200}>{t('Weighted contribution (%)')}</Table.Th>
-                <Table.Th w={140}>{t('Added by')}</Table.Th>
-                <Table.Th w={90} />
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {list.map((a) => (
-                <Table.Tr key={a.id}>
-                  <Table.Td fw={600}>{a.name}</Table.Td>
-                  <Table.Td>{a.weight}</Table.Td>
-                  <Table.Td>
-                    <NumberInput
-                      key={`${a.id}-${a.score}`}
-                      radius="xl"
-                      size="sm"
-                      w={120}
-                      min={0}
-                      max={150}
-                      decimalScale={2}
-                      hideControls
-                      placeholder="—"
-                      defaultValue={a.score ?? ''}
-                      aria-label={t('Your grade for {{name}}', { name: a.name })}
-                      onBlur={(e) => {
-                        const raw = e.currentTarget.value.trim();
-                        const score = raw === '' ? null : Number(raw);
-                        if (score !== a.score && (score == null || !Number.isNaN(score))) setScore.mutate({ id: a.id, score });
-                      }}
-                    />
-                  </Table.Td>
-                  <Table.Td>{a.score == null ? '—' : ((a.weight * a.score) / 100).toFixed(1)}</Table.Td>
-                  <Table.Td>
-                    <Text size="xs" c="dimmed">
-                      {a.addedBy ? (a.addedBy.former ? t('a former student') : a.addedBy.name) : ''}
-                    </Text>
-                  </Table.Td>
-                  <Table.Td>
-                    <Group gap={4} justify="flex-end" wrap="nowrap">
-                      <ActionIcon variant="subtle" onClick={() => setEditing(a)} aria-label={t('Edit {{name}}', { name: a.name })}>
-                        <IconPencil size={16} />
-                      </ActionIcon>
-                      <ActionIcon variant="subtle" color="red" onClick={() => remove.mutate(a.id)} aria-label={t('Delete {{name}}', { name: a.name })}>
-                        <IconTrash size={16} />
-                      </ActionIcon>
-                    </Group>
-                  </Table.Td>
+          <Table.ScrollContainer minWidth={760}>
+            <Table withTableBorder withColumnBorders verticalSpacing="sm" fz="md">
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>{t('Component')}</Table.Th>
+                  <Table.Th w={120}>{t('Weight (%)')}</Table.Th>
+                  <Table.Th w={170}>{t('Your grade (%)')}</Table.Th>
+                  <Table.Th w={200}>{t('Weighted contribution (%)')}</Table.Th>
+                  <Table.Th w={140}>{t('Added by')}</Table.Th>
+                  <Table.Th w={90} />
                 </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
+              </Table.Thead>
+              <Table.Tbody>
+                {list.map((a) => (
+                  <Table.Tr key={a.id}>
+                    <Table.Td fw={600}>{a.name}</Table.Td>
+                    <Table.Td>{a.weight}</Table.Td>
+                    <Table.Td>
+                      <NumberInput
+                        key={`${a.id}-${a.score}`}
+                        radius="xl"
+                        size="sm"
+                        w={120}
+                        min={0}
+                        max={150}
+                        decimalScale={2}
+                        hideControls
+                        placeholder="—"
+                        defaultValue={a.score ?? ''}
+                        aria-label={t('Your grade for {{name}}', { name: a.name })}
+                        onBlur={(e) => {
+                          const raw = e.currentTarget.value.trim();
+                          const score = raw === '' ? null : Number(raw);
+                          if (score !== a.score && (score == null || !Number.isNaN(score))) setScore.mutate({ id: a.id, score });
+                        }}
+                      />
+                    </Table.Td>
+                    <Table.Td>{a.score == null ? '—' : ((a.weight * a.score) / 100).toFixed(1)}</Table.Td>
+                    <Table.Td>
+                      <Text size="xs" c="dimmed">
+                        {a.addedBy ? (a.addedBy.former ? t('a former student') : a.addedBy.name) : ''}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Group gap={4} justify="flex-end" wrap="nowrap">
+                        <ActionIcon variant="subtle" onClick={() => setEditing(a)} aria-label={t('Edit {{name}}', { name: a.name })}>
+                          <IconPencil size={16} />
+                        </ActionIcon>
+                        <ActionIcon variant="subtle" color="red" onClick={() => remove.mutate(a.id)} aria-label={t('Delete {{name}}', { name: a.name })}>
+                          <IconTrash size={16} />
+                        </ActionIcon>
+                      </Group>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
         ) : (
           <Empty>{t('Add each graded component from the syllabus with its weight, e.g. "Midterm, 25%".')}</Empty>
         )}

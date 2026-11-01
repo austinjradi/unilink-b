@@ -151,51 +151,53 @@ function RecordTab({ onEdit }: { onEdit: (r: CourseRecord) => void }) {
               </Text>
             }
           >
-            <Table verticalSpacing="xs">
-              <Table.Tbody>
-                {records.data
-                  .filter((r) => r.term === termRow.term)
-                  .map((r) => (
-                    <Table.Tr key={r.id}>
-                      <Table.Td w={110} fw={600}>
-                        {r.code}
-                      </Table.Td>
-                      <Table.Td>{r.title}</Table.Td>
-                      <Table.Td w={90}>{t('{{credits}} cr', { credits: r.credits })}</Table.Td>
-                      <Table.Td w={120}>
-                        <Badge variant="light" color={STATUS_COLOR[r.status]}>
-                          {t(STATUS_LABEL[r.status])}
-                        </Badge>
-                      </Table.Td>
-                      <Table.Td w={170}>
-                        {r.grade ? (
-                          <Text fw={600}>{r.grade}</Text>
-                        ) : r.currentAverage != null ? (
-                          <Tooltip label={t("From the grades on this class's Grades tab")}>
+            <Table.ScrollContainer minWidth={640}>
+              <Table verticalSpacing="xs">
+                <Table.Tbody>
+                  {records.data
+                    .filter((r) => r.term === termRow.term)
+                    .map((r) => (
+                      <Table.Tr key={r.id}>
+                        <Table.Td w={110} fw={600}>
+                          {r.code}
+                        </Table.Td>
+                        <Table.Td>{r.title}</Table.Td>
+                        <Table.Td w={90}>{t('{{credits}} cr', { credits: r.credits })}</Table.Td>
+                        <Table.Td w={120}>
+                          <Badge variant="light" color={STATUS_COLOR[r.status]}>
+                            {t(STATUS_LABEL[r.status])}
+                          </Badge>
+                        </Table.Td>
+                        <Table.Td w={170}>
+                          {r.grade ? (
+                            <Text fw={600}>{r.grade}</Text>
+                          ) : r.currentAverage != null ? (
+                            <Tooltip label={t("From the grades on this class's Grades tab")}>
+                              <Text size="sm" c="dimmed">
+                                {t('now {{average}}% ({{letter}})', { average: r.currentAverage, letter: letterFor(r.currentAverage).letter })}
+                              </Text>
+                            </Tooltip>
+                          ) : (
                             <Text size="sm" c="dimmed">
-                              {t('now {{average}}% ({{letter}})', { average: r.currentAverage, letter: letterFor(r.currentAverage).letter })}
+                              —
                             </Text>
-                          </Tooltip>
-                        ) : (
-                          <Text size="sm" c="dimmed">
-                            —
-                          </Text>
-                        )}
-                      </Table.Td>
-                      <Table.Td w={80}>
-                        <Group gap={4} justify="flex-end" wrap="nowrap">
-                          <ActionIcon variant="subtle" onClick={() => onEdit(r)} aria-label={t('Edit')}>
-                            <IconPencil size={16} />
-                          </ActionIcon>
-                          <ActionIcon variant="subtle" color="red" onClick={() => remove.mutate(r.id)} aria-label={t('Delete')}>
-                            <IconTrash size={16} />
-                          </ActionIcon>
-                        </Group>
-                      </Table.Td>
-                    </Table.Tr>
-                  ))}
-              </Table.Tbody>
-            </Table>
+                          )}
+                        </Table.Td>
+                        <Table.Td w={80}>
+                          <Group gap={4} justify="flex-end" wrap="nowrap">
+                            <ActionIcon variant="subtle" onClick={() => onEdit(r)} aria-label={t('Edit')}>
+                              <IconPencil size={16} />
+                            </ActionIcon>
+                            <ActionIcon variant="subtle" color="red" onClick={() => remove.mutate(r.id)} aria-label={t('Delete')}>
+                              <IconTrash size={16} />
+                            </ActionIcon>
+                          </Group>
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
           </SectionCard>
         ))
       )}

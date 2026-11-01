@@ -18,7 +18,7 @@ export function NotificationBell() {
   const unread = list.data?.unread ?? 0;
 
   return (
-    <Popover opened={opened} onChange={setOpened} position="bottom-end" width={380} shadow="md">
+    <Popover opened={opened} onChange={setOpened} position="bottom-end" width="min(380px, calc(100vw - 16px))" shadow="md">
       <Popover.Target>
         <Indicator label={unread > 9 ? '9+' : unread} size={16} disabled={!unread} offset={6} color="red">
           <ActionIcon variant="subtle" color="gray" size="lg" onClick={() => setOpened((o) => !o)} aria-label={t('Notifications')}>

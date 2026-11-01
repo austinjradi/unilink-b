@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   Chip,
+  Code,
   Collapse,
   Divider,
   Drawer,
@@ -95,6 +96,17 @@ function ReactionBar({
         </button>
       )}
     </div>
+  );
+}
+
+// Posts are plain text; `backticks` mark inline code, as on Ed.
+function Body({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(/(`[^`\n]+`)/g).map((part, i) =>
+        part.length > 2 && part.startsWith('`') && part.endsWith('`') ? <Code key={i}>{part.slice(1, -1)}</Code> : part,
+      )}
+    </>
   );
 }
 
@@ -189,7 +201,7 @@ function PostCard({ post, onOpen }: { post: FeedPost; onOpen: () => void }) {
           </UnstyledButton>
           {!post.deletedAt && (
             <Text size="sm" mt={4} lineClamp={4} style={{ whiteSpace: 'pre-wrap' }}>
-              {post.body}
+              <Body text={post.body} />
             </Text>
           )}
           <Group mt="sm">
@@ -488,7 +500,7 @@ function ReplyItem({ reply, postId, canAccept }: { reply: Reply; postId: number;
             </Text>
           </Group>
           <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
-            {reply.body}
+            <Body text={reply.body} />
           </Text>
           <Group gap="xs" mt={6}>
             <ReactionBar goats={reply.goats} goated={reply.goated} onGoat={() => react.mutate()} />
@@ -576,7 +588,7 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
             </Group>
           )}
           <Text mt="xs" style={{ whiteSpace: 'pre-wrap' }}>
-            {p.body}
+            <Body text={p.body} />
           </Text>
           <Group mt="sm">
             <ReactionBar goats={p.goats} goated={p.goated} comments={p.replies.length} onGoat={() => react.mutate()} />

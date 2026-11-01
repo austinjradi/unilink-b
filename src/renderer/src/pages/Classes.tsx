@@ -184,44 +184,46 @@ function FindCourses() {
       {results.isPending ? (
         <Loading />
       ) : results.data?.length ? (
-        <Table highlightOnHover verticalSpacing="sm">
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>{t('Section')}</Table.Th>
-              <Table.Th>{t('Title')}</Table.Th>
-              <Table.Th>{t('Credits')}</Table.Th>
-              <Table.Th>{t('Students')}</Table.Th>
-              <Table.Th />
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {results.data.map((c) => (
-              <Table.Tr key={c.id}>
-                <Table.Td fw={700} style={{ whiteSpace: 'nowrap' }}>
-                  {c.code}
-                </Table.Td>
-                <Table.Td>{c.title}</Table.Td>
-                <Table.Td>{c.credits}</Table.Td>
-                <Table.Td>{c.memberCount}</Table.Td>
-                <Table.Td ta="right">
-                  {c.joined ? (
-                    <Button size="xs" variant="light" component={Link} to={`/classes/${c.id}`}>
-                      {t('Open')}
-                    </Button>
-                  ) : c.otherSectionId ? (
-                    <Button size="xs" variant="default" onClick={() => switchTo.mutate(c.id)} loading={switchTo.isPending && switchTo.variables === c.id}>
-                      {t('Switch here')}
-                    </Button>
-                  ) : (
-                    <Button size="xs" onClick={() => join.mutate(c.id)} loading={join.isPending && join.variables === c.id}>
-                      {t('Join')}
-                    </Button>
-                  )}
-                </Table.Td>
+        <Table.ScrollContainer minWidth={560}>
+          <Table highlightOnHover verticalSpacing="sm">
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>{t('Section')}</Table.Th>
+                <Table.Th>{t('Title')}</Table.Th>
+                <Table.Th>{t('Credits')}</Table.Th>
+                <Table.Th>{t('Students')}</Table.Th>
+                <Table.Th />
               </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
+            </Table.Thead>
+            <Table.Tbody>
+              {results.data.map((c) => (
+                <Table.Tr key={c.id}>
+                  <Table.Td fw={700} style={{ whiteSpace: 'nowrap' }}>
+                    {c.code}
+                  </Table.Td>
+                  <Table.Td>{c.title}</Table.Td>
+                  <Table.Td>{c.credits}</Table.Td>
+                  <Table.Td>{c.memberCount}</Table.Td>
+                  <Table.Td ta="right">
+                    {c.joined ? (
+                      <Button size="xs" variant="light" component={Link} to={`/classes/${c.id}`}>
+                        {t('Open')}
+                      </Button>
+                    ) : c.otherSectionId ? (
+                      <Button size="xs" variant="default" onClick={() => switchTo.mutate(c.id)} loading={switchTo.isPending && switchTo.variables === c.id}>
+                        {t('Switch here')}
+                      </Button>
+                    ) : (
+                      <Button size="xs" onClick={() => join.mutate(c.id)} loading={join.isPending && join.variables === c.id}>
+                        {t('Join')}
+                      </Button>
+                    )}
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
       ) : (
         <Empty>
           {t('No sections match. Try a code like "MATH 240" or "COMP 2XX". The built-in catalogue is a sample of McGill courses for now.')}
