@@ -41,6 +41,28 @@ When run from source, the app seeds three demo classmates in COMP 251 and MATH 2
 social features have someone to interact with. The sign-in screen lists them; the password is
 `unilink-demo1`. Sign up with any `@mail.mcgill.ca` address to get your own account.
 
+### Linux: "The SUID sandbox helper binary was found, but is not configured correctly"
+
+Ubuntu 23.10 and later block unprivileged user namespaces, so Electron falls back to its setuid
+`chrome-sandbox` helper and aborts because that file isn't owned by root. Allow Electron dev builds through
+AppArmor once per machine. This keeps the sandbox on and survives `npm install`:
+
+```bash
+sudo tee /etc/apparmor.d/electron-dev > /dev/null <<'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+
+profile electron-dev @{HOME}/**/node_modules/electron/dist/electron flags=(unconfined) {
+  userns,
+  include if exists <local/electron-dev>
+}
+EOF
+sudo apparmor_parser -r /etc/apparmor.d/electron-dev
+```
+
+(Alternatively `sudo chown root:root node_modules/electron/dist/chrome-sandbox && sudo chmod 4755
+node_modules/electron/dist/chrome-sandbox`, but that has to be redone whenever Electron is reinstalled.)
+
 The database lives in Electron's user data folder (`~/.config/unilink/unilink.db` on Linux). Delete it to
 start fresh.
 
