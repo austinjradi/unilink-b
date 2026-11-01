@@ -1,10 +1,13 @@
 import { type AnyColumn, and, asc, count, desc, eq, gt, inArray, isNull, lte, or } from 'drizzle-orm';
 import { z } from 'zod';
-import { addDays, ymd } from '@shared/dates';
+import { addDays, atTime, ymd } from '@shared/dates';
 import { type Locale, type Message, type Params, render, translate } from '@shared/i18n';
+import { finalExamFor } from '@shared/keyDates';
 import { channelsFor, NOTIFICATION_TYPES, type NotificationType } from '@shared/notifications';
 import type { DB } from '../db/client';
 import {
+  classes,
+  courses,
   enrollments,
   notifications,
   outbox,
@@ -125,6 +128,27 @@ export function sweepReminders(ctx: AuthedContext) {
       body: m('{{class}} · worth {{weight}}%', { class: classLabel(db, a.classId) ?? '', weight: a.weight }),
       link: `/classes/${a.classId}/grades`,
       dedupeKey: `assessment:${a.id}:${a.dueAt.getTime()}`,
+    });
+  }
+
+  // A3: final exams from the exam schedule, in the student's language.
+  const locale = recipient(db, userId)?.locale ?? 'en';
+  for (const c of db
+    .select({ id: classes.id, term: classes.term, subject: courses.subject, number: courses.number })
+    .from(enrollments)
+    .innerJoin(classes, eq(enrollments.classId, classes.id))
+    .innerJoin(courses, eq(classes.courseId, courses.id))
+    .where(eq(enrollments.userId, userId))
+    .all()) {
+    const exam = finalExamFor(`${c.subject} ${c.number}`, c.term);
+    const startsAt = exam && atTime(exam.date, exam.start);
+    if (!exam || !startsAt || startsAt <= now || startsAt > in24h) continue;
+    notify(db, userId, {
+      type: 'deadline-soon',
+      title: soon('starts', translate(locale, '{{course}} final exam', { course: exam.course }), startsAt, now),
+      body: raw(`${classLabel(db, c.id) ?? ''} · ${exam.location}`),
+      link: `/classes/${c.id}`,
+      dedupeKey: `final:${c.id}:${startsAt.getTime()}`,
     });
   }
 

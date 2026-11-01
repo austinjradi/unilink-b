@@ -763,6 +763,14 @@ describe('G3 notifications', () => {
     sweepReminders(authed);
     expect(await titles({ api })).toEqual(['Essay is due tomorrow at 08:00']);
   });
+
+  it('reminds about a final exam the day before', async () => {
+    const { api, ctx, user } = await student('Maya');
+    await api.classes.join({ classId: await comp251(api) });
+    clock = new Date(2026, 11, 13, 15, 0); // COMP 251's final is Monday 14 December at 14:00
+    sweepReminders({ ...ctx, userId: user.id });
+    expect(await titles({ api })).toEqual(['"COMP 251 final exam" starts tomorrow at 14:00']);
+  });
 });
 
 describe('ST1 study mode', () => {
