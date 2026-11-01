@@ -1,0 +1,48 @@
+{
+  "name": "unilink",
+  "version": "0.1.0",
+  "private": true,
+  "description": "UniLink: classes, classmates, deadlines, grades and study planning for McGill students",
+  "main": "out/main/index.js",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@mantine/core": "^9.7.4",
+    "@mantine/dates": "^9.7.4",
+    "@mantine/form": "^9.7.4",
+    "@mantine/hooks": "^9.7.4",
+    "@mantine/modals": "^9.7.4",
+    "@mantine/notifications": "^9.7.4",
+    "@tabler/icons-react": "^3.50.0",
+    "@tanstack/react-query": "^5.105.0",
+    "better-sqlite3": "^13.0.3",
+    "dayjs": "^1.11.23",
+    "drizzle-orm": "^0.45.4",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router": "^8.5.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.2.1",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "drizzle-kit": "^0.31.11",
+    "electron": "^45.2.1",
+    "electron-vite": "^6.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/test.mjs",
+    "db:generate": "drizzle-kit generate",
+    "postinstall": "electron-rebuild -f -w better-sqlite3"
+  }
+}

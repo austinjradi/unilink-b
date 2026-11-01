@@ -1,0 +1,45 @@
+body {
+  background: var(--mantine-color-body);
+}
+
+.week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--mantine-spacing-xs);
+}
+
+.week-day {
+  min-height: 420px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-color-default);
+  padding: var(--mantine-spacing-xs);
+}
+
+.week-day[data-today] {
+  border-color: var(--mantine-primary-color-filled);
+  box-shadow: 0 0 0 1px var(--mantine-primary-color-filled);
+}
+
+.event {
+  border-left: 3px solid var(--event-color);
+  background: color-mix(in srgb, var(--event-color) 12%, transparent);
+  border-radius: var(--mantine-radius-sm);
+  padding: 4px 6px;
+  margin-bottom: 6px;
+  font-size: var(--mantine-font-size-xs);
+  line-height: 1.35;
+}
+
+.event[data-done] {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover {
+  background: var(--mantine-color-default-hover);
+}
