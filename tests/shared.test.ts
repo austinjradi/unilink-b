@@ -8,6 +8,7 @@ import { parseCourseQuery } from '@shared/courseQuery';
 import { summarizeRecord, termOrder } from '@shared/academics';
 import { evaluateDegree, type Program } from '@shared/degree';
 import { type FocusWindow, studyModeStatus } from '@shared/studyMode';
+import { parseSyllabus } from '@shared/syllabus';
 
 describe('grades (A4)', () => {
   it('maps percentages onto the McGill scale', () => {
@@ -291,5 +292,33 @@ describe('study mode (ST1)', () => {
     const paused = studyModeStatus({ windows, manualUntil: null, pausedUntil: at(11, 25), now: at(10, 30) });
     expect(paused.active).toBe(false);
     expect(paused.pausedWindow?.label).toBe('COMP 251');
+  });
+});
+
+describe('syllabus import (A3)', () => {
+  const syllabus = `Course schedule
+Week 1 (Sep 1): Introduction. Readings: chapter 1
+Assignment 1 (10%) due Sept. 22 at 11:59 pm
+- Quiz 2 on myCourses: Thursday, October 8, 2026
+Midterm exam – Oct 22, 6:30pm–8:30pm, Leacock 132 (25%)
+Mini-project report due 2026-11-20
+Thanksgiving, no class (Oct 12)
+Assignment 3 : 5 décembre à 23h59 (5 %)
+Final exam: during the exam period (40%)`;
+
+  it('finds the dated work in a pasted schedule, with times and weights', () => {
+    const items = parseSyllabus(syllabus, 'Fall 2026');
+    expect(items.map((i) => [i.title, i.kind, i.dueAt, i.weight])).toEqual([
+      ['Assignment 1', 'assignment', new Date(2026, 8, 22, 23, 59), 10],
+      ['Quiz 2 on myCourses', 'quiz', new Date(2026, 9, 8, 23, 59), null],
+      ['Midterm exam Leacock 132', 'exam', new Date(2026, 9, 22, 18, 30), 25],
+      ['Mini-project report', 'assignment', new Date(2026, 10, 20, 23, 59), null],
+      ['Assignment 3', 'assignment', new Date(2026, 11, 5, 23, 59), 5],
+    ]);
+  });
+
+  it('puts January to May of a fall syllabus in the next year', () => {
+    expect(parseSyllabus('Take-home exam due January 8', 'Fall 2026')[0].dueAt).toEqual(new Date(2027, 0, 8, 23, 59));
+    expect(parseSyllabus('Lab 4 due Feb 30', 'Winter 2027')).toEqual([]);
   });
 });

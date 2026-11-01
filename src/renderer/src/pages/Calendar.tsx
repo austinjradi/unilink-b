@@ -42,6 +42,7 @@ import dayjs from 'dayjs';
 import { useNavigate } from 'react-router';
 import { addDays, CURRENT_TERM, eachDay, TERMS, ymd } from '@shared/dates';
 import { EXAM_SCHEDULE_TERMS, FINAL_EXAMS, keyDatesFor, termWithExams } from '@shared/keyDates';
+import { parseSyllabus, type SyllabusItem } from '@shared/syllabus';
 import { chipStyle, Empty, KindBadge, kindColor, Loading, PageHeader } from '../components/ui';
 import { fmtDateTime, fmtTime, toDate } from '../lib/format';
 import { useAction } from '../lib/hooks';
@@ -82,6 +83,7 @@ export function CalendarPage() {
   };
   const [editing, setEditing] = useState<Deadline | 'new' | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const exportIcs = useAction(() => rpc.calendar.exportIcs(), {
     success: (r) => (r ? t('Exported {{count}} events. Import the file into Google Calendar.', { count: r.count }) : ''),
@@ -133,6 +135,7 @@ export function CalendarPage() {
               <Menu.Dropdown>
                 <Menu.Item onClick={() => setEditing('new')}>{t('Deadline, exam or quiz')}</Menu.Item>
                 <Menu.Item onClick={() => navigate('/planner?new=1')}>{t('Assignment to plan out')}</Menu.Item>
+                <Menu.Item onClick={() => setImporting(true)}>{t('Dates from a syllabus')}</Menu.Item>
               </Menu.Dropdown>
             </Menu>
           </>
@@ -198,6 +201,9 @@ export function CalendarPage() {
 
       <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing === 'new' ? t('Add deadline') : t('Edit deadline')}>
         {editing && <DeadlineForm key={editing === 'new' ? 'new' : editing.id} existing={editing === 'new' ? null : editing} onDone={() => setEditing(null)} />}
+      </Modal>
+      <Modal opened={importing} onClose={() => setImporting(false)} title={t('Import dates from a syllabus')} size="xl">
+        {importing && <SyllabusImport onDone={() => setImporting(false)} />}
       </Modal>
       <Modal opened={showAll} onClose={() => setShowAll(false)} title={t('All your deadlines')} size="xl">
         <AllDeadlines onEdit={(d) => setEditing(d)} />
@@ -686,6 +692,124 @@ function AllDeadlines({ onEdit }: { onEdit: (d: Deadline) => void }) {
         </Table.Tbody>
       </Table>
     </>
+  );
+}
+
+// A3 "imported from my syllabus": paste the course outline's schedule, check what was found,
+// and add it for the whole section. Weighted items join the shared grading scheme (A5),
+// which shows them on the calendar too; the rest become class deadlines.
+function SyllabusImport({ onDone }: { onDone: () => void }) {
+  const [classId, setClassId] = useState<number | null>(null);
+  const [text, setText] = useState('');
+  const [unchecked, setUnchecked] = useState<Set<number>>(new Set());
+  const classes = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
+  const scheme = useQuery({ queryKey: ['courses', 'assessments', classId], queryFn: () => rpc.courses.assessments({ classId: classId! }), enabled: classId != null });
+  const deadlines = useQuery({ queryKey: ['calendar', 'deadlines'], queryFn: () => rpc.calendar.deadlines() });
+  const cls = classes.data?.find((c) => c.id === classId);
+
+  const found = cls ? parseSyllabus(text, cls.term) : [];
+  const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const already = (i: SyllabusItem) =>
+    i.weight != null
+      ? (scheme.data ?? []).some((a) => same(a.name, i.title))
+      : (deadlines.data ?? []).some((d) => d.classId === classId && same(d.title, i.title) && ymd(d.dueAt) === ymd(i.dueAt));
+  const picked = found.filter((item, n) => !unchecked.has(n) && !already(item));
+
+  const add = useAction(
+    async () => {
+      const failed: string[] = [];
+      for (const item of picked) {
+        try {
+          if (item.weight != null) await rpc.courses.addAssessment({ classId: classId!, name: item.title, weight: item.weight, dueAt: item.dueAt });
+          else await rpc.calendar.addDeadline({ classId, kind: item.kind, title: item.title, dueAt: item.dueAt, notes: '' });
+        } catch {
+          failed.push(item.title);
+        }
+      }
+      return { added: picked.length - failed.length, failed };
+    },
+    {
+      success: (r) =>
+        [t('Added {{count}} to {{code}}', { count: r.added, code: cls?.code ?? '' }), r.failed.length ? t('Not added: {{titles}}', { titles: r.failed.join(', ') }) : '']
+          .filter(Boolean)
+          .join(' '),
+      onSuccess: (r) => !r.failed.length && onDone(),
+    },
+  );
+
+  return (
+    <Stack>
+      <Text size="sm" c="dimmed">
+        {t('Paste the schedule or the list of due dates from the course outline. Each line with a date and something to hand in or write becomes a date you can add.')}
+      </Text>
+      <ClassSelect value={classId} onChange={setClassId} />
+      <Textarea
+        label={t('Syllabus text')}
+        placeholder={t('Assignment 1 (10%) due Sept 22 at 11:59 pm')}
+        autosize
+        minRows={5}
+        maxRows={12}
+        value={text}
+        onChange={(e) => {
+          setText(e.currentTarget.value);
+          setUnchecked(new Set());
+        }}
+      />
+      {cls && text.trim() && (
+        <>
+          <Text size="sm" fw={700}>
+            {found.length ? t('Found {{count}} dates', { count: found.length }) : t('No dates found yet. Lines need a date like "Oct 6" or "2026-10-06".')}
+          </Text>
+          {found.map((item, n) => {
+            const there = already(item);
+            return (
+              <Group key={n} gap="sm" wrap="nowrap" align="flex-start">
+                <Checkbox
+                  mt={2}
+                  checked={!there && !unchecked.has(n)}
+                  disabled={there}
+                  onChange={(e) =>
+                    setUnchecked((u) => {
+                      const next = new Set(u);
+                      if (e.currentTarget.checked) next.delete(n);
+                      else next.add(n);
+                      return next;
+                    })
+                  }
+                  aria-label={item.title}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <Group gap={6}>
+                    <Text size="sm" fw={700}>
+                      {item.title}
+                    </Text>
+                    {item.weight != null && <Badge size="sm" variant="light">{item.weight}%</Badge>}
+                    <KindBadge kind={item.kind} />
+                    {there && (
+                      <Badge size="sm" variant="light" color="gray">
+                        {t('Already added')}
+                      </Badge>
+                    )}
+                  </Group>
+                  <Text size="xs" c="dimmed">
+                    {item.timed ? fmtDateTime(item.dueAt) : `${dayjs(item.dueAt).format(t('ddd, MMM D'))} · 23:59`} ·{' '}
+                    {item.weight != null ? t('to the grading scheme') : t('as a class deadline')}
+                  </Text>
+                </div>
+              </Group>
+            );
+          })}
+        </>
+      )}
+      <Group justify="space-between">
+        <Text size="xs" c="dimmed" maw={420}>
+          {cls ? t('Everyone in {{code}} will see what you add.', { code: cls.code }) : t('Pick the class the syllabus is for.')}
+        </Text>
+        <Button onClick={() => add.mutate()} disabled={!picked.length} loading={add.isPending}>
+          {t('Add {{count}} dates', { count: picked.length })}
+        </Button>
+      </Group>
+    </Stack>
   );
 }
 
