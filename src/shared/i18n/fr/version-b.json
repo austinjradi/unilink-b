@@ -1,5 +1,6 @@
 {
   "\"{{title}}\" changed": "« {{title}} » a changé",
+  "(every demo classmate uses it)": "(tous les camarades de la démo l’utilisent)",
   "({{weight}}% not listed yet, counted as still to come)": "({{weight}} % pas encore inscrits, comptés comme à venir)",
   "+{{count}} waiting_one": "+{{count}} en attente",
   "+{{count}} waiting_other": "+{{count}} en attente",

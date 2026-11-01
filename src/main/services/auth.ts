@@ -150,9 +150,9 @@ function keepSharedContributions(ctx: AuthedContext, keepPosts: boolean) {
 }
 
 export const authRouter = {
-  // Demo classmates (see db/demo.ts); the sign-in screen lists them.
+  // Demo classmates (see db/demo.ts); the sign-in screen lists them as one-click sign-ins.
   devInfo: publicProcedure(z.void(), (_input, ctx) =>
-    ctx.isDev ? { emails: DEMO_USERS.map((u) => u.email), password: DEMO_PASSWORD } : null,
+    ctx.isDev ? { accounts: DEMO_USERS.map(({ name, email }) => ({ name, email })), password: DEMO_PASSWORD } : null,
   ),
 
   me: publicProcedure(z.void(), (_input, ctx) => {

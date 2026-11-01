@@ -116,10 +116,23 @@ export function SignIn() {
           </Text>
           {devInfo.data && (
             <Alert variant="light" icon={<IconInfoCircle />} title={t('Demo: sign in as a classmate')}>
+              <Group gap={6} mb="xs">
+                {devInfo.data.accounts.map((a) => (
+                  <Button
+                    key={a.email}
+                    size="compact-sm"
+                    variant="default"
+                    disabled={signIn.isPending}
+                    onClick={() => signIn.mutate({ email: a.email, password: devInfo.data!.password })}
+                  >
+                    {a.name}
+                  </Button>
+                ))}
+              </Group>
               <Text size="xs">
-                {devInfo.data.emails.join(', ')}
+                {devInfo.data.accounts.map((a) => a.email).join(', ')}
                 <br />
-                {t('Password:')} <Code>{devInfo.data.password}</Code>
+                {t('Password:')} <Code>{devInfo.data.password}</Code> {t('(every demo classmate uses it)')}
               </Text>
               <Text size="xs" c="dimmed" mt="xs">
                 {t('Everything is saved in this browser only.')}{' '}
