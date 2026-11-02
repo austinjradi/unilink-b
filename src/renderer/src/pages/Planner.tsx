@@ -46,6 +46,7 @@ import { addDays, ymd } from '@shared/dates';
 import { DEFAULT_BUFFER_DAYS, weeklyMinutes } from '@shared/planner';
 import { Empty, Loading, PageHeader } from '../components/ui';
 import { dayLabel, fmtDateTime, fromNow, toDate } from '../lib/format';
+import { FocusButton } from '../components/FocusTask';
 import { useAction, useMe } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
 import { ClassSelect } from './Calendar';
@@ -341,6 +342,7 @@ function TaskRow({ task, dueDay }: { task: Task; dueDay: string }) {
         aria-label={t('Move to day')}
         disabled={!!task.doneAt}
       />
+      {!task.doneAt && <FocusButton taskId={task.id} title={task.title} />}
       <ActionIcon variant="subtle" color="red" size="sm" onClick={() => remove.mutate()} aria-label={t('Delete task')}>
         <IconTrash size={14} />
       </ActionIcon>

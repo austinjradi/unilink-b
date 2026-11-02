@@ -47,7 +47,7 @@ function ownAssignment(db: DB, userId: number, id: number) {
   return row ?? notFound('assignment');
 }
 
-function ownTask(db: DB, userId: number, taskId: number) {
+export function ownTask(db: DB, userId: number, taskId: number) {
   const row = db
     .select({ task: plannerTasks, userId: plannerAssignments.userId })
     .from(plannerTasks)

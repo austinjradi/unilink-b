@@ -66,7 +66,7 @@ function StatusCard({ status }: { status: Status }) {
             <Title order={3}>{status.active ? t('Study mode is on') : t('Study mode is off')}</Title>
             {status.active ? (
               <Text>
-                {status.reason === 'manual' ? t('Focus session') : status.label} ·{' '}
+                {status.reason === 'manual' ? (status.focusTask ?? t('Focus session')) : status.label} ·{' '}
                 {t('until {{time}}', { time: fmtTime(status.until!) })}
                 {status.settings.silenceNotifications && (
                   <Text span c="dimmed" size="sm">

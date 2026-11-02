@@ -10,6 +10,7 @@ import {
   courseInfo,
   courses,
   enrollments,
+  plannerTasks,
   studyModeSettings,
   studySessionMembers,
   studySessions,
@@ -17,6 +18,7 @@ import {
 import { type AuthedContext, type Context, idSchema, procedure } from '../rpc/core';
 import { isProfessor, requireMember, sectionCode } from './access';
 import { m, notify, sweepReminders, takeDesktopNotifications } from './notifications';
+import { ownTask } from './planner';
 
 // ST1: study mode switches on during class times and study sessions (or by hand),
 // holds back notifications while it's on, and can turn on GNOME's Do Not Disturb.
@@ -29,6 +31,7 @@ const DEFAULTS = {
   systemDnd: false,
   manualUntil: null as Date | null,
   pausedUntil: null as Date | null,
+  focusTaskId: null as number | null,
 };
 
 function settingsFor(db: DB, userId: number) {
@@ -108,8 +111,17 @@ export function currentStudyMode(ctx: AuthedContext) {
 export const studyModeRouter = {
   status: procedure(z.void(), (_input, ctx) => {
     const { settings, status } = currentStudyMode(ctx);
-    const { manualUntil: _m, pausedUntil: _p, userId: _u, ...prefs } = settings;
-    return { ...status, settings: prefs, systemDndSupported: ctx.platform.systemDndSupported() };
+    const { manualUntil: _m, pausedUntil: _p, userId: _u, focusTaskId, ...prefs } = settings;
+    const task = focusTaskId == null ? undefined : ctx.db.select().from(plannerTasks).where(eq(plannerTasks.id, focusTaskId)).get();
+    const focusing = status.reason === 'manual';
+    return {
+      ...status,
+      settings: prefs,
+      systemDndSupported: ctx.platform.systemDndSupported(),
+      focusTask: focusing ? (task?.title ?? null) : null,
+      // The session is over: did they finish it? Asked once, and not if they checked it off already.
+      finishedTask: !focusing && task && !task.doneAt ? { id: task.id, title: task.title } : null,
+    };
   }),
 
   updateSettings: procedure(
@@ -123,7 +135,19 @@ export const studyModeRouter = {
   ),
 
   start: procedure(z.object({ minutes: z.number().int().min(5).max(8 * 60) }), ({ minutes }, ctx) => {
-    saveSettings(ctx.db, ctx.userId, { manualUntil: new Date(ctx.now().getTime() + minutes * 60_000), pausedUntil: null });
+    saveSettings(ctx.db, ctx.userId, { manualUntil: new Date(ctx.now().getTime() + minutes * 60_000), pausedUntil: null, focusTaskId: null });
+  }),
+
+  // ST1 + ST2: a focus session as long as the planned task is meant to take.
+  focusOnTask: procedure(z.object({ taskId: idSchema }), ({ taskId }, ctx) => {
+    ownTask(ctx.db, ctx.userId, taskId);
+    const task = ctx.db.select({ minutes: plannerTasks.minutes }).from(plannerTasks).where(eq(plannerTasks.id, taskId)).get()!;
+    const minutes = Math.min(8 * 60, task.minutes);
+    saveSettings(ctx.db, ctx.userId, { manualUntil: new Date(ctx.now().getTime() + minutes * 60_000), pausedUntil: null, focusTaskId: taskId });
+  }),
+
+  clearFocusTask: procedure(z.void(), (_input, ctx) => {
+    saveSettings(ctx.db, ctx.userId, { focusTaskId: null });
   }),
 
   // Ends a focus session, and pauses any class or study session window running right now.

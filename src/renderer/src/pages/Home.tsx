@@ -9,6 +9,7 @@ import { ymd } from '@shared/dates';
 import { Feed } from '../components/Feed';
 import { Empty, Loading } from '../components/ui';
 import { dayLabel, fmtDateTime } from '../lib/format';
+import { FocusButton } from '../components/FocusTask';
 import { useAction, useMe } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
 import { t } from '../lib/i18n';
@@ -202,6 +203,7 @@ function TaskRow({ item, today }: { item: TodayItem; today: string }) {
           )}
         </Group>
       </div>
+      {item.kind === 'task' && !item.done && <FocusButton taskId={item.id} title={item.title} />}
       {item.kind === 'todo' && (
         <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => remove.mutate()} aria-label={t('Delete task')}>
           <IconTrash size={13} />

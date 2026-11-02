@@ -1,0 +1,1 @@
+ALTER TABLE `study_mode_settings` ADD `focus_task_id` integer REFERENCES planner_tasks(id) ON DELETE set null;

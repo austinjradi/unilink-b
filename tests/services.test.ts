@@ -1667,6 +1667,51 @@ describe('G3 notifications', () => {
 });
 
 describe('ST1 study mode', () => {
+  it('focuses on a planned task for as long as it takes, then asks whether it got done', async () => {
+    const { api } = await student('Maya');
+    await api.planner.create({ title: 'Essay', classId: null, dueAt: new Date(2026, 9, 20, 23, 59), notes: '', tasks: [{ title: 'Outline', minutes: 40 }, { title: 'Draft', minutes: 5 }, { title: 'Edit', minutes: 30 }], attachmentPath: null });
+    const [{ tasks }] = await api.planner.list();
+    const [outline, draft, edit] = tasks;
+
+    await api.studyMode.focusOnTask({ taskId: outline.id });
+    let status = await api.studyMode.status();
+    expect(status).toMatchObject({ active: true, reason: 'manual', focusTask: 'Outline', finishedTask: null });
+    expect(status.until).toEqual(new Date(clock.getTime() + 40 * 60_000));
+
+    // Over: it asks once they've answered or not at all.
+    clock = new Date(clock.getTime() + 41 * 60_000);
+    status = await api.studyMode.status();
+    expect(status).toMatchObject({ active: false, focusTask: null, finishedTask: { id: outline.id, title: 'Outline' } });
+    await api.studyMode.clearFocusTask();
+    expect((await api.studyMode.status()).finishedTask).toBeNull();
+
+    // Stopping early asks too.
+    await api.studyMode.focusOnTask({ taskId: draft.id });
+    expect((await api.studyMode.status()).until).toEqual(new Date(clock.getTime() + 5 * 60_000));
+    await api.studyMode.stop();
+    expect((await api.studyMode.status()).finishedTask?.title).toBe('Draft');
+
+    // Checked off during the session, there's nothing to ask.
+    await api.studyMode.focusOnTask({ taskId: edit.id });
+    await api.planner.setDone({ taskId: edit.id, done: true });
+    clock = new Date(clock.getTime() + 31 * 60_000);
+    expect((await api.studyMode.status()).finishedTask).toBeNull();
+
+    // A plain focus session is about no task; a deleted task isn't asked about.
+    await api.studyMode.focusOnTask({ taskId: outline.id });
+    await api.studyMode.start({ minutes: 25 });
+    expect((await api.studyMode.status()).focusTask).toBeNull();
+    await api.studyMode.focusOnTask({ taskId: outline.id });
+    await api.planner.removeTask({ taskId: outline.id });
+    expect((await api.studyMode.status()).focusTask).toBeNull();
+    clock = new Date(clock.getTime() + 41 * 60_000);
+    expect((await api.studyMode.status()).finishedTask).toBeNull();
+
+    // Only your own tasks.
+    const { api: other } = await student('Leo');
+    await expect(other.studyMode.focusOnTask({ taskId: draft.id })).rejects.toThrow();
+  });
+
   it('turns on for class, holds notifications, and uses Do Not Disturb', async () => {
     const { classId, people } = await classmates('Maya', 'Leo');
     const [maya, leo] = people;

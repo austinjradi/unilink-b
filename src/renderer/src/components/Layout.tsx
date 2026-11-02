@@ -10,6 +10,7 @@ import { t, tx } from '../lib/i18n';
 import { useAction, useMe } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
 import { GoatAvatar, GoatSvg } from './Goat';
+import { FocusCheckIn } from './FocusTask';
 import { GlobalSearch } from './GlobalSearch';
 import { NotificationBell } from './NotificationBell';
 
@@ -60,11 +61,16 @@ function StudyModePill() {
       style={{ borderRadius: 999, background: 'var(--mantine-color-teal-light)', color: 'var(--mantine-color-teal-light-color)' }}
     >
       <IconFocus2 size={16} />
-      <UnstyledButton component={Link} to="/study-mode">
-        <Text size="xs" fw={800}>
-          {t('Study mode · until {{time}}', { time: fmtTime(status.data.until!) })}
-        </Text>
-      </UnstyledButton>
+      <Tooltip label={status.data.focusTask ?? t('Study mode')}>
+        <UnstyledButton component={Link} to="/study-mode">
+          <Text size="xs" fw={800} style={{ whiteSpace: 'nowrap' }} visibleFrom="xl">
+            {t('Study mode · until {{time}}', { time: fmtTime(status.data.until!) })}
+          </Text>
+          <Text size="xs" fw={800} style={{ whiteSpace: 'nowrap' }} hiddenFrom="xl">
+            {t('until {{time}}', { time: fmtTime(status.data.until!) })}
+          </Text>
+        </UnstyledButton>
+      </Tooltip>
       <Tooltip label={t('Stop study mode')}>
         <ActionIcon size="xs" variant="subtle" color="teal" onClick={() => stop.mutate()} aria-label={t('Stop study mode')}>
           <IconX size={12} />
@@ -123,6 +129,7 @@ export function Layout({ children }: { children: ReactNode }) {
               </Tooltip>
             )}
             {me.role === 'student' && <StudyModePill />}
+            {me.role === 'student' && <FocusCheckIn />}
             {/* Phones: the tabs don't fit, so they're also in a menu. */}
             <Menu position="bottom-end" width={220}>
               <Menu.Target>

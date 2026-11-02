@@ -499,6 +499,8 @@ export const studyModeSettings = sqliteTable('study_mode_settings', {
   manualUntil: timestamp('manual_until'),
   // Study mode was switched off by hand during an automatic window; stay off until then.
   pausedUntil: timestamp('paused_until'),
+  // The planned task (ST2) a focus session is for, until they say whether they finished it.
+  focusTaskId: integer('focus_task_id').references(() => plannerTasks.id, { onDelete: 'set null' }),
 });
 
 // S4: when each student last opened a class's discussion, for "new since your last visit".
