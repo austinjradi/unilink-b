@@ -359,7 +359,8 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
   // Most assignments are already on the calendar (a class deadline or a graded item), so
   // the form can start from one of them.
   const upcoming = useQuery({ queryKey: ['calendar', 'upcoming', 60], queryFn: () => rpc.calendar.upcoming({ days: 60 }) });
-  const sources = (upcoming.data ?? []).filter((e) => e.detail !== 'planner');
+  // Not the term's key dates (add/drop, withdrawal): there's nothing to plan for those.
+  const sources = (upcoming.data ?? []).filter((e) => e.detail !== 'planner' && e.detail !== 'key');
   // A plan started from a class deadline or graded item keeps following its due date,
   // unless the student picks a different date here.
   const [follows, setFollows] = useState<{ deadlineId: number | null; assessmentId: number | null; due: Date } | null>(null);
