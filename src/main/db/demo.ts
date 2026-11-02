@@ -42,6 +42,7 @@ import {
   plannerTasks,
   postAudience,
   postReactions,
+  postReports,
   posts,
   replies,
   replyReactions,
@@ -123,9 +124,10 @@ export const demoEmail = (name: string) =>
 
 // Bumped when demo content is added; browsers with an older demo get the new part on next load.
 // 2: the classmates and sections in demoContent.ts. 3: their planned assignments follow the
-// section's graded items. 4: a professor teaching COMP 251. 5: their course outline.
+// section's graded items. 4: a professor teaching COMP 251. 5: their course outline. 6: a thread
+// with code in it and a reported post waiting for them, to show those off.
 const SEED_KEY = 'demo_seed';
-const SEED_VERSION = '5';
+const SEED_VERSION = '6';
 const HOUR = 3_600_000;
 
 function hash(password: string) {
@@ -172,6 +174,7 @@ export function seedDemoData(db: DB) {
     .set({ outlineName: 'comp251-outline.txt', outlinePath: OUTLINE_PATH })
     .where(and(eq(classDetails.classId, classId(db, 'COMP', '251', '001')), isNull(classDetails.outlinePath)))
     .run();
+  seedShowcase(db);
   followSeededThreads(db);
   db.insert(appState)
     .values({ key: SEED_KEY, value: SEED_VERSION })
@@ -445,6 +448,53 @@ function seedProfessor(db: DB, passwordHash: string) {
     }
     const solved = tx.select({ accepted: posts.acceptedReplyId }).from(posts).where(and(eq(posts.classId, comp251), like(posts.title, 'Master theorem:%'))).get();
     if (solved?.accepted) tx.update(replies).set({ endorsedAt: now }).where(eq(replies.id, solved.accepted)).run();
+  });
+}
+
+// What a visitor wouldn't otherwise run into: a question with a code block and a link, and one
+// that's been reported, so the professor has something to moderate.
+const SHOWCASE_TITLE = 'Why does my DFS overflow the stack on the big test?';
+const REPORTED_TITLE = 'A2 Q3: can we assume edge weights are distinct?';
+
+function seedShowcase(db: DB) {
+  const comp251 = classId(db, 'COMP', '251', '001');
+  if (db.select({ id: posts.id }).from(posts).where(and(eq(posts.classId, comp251), eq(posts.title, SHOWCASE_TITLE))).get()) return;
+  const email = (address: string) => db.select({ id: users.id }).from(users).where(eq(users.email, address)).get()?.id;
+  const samuel = email(CORE_EMAILS.samuel);
+  const priya = email(CORE_EMAILS.priya);
+  const professor = email(DEMO_PROFESSOR.email);
+  if (!samuel || !priya || !professor) return;
+  const now = new Date();
+  db.transaction((tx) => {
+    tx.insert(posts)
+      .values({
+        classId: comp251,
+        authorId: samuel,
+        kind: 'question',
+        topic: 'Assignments',
+        title: SHOWCASE_TITLE,
+        body: 'It works on the small graphs, then dies on the big one. Is it the recursion? The handout is at https://www.cs.mcgill.ca/~cs251/ if that helps.\n```java\nvoid dfs(int v) {\n  seen[v] = true;\n  for (int w : adj[v])\n    if (!seen[w]) dfs(w);\n}\n```\nShould `dfs` keep its own stack instead?',
+        visibility: 'class',
+        createdAt: new Date(now.getTime() - 2 * HOUR),
+      })
+      .run();
+    const reported = tx.select({ id: posts.id }).from(posts).where(and(eq(posts.classId, comp251), eq(posts.title, REPORTED_TITLE))).get();
+    if (!reported) return;
+    const reason = 'One of the replies gives away the whole proof.';
+    tx.insert(postReports).values({ postId: reported.id, userId: priya, reason }).run();
+    const title = m('A student reported "{{title}}"', { title: REPORTED_TITLE });
+    tx.insert(notifications)
+      .values({
+        userId: professor,
+        type: 'post-reported',
+        title: render('en', title),
+        body: reason,
+        i18n: { title, body: raw(reason) },
+        link: `/classes/${comp251}/discussion?post=${reported.id}`,
+        createdAt: new Date(now.getTime() - HOUR),
+        deliveredAt: new Date(now.getTime() - HOUR),
+      })
+      .run();
   });
 }
 

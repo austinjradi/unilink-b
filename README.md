@@ -44,7 +44,8 @@ The yellow features, with what couldn't be fully built:
 
 Beyond the requirements board, a section can have a professor. Signing up as **Professor** takes a `@mcgill.ca`
 email (students have `@mail.mcgill.ca`), and **Teach** on a section puts their name on it. They can teach several
-sections of a course. The demo has **Daniel Ouellet**, a made-up professor teaching both COMP 251 sections.
+sections of a course. The demo has **Daniel Ouellet**, a made-up professor teaching both COMP 251 sections, with a
+posted assignment, a pinned announcement and a reported thread waiting in COMP 251-001.
 
 | A professor can | Where | How it works |
 | --- | --- | --- |

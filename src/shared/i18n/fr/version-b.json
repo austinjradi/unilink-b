@@ -449,6 +449,7 @@
   "Too many failed attempts. Try again in {{count}} minutes._one": "Trop de tentatives échouées. Réessayez dans {{count}} minute.",
   "Too many failed attempts. Try again in {{count}} minutes._other": "Trop de tentatives échouées. Réessayez dans {{count}} minutes.",
   "Transcript": "Relevé de notes",
+  "Try it: sign in as the professor and post an assignment, then sign out and sign in as a student to see it arrive.": "Essayez : connectez-vous comme professeur et publiez un devoir, puis reconnectez-vous comme étudiant pour le voir arriver.",
   "Turn reply notifications from this class back on": "Réactiver les notifications de réponses de ce cours",
   "Unanswered": "Sans réponse",
   "Unanswered only": "Sans réponse seulement",

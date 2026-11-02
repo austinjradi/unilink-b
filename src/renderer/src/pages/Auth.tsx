@@ -136,6 +136,9 @@ export function SignIn() {
                 <br />
                 {t('Password:')} <Code>{devInfo.data.password}</Code> {t('(every demo account uses it)')}
               </Text>
+              <Text size="xs" mt="xs">
+                {t('Try it: sign in as the professor and post an assignment, then sign out and sign in as a student to see it arrive.')}
+              </Text>
               <Text size="xs" c="dimmed" mt="xs">
                 {t('Everything is saved in this browser only.')}{' '}
                 <Anchor component="button" type="button" size="xs" onClick={confirmReset}>

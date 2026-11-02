@@ -26,7 +26,7 @@ describe('demo data', () => {
     // Nothing was skipped because its author wasn't in the section (3 more come from the first
     // demo, and the professor adds one account, an announcement and a reply).
     expect(rows(db, schema.users)).toBe(CLASSMATES.length + QUIET_CLASSMATES + 4);
-    expect(rows(db, schema.posts)).toBe(sum((s) => s.posts?.length ?? 0) + 4);
+    expect(rows(db, schema.posts)).toBe(sum((s) => s.posts?.length ?? 0) + 5);
     expect(rows(db, schema.replies)).toBe(sum((s) => (s.posts ?? []).reduce((n, p) => n + (p.replies?.length ?? 0), 0)) + 2);
     expect(rows(db, schema.studySessions)).toBe(sum((s) => s.sessions?.length ?? 0) + 2);
     expect(rows(db, schema.chatLinks)).toBe(sum((s) => s.links?.length ?? 0) + 3);
@@ -62,7 +62,26 @@ describe('demo data', () => {
     db.update(schema.appState).set({ value: '2' }).where(eq(schema.appState.key, 'demo_seed')).run();
     seedDemoData(db);
     expect(linked()).toBe(plans);
-    expect(rows(db, schema.posts)).toBe(Object.values(SECTIONS).reduce((n, s) => n + (s.posts?.length ?? 0), 0) + 4);
+    expect(rows(db, schema.posts)).toBe(Object.values(SECTIONS).reduce((n, s) => n + (s.posts?.length ?? 0), 0) + 5);
+  });
+
+  it('shows off moderation and formatting, once, also on an older demo', () => {
+    const db = openDatabase(new SQL.Database());
+    seedDemoData(db);
+    const reports = () => db.select().from(schema.postReports).all();
+    const professor = db.select().from(schema.users).where(eq(schema.users.email, DEMO_PROFESSOR.email)).get()!;
+    expect(reports()).toHaveLength(1);
+    expect(db.select().from(schema.notifications).where(and(eq(schema.notifications.userId, professor.id), eq(schema.notifications.type, 'post-reported'))).all()).toHaveLength(1);
+    expect(db.select().from(schema.posts).all().filter((p) => p.body.includes('```'))).toHaveLength(1);
+
+    // A browser on version 5 gets it; running again adds nothing.
+    db.delete(schema.postReports).run();
+    db.delete(schema.posts).where(eq(schema.posts.title, 'Why does my DFS overflow the stack on the big test?')).run();
+    db.update(schema.appState).set({ value: '5' }).where(eq(schema.appState.key, 'demo_seed')).run();
+    seedDemoData(db);
+    seedDemoData(db);
+    expect(reports()).toHaveLength(1);
+    expect(db.select().from(schema.posts).all().filter((p) => p.body.includes('```'))).toHaveLength(1);
   });
 
   it('adds a professor to COMP 251, also for browsers on an older demo', () => {
