@@ -158,6 +158,8 @@ everything else also works over plain HTTP, e.g. from a phone on the same networ
 **Backups:** with no server, a browser's copy is the only copy. Settings → Privacy downloads everything in the browser
 (the database and attachments) as one file, without anyone's sign-in, and it can be restored there or from the sign-in
 screen on another computer. Restoring replaces what's there, after checking the file (`shared/backup.ts`).
+The site also asks the browser not to clear its data for space (`navigator.storage.persist()`), suggests a backup once a month, and shows a
+warning with a backup button if saving ever fails, for instance in some private windows or with full storage.
 
 **Offline:** since everything a visitor saves is already in their browser, the built site keeps working with no
 connection after one visit, and can be installed like an app (`public/manifest.webmanifest`). The service worker

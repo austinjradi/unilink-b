@@ -1,6 +1,6 @@
-import { type ReactNode, useEffect } from 'react';
-import { ActionIcon, AppShell, Box, Group, Menu, Text, Tooltip, UnstyledButton } from '@mantine/core';
-import { IconChevronDown, IconCloudOff, IconFocus2, IconLogout, IconMenu2, IconSettings, IconUser, IconX } from '@tabler/icons-react';
+import { type ReactNode, useEffect, useState } from 'react';
+import { ActionIcon, Alert, AppShell, Box, Button, Group, Menu, Text, Tooltip, UnstyledButton } from '@mantine/core';
+import { IconAlertTriangle, IconChevronDown, IconCloudOff, IconFocus2, IconLogout, IconMenu2, IconSettings, IconUser, IconX } from '@tabler/icons-react';
 import { useNetwork } from '@mantine/hooks';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from 'react-router';
@@ -44,6 +44,24 @@ export function Logo() {
         UniLink
       </Text>
     </Group>
+  );
+}
+
+// Everything is saved only in this browser. If that stops working, say so while there's still time.
+function SaveProblem() {
+  const [problem, setProblem] = useState(false);
+  useEffect(() => window.unilink.onSaveProblem(setProblem), []);
+  useEffect(() => void window.unilink.keepData(), []);
+  if (!problem) return null;
+  return (
+    <Alert color="red" icon={<IconAlertTriangle size={18} />} mb="md" title={t('This browser isn’t saving your work')}>
+      <Text size="sm" mb="xs">
+        {t('It may be a private window, or its storage may be full. Download a backup before you close this tab, or what you did here will be gone.')}
+      </Text>
+      <Button size="xs" color="red" onClick={() => void window.unilink.downloadBackup()}>
+        {t('Download a backup')}
+      </Button>
+    </Alert>
   );
 }
 
@@ -179,6 +197,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
       <AppShell.Main id="content" tabIndex={-1} style={{ outline: 'none' }}>
         <Box maw={1400} mx="auto">
+          <SaveProblem />
           {children}
         </Box>
       </AppShell.Main>

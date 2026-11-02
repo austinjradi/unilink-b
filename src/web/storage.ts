@@ -38,6 +38,19 @@ async function request<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore)
   });
 }
 
+// Whether anything saved here outlasts this tab.
+export const available = async () => (await open()) != null;
+
+// Asks the browser not to clear this site's data to free up space. It's only a request; some
+// browsers grant it silently, and some ask the person.
+export async function askToKeep() {
+  try {
+    if (navigator.storage?.persist && !(await navigator.storage.persisted())) await navigator.storage.persist();
+  } catch {
+    // Nothing more to do: this is what the backup reminder is for.
+  }
+}
+
 export async function load<T>(key: string): Promise<T | undefined> {
   if (memory.has(key)) return memory.get(key) as T;
   return ((await request('readonly', (s) => s.get(key))) ?? undefined) as T | undefined;

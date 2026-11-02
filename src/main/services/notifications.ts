@@ -6,6 +6,7 @@ import { finalExamFor, KEY_DATES } from '@shared/keyDates';
 import { channelsFor, NOTIFICATION_TYPES, type NotificationType } from '@shared/notifications';
 import type { DB } from '../db/client';
 import {
+  appState,
   classes,
   courses,
   enrollments,
@@ -178,6 +179,31 @@ function keyDateReminders(ctx: AuthedContext, locale: Locale) {
   }
 }
 
+// Everything is saved only in this browser, so a backup is the only copy anyone has. A month after
+// the first visit or the last backup, once a month.
+const FIRST_SEEN_KEY = 'first_seen';
+export const LAST_BACKUP_KEY = 'last_backup';
+const BACKUP_EVERY = 30 * 86_400_000;
+
+function backupReminder(ctx: AuthedContext) {
+  const { db, userId } = ctx;
+  const state = (key: string) => db.select({ value: appState.value }).from(appState).where(eq(appState.key, key)).get()?.value;
+  const now = ctx.now();
+  const since = state(LAST_BACKUP_KEY) ?? state(FIRST_SEEN_KEY);
+  if (!since) {
+    db.insert(appState).values({ key: FIRST_SEEN_KEY, value: String(now.getTime()) }).run();
+    return;
+  }
+  if (now.getTime() - Number(since) < BACKUP_EVERY) return;
+  notify(db, userId, {
+    type: 'backup',
+    title: m('Time to back up your UniLink work'),
+    body: m('It’s saved only in this browser, so clearing its data would erase it. A backup takes a few seconds.'),
+    link: '/settings/privacy',
+    dedupeKey: `backup:${ymd(now).slice(0, 7)}`,
+  });
+}
+
 // Time-based reminders for the signed-in user; run every tick by the main process.
 export function sweepReminders(ctx: AuthedContext) {
   const { db, userId } = ctx;
@@ -227,6 +253,7 @@ export function sweepReminders(ctx: AuthedContext) {
   const locale = recipient(db, userId)?.locale ?? 'en';
   if (!teaching) weekAhead(ctx, locale);
   if (!teaching) keyDateReminders(ctx, locale);
+  backupReminder(ctx);
   for (const d of teaching ? [] : visibleDeadlines(db, userId, in24h, in3Days)) {
     if (d.kind !== 'exam' || d.done) continue;
     headsUp(raw(d.title), d.dueAt, raw(classLabel(db, d.classId) ?? ''), d.classId ? `/classes/${d.classId}` : '/calendar', `deadline:${d.id}`);

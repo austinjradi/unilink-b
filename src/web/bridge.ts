@@ -9,6 +9,7 @@ import { backgroundTick, initialTickState } from '../main/services/studyMode';
 import { FILES_DIR, addPickedFile, download } from './node/fs';
 import { onNavigate, platform } from './platform';
 import * as storage from './storage';
+import { LAST_BACKUP_KEY } from '../main/services/notifications';
 
 // What the desktop app's Electron main process and preload do, done inside the page:
 // the same services and router run here against SQLite in WebAssembly, and
@@ -32,6 +33,14 @@ function use(next: Database, ctx?: Context) {
   return db;
 }
 
+// Told when saving stops working, and when it works again, so nobody keeps working on what won't last.
+let saveProblem = false;
+const saveListeners = new Set<(problem: boolean) => void>();
+function setSaveProblem(problem: boolean) {
+  saveProblem = problem;
+  for (const listener of saveListeners) listener(problem);
+}
+
 // Saves the whole database file whenever something in it changed.
 let saving = Promise.resolve();
 function persist() {
@@ -43,8 +52,14 @@ function persist() {
   sqlite.run('PRAGMA foreign_keys = ON');
   channel?.postMessage({ type: 'saved', bytes });
   saving = saving
-    .then(() => storage.save(DB_KEY, bytes))
-    .catch((err) => console.error('[storage] could not save the database:', err));
+    .then(async () => {
+      await storage.save(DB_KEY, bytes);
+      setSaveProblem(!(await storage.available()));
+    })
+    .catch((err) => {
+      console.error('[storage] could not save the database:', err);
+      setSaveProblem(true);
+    });
 }
 
 async function start(): Promise<Context> {
@@ -53,6 +68,7 @@ async function start(): Promise<Context> {
     storage.load<Uint8Array>(DB_KEY).catch(() => undefined),
   ]);
   SQL = sqlJs;
+  setSaveProblem(!(await storage.available()));
   const db = use(new SQL.Database(saved));
   // Like a desktop dev build: demo classmates to interact with, and reset codes shown on screen.
   seedDemoData(db);
@@ -99,8 +115,16 @@ window.unilink = {
   onNavigate,
   // A file the page already has (a pasted screenshot), usable like one from chooseFile.
   addFile: addPickedFile,
+  onSaveProblem(listener) {
+    saveListeners.add(listener);
+    listener(saveProblem);
+    return () => saveListeners.delete(listener);
+  },
+  keepData: () => storage.askToKeep(),
   async downloadBackup() {
     await ready;
+    sqlite.run('INSERT OR REPLACE INTO app_state (key, value) VALUES (?, ?)', [LAST_BACKUP_KEY, String(Date.now())]);
+    persist();
     await saving;
     // Without anyone's sign-in: whoever restores it signs in again with their password.
     const copy = new SQL.Database(sqlite.export());

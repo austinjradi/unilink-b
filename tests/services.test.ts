@@ -6,7 +6,8 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type DB } from '../src/main/db/client';
 import { type Context, dispatch, type RpcClient } from '../src/main/rpc/core';
 import { type AppRouter, appRouter } from '../src/main/rpc/router';
-import { sweepReminders } from '../src/main/services/notifications';
+import { appState } from '../src/main/db/schema';
+import { LAST_BACKUP_KEY, sweepReminders } from '../src/main/services/notifications';
 import { backgroundTick, initialTickState } from '../src/main/services/studyMode';
 
 const PASSWORD = 'correct horse battery';
@@ -101,7 +102,7 @@ const session = (fields: Partial<Parameters<RpcClient<AppRouter>['studySessions'
 
 const problems = (minutes: number) => ['Problem 1', 'Problem 2', 'Problem 3'].map((title) => ({ title, minutes }));
 
-const titles = async (s: { api: RpcClient<AppRouter> }) => (await s.api.notifications.list()).items.filter((n) => n.type !== 'week-ahead' && n.type !== 'key-date').map((n) => n.title);
+const titles = async (s: { api: RpcClient<AppRouter> }) => (await s.api.notifications.list()).items.filter((n) => n.type !== 'week-ahead' && n.type !== 'key-date' && n.type !== 'backup').map((n) => n.title);
 
 const expectCode = (promise: Promise<unknown>, code: string) => expect(promise).rejects.toMatchObject({ code });
 
@@ -1817,6 +1818,33 @@ describe('G3 notifications', () => {
     expect((await week())[0].body).toMatch(/\+2 more$/);
   });
 
+  it('suggests a backup a month after the first visit, and a month after the last backup', async () => {
+    const { api, ctx, user } = await student('Maya');
+    const authed = { ...ctx, userId: user.id };
+    const reminders = async () => (await api.notifications.list()).items.filter((n) => n.type === 'backup');
+    // Clock: 5 October.
+    sweepReminders(authed);
+    clock = new Date(2026, 10, 3, 9); // 29 days later
+    sweepReminders(authed);
+    expect(await reminders()).toEqual([]);
+    clock = new Date(2026, 10, 5, 9);
+    sweepReminders(authed);
+    sweepReminders(authed);
+    expect(await reminders()).toHaveLength(1);
+    expect((await reminders())[0].link).toBe('/settings/privacy');
+
+    // Once a month, not on every tick; a backup puts it off for another month.
+    clock = new Date(2026, 11, 2, 9);
+    ctx.db.insert(appState).values({ key: LAST_BACKUP_KEY, value: String(clock.getTime()) }).run();
+    sweepReminders(authed);
+    clock = new Date(2026, 11, 20, 9);
+    sweepReminders(authed);
+    expect(await reminders()).toHaveLength(1);
+    clock = new Date(2027, 0, 2, 9);
+    sweepReminders(authed);
+    expect(await reminders()).toHaveLength(2);
+  });
+
   it('reminds about add/drop and withdrawal deadlines a week ahead and the day before, once each', async () => {
     const { people } = await classmates('Maya');
     const [maya] = people;
@@ -1892,7 +1920,7 @@ describe('G3 notifications', () => {
     await prof.classes.join({ classId });
     await prof.calendar.addDeadline({ classId, kind: 'exam', title: 'Quiz day', dueAt: new Date(2026, 11, 14, 9), notes: '' });
     sweepReminders({ ...ctx, userId: user.id });
-    expect((await prof.notifications.list()).items).toEqual([]);
+    expect((await prof.notifications.list()).items.filter((n) => n.type !== 'backup')).toEqual([]);
   });
 });
 
