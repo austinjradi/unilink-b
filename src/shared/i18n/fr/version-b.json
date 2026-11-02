@@ -277,7 +277,7 @@
   "Project team": "Équipe de projet",
   "Projected term GPA:": "MPC projetée du trimestre :",
   "Pronouns": "Pronoms",
-  "Put code between `backticks`.": "Mettez le code entre `accents graves`.",
+  "Put code between `backticks`, or between lines of ``` for a block.": "Mettez le code entre `accents graves`, ou entre des lignes de ``` pour un bloc.",
   "Question": "Question",
   "Questions": "Questions",
   "Recovery code": "Code de récupération",

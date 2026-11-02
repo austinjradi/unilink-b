@@ -50,6 +50,7 @@ import {
 } from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router';
+import { parsePost } from '@shared/postText';
 import { fromNow } from '../lib/format';
 import { t, tx } from '../lib/i18n';
 import { useAction, useMe } from '../lib/hooks';
@@ -108,12 +109,24 @@ function ReactionBar({
   );
 }
 
-// Posts are plain text; `backticks` mark inline code, as on Ed.
+// Posts are plain text with code and links, as on Ed (shared/postText.ts).
 function Body({ text }: { text: string }) {
   return (
     <>
-      {text.split(/(`[^`\n]+`)/g).map((part, i) =>
-        part.length > 2 && part.startsWith('`') && part.endsWith('`') ? <Code key={i}>{part.slice(1, -1)}</Code> : part,
+      {parsePost(text).map((part, i) =>
+        part.kind === 'code' ? (
+          <Code key={i}>{part.text}</Code>
+        ) : part.kind === 'block' ? (
+          <Code key={i} block my={6}>
+            {part.text}
+          </Code>
+        ) : part.kind === 'link' ? (
+          <Anchor key={i} href={part.text} target="_blank" rel="noopener noreferrer" inherit style={{ wordBreak: 'break-all' }} onClick={(e) => e.stopPropagation()}>
+            {part.text}
+          </Anchor>
+        ) : (
+          part.text
+        ),
       )}
     </>
   );
@@ -254,7 +267,7 @@ function PostCard({ post, onOpen }: { post: FeedPost; onOpen: () => void }) {
             </Text>
           </UnstyledButton>
           {!post.deletedAt && (
-            <Text size="sm" mt={4} lineClamp={4} style={{ whiteSpace: 'pre-wrap' }}>
+            <Text component="div" size="sm" mt={4} lineClamp={4} style={{ whiteSpace: 'pre-wrap' }}>
               <Body text={post.body} />
             </Text>
           )}
@@ -596,7 +609,7 @@ function ReplyItem({ reply, postId, canAccept, canModerate }: { reply: Reply; po
               </Group>
             </Stack>
           ) : (
-            <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
+            <Text component="div" size="sm" style={{ whiteSpace: 'pre-wrap' }}>
               <Body text={reply.body} />
             </Text>
           )}
@@ -752,7 +765,7 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
               </Text>
             </Group>
           )}
-          <Text mt="xs" style={{ whiteSpace: 'pre-wrap' }}>
+          <Text component="div" mt="xs" style={{ whiteSpace: 'pre-wrap' }}>
             <Body text={p.body} />
           </Text>
           <Group mt="sm" justify="space-between">
@@ -908,7 +921,7 @@ function PostForm({
             </Stack>
           </Card>
         )}
-        <Textarea label={t('Post')} description={t('Put code between `backticks`.')} autosize minRows={5} {...form.getInputProps('body')} />
+        <Textarea label={t('Post')} description={t('Put code between `backticks`, or between lines of ``` for a block.')} autosize minRows={5} {...form.getInputProps('body')} />
         {!existing && (
           <>
             <SegmentedControl

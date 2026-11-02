@@ -12,6 +12,7 @@ import { type FocusWindow, studyModeStatus } from '@shared/studyMode';
 import { parseSyllabus } from '@shared/syllabus';
 import { findParts, minutesForParts } from '@shared/assignment';
 import { clashes, groupMeetings } from '@shared/meetings';
+import { parsePost } from '@shared/postText';
 import { keywords, similarity } from '@shared/similar';
 import { parseTranscript } from '@shared/transcript';
 
@@ -471,5 +472,31 @@ describe('similar posts (S4)', () => {
     expect(similarity(q, 'Midterm room?', 'Which room is the midterm in?')).toBe(0);
     // A single shared word isn't enough.
     expect(similarity(query('midterm room'), 'Midterm grades out?', '')).toBe(0);
+  });
+});
+
+describe('post formatting (S4)', () => {
+  it('finds inline code and links, leaving a sentence\'s punctuation out of them', () => {
+    expect(parsePost('Use `lw $t0` first, see https://mcgill.ca/x?y=1. Thanks!')).toEqual([
+      { kind: 'text', text: 'Use ' },
+      { kind: 'code', text: 'lw $t0' },
+      { kind: 'text', text: ' first, see ' },
+      { kind: 'link', text: 'https://mcgill.ca/x?y=1' },
+      { kind: 'text', text: '. Thanks!' },
+    ]);
+  });
+
+  it('keeps fenced blocks whole, with nothing inside them formatted', () => {
+    expect(parsePost('My loop:\n```python\nfor i in `xs`:\n  print("https://a.b")\n```\nWhy?')).toEqual([
+      { kind: 'text', text: 'My loop:' },
+      { kind: 'block', text: 'for i in `xs`:\n  print("https://a.b")' },
+      { kind: 'text', text: 'Why?' },
+    ]);
+  });
+
+  it('shows what it can\'t read as typed, and only links http(s)', () => {
+    expect(parsePost('```\nnever closed')).toEqual([{ kind: 'text', text: '```\nnever closed' }]);
+    expect(parsePost('javascript:alert(1) and ftp://a.b')).toEqual([{ kind: 'text', text: 'javascript:alert(1) and ftp://a.b' }]);
+    expect(parsePost('')).toEqual([]);
   });
 });
