@@ -452,11 +452,18 @@ export const notificationsRouter = {
 
   prefs: procedure(z.void(), (_input, ctx) => {
     const prefs = ctx.db.select({ prefs: users.notificationPrefs }).from(users).where(eq(users.id, ctx.userId)).get()?.prefs;
-    return (Object.keys(NOTIFICATION_TYPES) as NotificationType[]).map((type) => ({
-      type,
-      label: NOTIFICATION_TYPES[type].label,
-      ...channelsFor(prefs, type),
-    }));
+    const role = isProfessor(ctx.db, ctx.userId) ? 'professor' : 'student';
+    return (Object.keys(NOTIFICATION_TYPES) as NotificationType[])
+      .filter((type) => {
+        const only = (NOTIFICATION_TYPES[type] as { only?: string }).only;
+        return !only || only === role;
+      })
+      .map((type) => ({
+        type,
+        label: NOTIFICATION_TYPES[type].label,
+        group: NOTIFICATION_TYPES[type].group,
+        ...channelsFor(prefs, type),
+      }));
   }),
 
   setPref: procedure(

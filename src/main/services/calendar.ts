@@ -489,6 +489,11 @@ export const calendarRouter = {
     return { path: target, count: events.length };
   }),
 
+  // What else the student has on at a time they're picking.
+  busyAt: procedure(z.object({ start: z.date(), end: z.date(), exceptSessionId: idSchema.nullable() }), ({ start, end, exceptSessionId }, ctx) => ({
+    what: busyChecker(ctx.db, ctx.userId)(start, end, exceptSessionId ?? undefined),
+  })),
+
   // A3: the text of a syllabus file, to find its dates in. null if nothing was picked.
   readSyllabusFile: procedure(z.void(), async (_input, ctx) => {
     const path = await ctx.platform.chooseFile({ title: 'Choose your syllabus', filters: [{ name: 'Syllabus', extensions: ['pdf', 'docx', 'txt', 'md'] }] });

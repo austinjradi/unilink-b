@@ -434,6 +434,13 @@ export function SessionForm({
       endsAt: (v, values) => (toDate(v) && toDate(values.startsAt) && toDate(v)! > toDate(values.startsAt)! ? null : t('Must end after it starts')),
     },
   });
+  const start = toDate(form.values.startsAt);
+  const end = toDate(form.values.endsAt);
+  const busy = useQuery({
+    queryKey: ['calendar', 'busyAt', start?.getTime(), end?.getTime(), existing?.id],
+    queryFn: () => rpc.calendar.busyAt({ start: start!, end: end!, exceptSessionId: existing?.id ?? null }),
+    enabled: !!start && !!end && start < end,
+  });
   const save = useAction(
     async (v: typeof form.values) => {
       const fields = {
@@ -500,6 +507,11 @@ export function SessionForm({
           <DateTimePicker label={t('Starts')} valueFormat="ddd D MMM, HH:mm" minDate={new Date()} {...form.getInputProps('startsAt')} />
           <DateTimePicker label={t('Ends')} valueFormat="ddd D MMM, HH:mm" minDate={new Date()} {...form.getInputProps('endsAt')} />
         </Group>
+        {busy.data?.what && (
+          <Text size="xs" fw={700} c="orange" mt={-8}>
+            {t('You have {{what}} then', { what: busy.data.what })}
+          </Text>
+        )}
         {!existing && !fromPoll && (
           <Select
             label={t('Repeats')}

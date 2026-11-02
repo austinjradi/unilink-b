@@ -721,6 +721,26 @@ describe('A4 several marks in one component', () => {
   });
 });
 
+describe('G3 notification settings', () => {
+  it('offers each role only what it could ever get', async () => {
+    const { people, classId } = await classmates('Maya');
+    const types = async (api: RpcClient<AppRouter>) => (await api.notifications.prefs()).map((p) => p.type);
+    const student = await types(people[0].api);
+    expect(student).toContain('deadline-soon');
+    expect(student).toContain('reply');
+    expect(student).not.toContain('post-reported');
+
+    const ctx = newContext();
+    const prof = clientFor(ctx);
+    await prof.auth.signUp({ name: 'Ouellet', email: 'ouellet@mcgill.ca', password: PASSWORD, pronouns: '', faculty: 'Science', gradYear: null, role: 'professor' });
+    await prof.classes.join({ classId });
+    const teacher = await types(prof);
+    expect(teacher).toContain('post-reported');
+    expect(teacher).toContain('reply');
+    for (const hidden of ['deadline-soon', 'week-ahead', 'announcement', 'tasks-today', 'study-mode']) expect(teacher).not.toContain(hidden);
+  });
+});
+
 describe('S3 sessions that clash', () => {
   it('warns about your classes and other sessions at that time, except on breaks', async () => {
     const { classId, people } = await classmates('Maya', 'Leo');
@@ -744,6 +764,13 @@ describe('S3 sessions that clash', () => {
     await leo.api.timePolls.create({ classId, title: 'Review', minutes: 60, times: [new Date(2026, 9, 5, 11), new Date(2026, 9, 6, 11)] });
     const [poll] = await maya.api.timePolls.list({ classId });
     expect(poll.options.map((o) => o.clash)).toEqual(['COMP 251-001', null]);
+
+    // And while picking a time for a session of your own, which doesn't clash with itself.
+    const busyAt = (day: number, start: number, end: number, exceptSessionId: number | null = null) => maya.api.calendar.busyAt({ start: new Date(2026, 9, day, start), end: new Date(2026, 9, day, end), exceptSessionId });
+    expect((await busyAt(5, 11, 12)).what).toBe('COMP 251-001');
+    expect((await busyAt(6, 11, 12)).what).toBeNull();
+    expect((await busyAt(5, 13, 14)).what).toBe('Right after');
+    expect((await busyAt(5, 13, 14, after.id)).what).toBeNull();
   });
 });
 

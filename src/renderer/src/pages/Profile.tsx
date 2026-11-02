@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import {
   Alert,
   Autocomplete,
@@ -26,7 +26,7 @@ import { restoreBackup } from '../lib/backup';
 import { clearDrafts } from '../lib/drafts';
 import { useAction, useMe } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
-import { t } from '../lib/i18n';
+import { t, tx } from '../lib/i18n';
 
 // G4 account settings and G3 notification settings, shown as Settings tabs.
 
@@ -66,6 +66,14 @@ export function PrivacyPanel() {
   );
 }
 
+const NOTIFICATION_GROUPS = {
+  sessions: tx('Study Sessions'),
+  discussion: tx('Discussion and group chats'),
+  plans: tx('Plans and deadlines'),
+  professor: tx('From your professor'),
+  account: tx('Account'),
+};
+
 // G3: which notifications show on the desktop and go by email (in-app is always on).
 export function NotificationSettings() {
   const prefs = useQuery({ queryKey: ['notifications', 'prefs'], queryFn: () => rpc.notifications.prefs() });
@@ -98,8 +106,18 @@ export function NotificationSettings() {
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {prefs.data?.map((p) => (
-            <Table.Tr key={p.type}>
+          {prefs.data?.map((p, i, all) => (
+            <Fragment key={p.type}>
+            {p.group !== all[i - 1]?.group && (
+              <Table.Tr>
+                <Table.Td colSpan={3} pt="md">
+                  <Text size="xs" fw={800} c="dimmed" tt="uppercase">
+                    {t(NOTIFICATION_GROUPS[p.group])}
+                  </Text>
+                </Table.Td>
+              </Table.Tr>
+            )}
+            <Table.Tr>
               <Table.Td>
                 <Text size="sm">{t(p.label)}</Text>
               </Table.Td>
@@ -122,6 +140,7 @@ export function NotificationSettings() {
                 </Center>
               </Table.Td>
             </Table.Tr>
+            </Fragment>
           ))}
         </Table.Tbody>
       </Table>
