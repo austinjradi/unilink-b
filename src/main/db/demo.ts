@@ -1,4 +1,4 @@
-import { and, count, eq, inArray, isNull, like, lt, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNull, like, lt, sql } from 'drizzle-orm';
 import { addDays, atTime, CURRENT_TERM, TERMS, ymd } from '@shared/dates';
 import { GOAT_OPTIONS, type GoatConfig, type GoatPart } from '@shared/goat';
 import { type Message, render } from '@shared/i18n';
@@ -127,7 +127,7 @@ export const demoEmail = (name: string) =>
 // section's graded items. 4: a professor teaching COMP 251. 5: their course outline. 6: a thread
 // with code in it and a reported post waiting for them, to show those off.
 const SEED_KEY = 'demo_seed';
-const SEED_VERSION = '6';
+const SEED_VERSION = '7';
 const HOUR = 3_600_000;
 
 function hash(password: string) {
@@ -163,9 +163,11 @@ export function seedDemoData(db: DB) {
   const passwordHash = hash(DEMO_PASSWORD);
   if (marker === '2') {
     linkSeededPlans(db);
-  } else if (marker !== '3') {
+  } else if (marker === '5' || marker === '6') {
+    removeRepeatedSeed(db);
+  } else if (!marker) {
     // Databases from before the marker already have the first three classmates.
-    const fresh = !marker && (db.select({ n: count() }).from(users).get()?.n ?? 0) === 0;
+    const fresh = (db.select({ n: count() }).from(users).get()?.n ?? 0) === 0;
     if (fresh) seedFirstClassmates(db, passwordHash);
     seedSections(db, passwordHash);
   }
@@ -180,6 +182,65 @@ export function seedDemoData(db: DB) {
     .values({ key: SEED_KEY, value: SEED_VERSION })
     .onConflictDoUpdate({ target: appState.key, set: { value: SEED_VERSION } })
     .run();
+}
+
+// Versions 5 and 6 reran seedSections on browsers that already had it, repeating every section's
+// posts, sessions and deadlines. Only exact copies of seeded content go, and the first of each
+// stays. A copy someone replied to stays too, so nobody's own words disappear.
+function removeRepeatedSeed(db: DB) {
+  const seeds = Object.values(SECTIONS);
+  const repeats = <T>(rows: T[], key: (row: T) => unknown[]) => {
+    const seen = new Set<string>();
+    return rows.filter((row) => {
+      const k = JSON.stringify(key(row));
+      return seen.has(k) || !seen.add(k);
+    });
+  };
+  db.transaction((tx) => {
+    const seededReplies = new Set(seeds.flatMap((s) => (s.posts ?? []).flatMap((p) => (p.replies ?? []).map(([, body]) => body))));
+    const repliedTo = new Set(
+      tx
+        .select({ postId: replies.postId, body: replies.body })
+        .from(replies)
+        .all()
+        .filter((r) => !seededReplies.has(r.body))
+        .map((r) => r.postId),
+    );
+    const repeatedPosts = repeats(
+      tx
+        .select()
+        .from(posts)
+        .where(inArray(posts.title, seeds.flatMap((s) => (s.posts ?? []).map((p) => p.title))))
+        .orderBy(asc(posts.id))
+        .all(),
+      (p) => [p.classId, p.authorId, p.title, p.body],
+    ).filter((p) => !repliedTo.has(p.id));
+    tx.delete(notifications).where(inArray(notifications.link, repeatedPosts.map((p) => `/classes/${p.classId}/discussion?post=${p.id}`))).run();
+    tx.delete(posts).where(inArray(posts.id, repeatedPosts.map((p) => p.id))).run();
+
+    const repeatedSessions = repeats(
+      tx
+        .select()
+        .from(studySessions)
+        .where(inArray(studySessions.title, seeds.flatMap((s) => (s.sessions ?? []).map((v) => v.title))))
+        .orderBy(asc(studySessions.id))
+        .all()
+        .filter((s) => s.seriesId == null),
+      (s) => [s.classId, s.hostId, s.title, s.description],
+    );
+    tx.delete(studySessions).where(inArray(studySessions.id, repeatedSessions.map((s) => s.id))).run();
+
+    const repeatedDeadlines = repeats(
+      tx
+        .select()
+        .from(deadlines)
+        .where(inArray(deadlines.title, seeds.flatMap((s) => (s.deadlines ?? []).map((d) => d.title))))
+        .orderBy(asc(deadlines.id))
+        .all(),
+      (d) => [d.classId, d.userId, d.title],
+    );
+    tx.delete(deadlines).where(inArray(deadlines.id, repeatedDeadlines.map((d) => d.id))).run();
+  });
 }
 
 function seedFirstClassmates(db: DB, passwordHash: string) {

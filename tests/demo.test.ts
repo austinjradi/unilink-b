@@ -84,6 +84,78 @@ describe('demo data', () => {
     expect(db.select().from(schema.posts).all().filter((p) => p.body.includes('```'))).toHaveLength(1);
   });
 
+  it('never reruns the section seeding on a browser that already has it', () => {
+    const db = openDatabase(new SQL.Database());
+    seedDemoData(db);
+    const before = [schema.posts, schema.studySessions, schema.deadlines, schema.notifications].map((t) => rows(db, t));
+    for (const version of ['3', '4', '5', '6']) {
+      db.update(schema.appState).set({ value: version }).where(eq(schema.appState.key, 'demo_seed')).run();
+      seedDemoData(db);
+      expect([schema.posts, schema.studySessions, schema.deadlines, schema.notifications].map((t) => rows(db, t))).toEqual(before);
+    }
+  });
+
+  it('removes what the earlier reruns repeated, keeping anything someone added', () => {
+    const db = openDatabase(new SQL.Database());
+    seedDemoData(db);
+    const tables = [schema.posts, schema.replies, schema.studySessions, schema.deadlines, schema.notifications];
+    const before = tables.map((t) => rows(db, t));
+    const alex = db.select().from(schema.users).where(eq(schema.users.email, 'alex.tremblay@mail.mcgill.ca')).get()!;
+
+    // What a rerun left behind: a second copy of each seeded post, with its replies and notification.
+    const seededPost = new Set(Object.values(SECTIONS).flatMap((s) => (s.posts ?? []).map((p) => p.title)));
+    const originals = db.select().from(schema.posts).all().filter((p) => seededPost.has(p.title));
+    let copyReplies = 0;
+    let copyNotices = 0;
+    const copies = originals.map((p) => {
+      const { id, ...post } = p;
+      const copy = db.insert(schema.posts).values({ ...post, acceptedReplyId: null }).returning().get();
+      for (const r of db.select().from(schema.replies).where(eq(schema.replies.postId, id)).all()) {
+        const { id: _reply, ...reply } = r;
+        db.insert(schema.replies).values({ ...reply, postId: copy.id }).run();
+        copyReplies++;
+      }
+      for (const n of db.select().from(schema.notifications).where(eq(schema.notifications.link, `/classes/${p.classId}/discussion?post=${id}`)).all()) {
+        const { id: _notice, ...notice } = n;
+        db.insert(schema.notifications).values({ ...notice, link: `/classes/${p.classId}/discussion?post=${copy.id}` }).run();
+        copyNotices++;
+      }
+      return copy;
+    });
+    for (const s of db.select().from(schema.studySessions).all()) {
+      const { id: _session, ...session } = s;
+      if (Object.values(SECTIONS).some((v) => v.sessions?.some((x) => x.title === s.title))) db.insert(schema.studySessions).values(session).run();
+    }
+    const seededDeadline = new Set(Object.values(SECTIONS).flatMap((s) => (s.deadlines ?? []).map((d) => d.title)));
+    for (const d of db.select().from(schema.deadlines).all()) {
+      const { id: _deadline, ...deadline } = d;
+      if (seededDeadline.has(d.title)) db.insert(schema.deadlines).values(deadline).run();
+    }
+    expect(copyReplies).toBeGreaterThan(0);
+    expect(copyNotices).toBeGreaterThan(0);
+
+    // Someone answered one copy, and wrote their own post that happens to share a seeded title.
+    const kept = copies[0];
+    db.insert(schema.replies).values({ postId: kept.id, authorId: alex.id, body: 'My own answer, on the copy' }).run();
+    const own = db.insert(schema.posts).values({ ...originals[1], id: undefined, authorId: alex.id === originals[1].authorId ? originals[0].authorId : alex.id, body: 'Mine, not a copy' }).returning().get();
+
+    db.update(schema.appState).set({ value: '6' }).where(eq(schema.appState.key, 'demo_seed')).run();
+    seedDemoData(db);
+    seedDemoData(db);
+
+    const keptReplies = db.select({ n: count() }).from(schema.replies).where(eq(schema.replies.postId, kept.id)).get()!.n;
+    const keptNotices = db.select({ n: count() }).from(schema.notifications).where(eq(schema.notifications.link, `/classes/${kept.classId}/discussion?post=${kept.id}`)).get()!.n;
+    const [posts, replies, sessions, deadlines, notices] = tables.map((t) => rows(db, t));
+    expect(posts).toBe(before[0] + 2);
+    expect(replies).toBe(before[1] + keptReplies);
+    expect(sessions).toBe(before[2]);
+    expect(deadlines).toBe(before[3]);
+    expect(notices).toBe(before[4] + keptNotices);
+    expect(db.select().from(schema.posts).where(eq(schema.posts.id, own.id)).get()).toBeTruthy();
+    expect(db.select().from(schema.posts).where(eq(schema.posts.id, originals[0].id)).get()).toBeTruthy();
+    expect(db.select().from(schema.posts).where(eq(schema.posts.id, kept.id)).get()).toBeTruthy();
+  });
+
   it('adds a professor to COMP 251, also for browsers on an older demo', () => {
     const db = openDatabase(new SQL.Database());
     seedDemoData(db);
