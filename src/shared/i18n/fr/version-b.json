@@ -93,6 +93,7 @@
   "Course details saved for the whole section": "Détails du cours enregistrés pour toute la section",
   "Cybertheque Room 2": "Cyberthèque, salle 2",
   "Dates from a syllabus": "Dates d’un plan de cours",
+  "Deadlines in the next 24 hours, and exams 3 days ahead": "Échéances dans les prochaines 24 heures, et examens 3 jours à l’avance",
   "Deadlines you add to a class are shared with everyone in that section; ones with no class stay private. Graded work from each course's Grades tab and planner due dates show on the calendar automatically.": "Les échéances ajoutées à un cours sont partagées avec toute la section; celles sans cours restent privées. Les évaluations de l’onglet Notes de chaque cours et les dates du planificateur paraissent automatiquement dans le calendrier.",
   "Deleted post": "Publication supprimée",
   "Demo: sign in as a classmate or professor": "Démo : connectez-vous comme camarade ou professeur",
@@ -525,5 +526,7 @@
   "{{name}} removed your post \"{{title}}\"": "{{name}} a retiré votre publication « {{title}} »",
   "{{name}} removed your reply in \"{{title}}\"": "{{name}} a retiré votre réponse dans « {{title}} »",
   "{{name}} replied in \"{{title}}\"": "{{name}} a répondu dans « {{title}} »",
-  "{{name}} sets the grading scheme for this section. Your grades are private.": "{{name}} établit le barème de cette section. Vos notes restent privées."
+  "{{name}} sets the grading scheme for this section. Your grades are private.": "{{name}} établit le barème de cette section. Vos notes restent privées.",
+  "{{title}} is in {{count}} days_one": "{{title}} a lieu dans {{count}} jour",
+  "{{title}} is in {{count}} days_other": "{{title}} a lieu dans {{count}} jours"
 }

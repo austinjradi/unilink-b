@@ -1347,6 +1347,45 @@ describe('G3 notifications', () => {
     sweepReminders({ ...ctx, userId: user.id });
     expect(await titles({ api })).toEqual(['"COMP 251 final exam" starts tomorrow at 14:00']);
   });
+
+  it('gives exams a heads-up three days ahead, once, and never to whoever teaches them', async () => {
+    const { classId, people } = await classmates('Maya');
+    const [maya] = people;
+    const authed = { ...maya.ctx, userId: maya.user.id };
+    // Clock: Monday 5 October, 9:00. Too far off, then within three days, then the day before.
+    await maya.api.calendar.addDeadline({ classId: null, kind: 'exam', title: 'Physics test', dueAt: new Date(2026, 9, 8, 8), notes: '' });
+    await maya.api.calendar.addDeadline({ classId: null, kind: 'assignment', title: 'Essay', dueAt: new Date(2026, 9, 8, 8), notes: '' });
+    await maya.api.courses.addAssessment({ classId, name: 'Midterm', weight: 30, dueAt: new Date(2026, 9, 7, 18) });
+    await maya.api.courses.addAssessment({ classId, name: 'Lab report', weight: 10, dueAt: new Date(2026, 9, 7, 18) });
+    await maya.api.courses.addAssessment({ classId, name: 'Final', weight: 60, dueAt: new Date(2026, 10, 7, 18) });
+    sweepReminders(authed);
+    sweepReminders(authed);
+    expect(await titles(maya)).toEqual(['Midterm is in 2 days', 'Physics test is in 3 days']);
+
+    // A mark on it means it's over; a checked-off exam is too.
+    const [physics] = await maya.api.calendar.deadlines();
+    await maya.api.calendar.setDeadlineDone({ id: physics.id, done: true });
+    clock = new Date(2026, 9, 5, 10);
+    sweepReminders(authed);
+    expect(await titles(maya)).toHaveLength(2);
+
+    // The schedule's final exam too, then its day-before reminder as well.
+    clock = new Date(2026, 11, 11, 15); // COMP 251's final is Monday 14 December at 14:00
+    sweepReminders(authed);
+    expect((await titles(maya))[0]).toBe('COMP 251 final exam is in 3 days');
+    clock = new Date(2026, 11, 13, 15);
+    sweepReminders(authed);
+    expect((await titles(maya))[0]).toBe('"COMP 251 final exam" starts tomorrow at 14:00');
+
+    // A professor teaching the class hears about none of it.
+    const ctx = newContext();
+    const prof = clientFor(ctx);
+    const { user } = await prof.auth.signUp({ name: 'Ouellet', email: 'ouellet@mcgill.ca', password: PASSWORD, pronouns: '', faculty: 'Science', gradYear: null, role: 'professor' });
+    await prof.classes.join({ classId });
+    await prof.calendar.addDeadline({ classId, kind: 'exam', title: 'Quiz day', dueAt: new Date(2026, 11, 14, 9), notes: '' });
+    sweepReminders({ ...ctx, userId: user.id });
+    expect(await titles({ api: prof })).toEqual([]);
+  });
 });
 
 describe('ST1 study mode', () => {

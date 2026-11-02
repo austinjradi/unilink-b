@@ -1,6 +1,6 @@
 import { type AnyColumn, and, asc, count, desc, eq, gt, inArray, isNull, lte, or } from 'drizzle-orm';
 import { z } from 'zod';
-import { addDays, atTime, ymd } from '@shared/dates';
+import { addDays, atTime, daysBetween, ymd } from '@shared/dates';
 import { type Locale, type Message, type Params, render, translate } from '@shared/i18n';
 import { finalExamFor } from '@shared/keyDates';
 import { channelsFor, NOTIFICATION_TYPES, type NotificationType } from '@shared/notifications';
@@ -133,18 +133,43 @@ export function sweepReminders(ctx: AuthedContext) {
     });
   }
 
+  // A3: exams get a heads-up three days ahead as well, while there's still time to study.
+  const in3Days = new Date(now.getTime() + 3 * 86_400_000);
+  const headsUp = (title: Message, date: Date, body: Message, link: string, key: string) => {
+    if (date <= in24h || date > in3Days) return;
+    notify(db, userId, {
+      type: 'deadline-soon',
+      title: m('{{title}} is in {{count}} days', { title: render(locale, title), count: daysBetween(ymd(now), ymd(date)) }),
+      body,
+      link,
+      dedupeKey: `heads-up:${key}:${date.getTime()}`,
+    });
+  };
   // A3: final exams from the exam schedule, in the student's language.
   const locale = recipient(db, userId)?.locale ?? 'en';
-  for (const c of db
-    .select({ id: classes.id, term: classes.term, subject: courses.subject, number: courses.number })
-    .from(enrollments)
-    .innerJoin(classes, eq(enrollments.classId, classes.id))
-    .innerJoin(courses, eq(classes.courseId, courses.id))
-    .where(eq(enrollments.userId, userId))
-    .all()) {
+  for (const d of teaching ? [] : visibleDeadlines(db, userId, in24h, in3Days)) {
+    if (d.kind !== 'exam' || d.done) continue;
+    headsUp(raw(d.title), d.dueAt, raw(classLabel(db, d.classId) ?? ''), d.classId ? `/classes/${d.classId}` : '/calendar', `deadline:${d.id}`);
+  }
+  for (const a of classIds.flatMap((c) => gradedItems(db, userId, c.id))) {
+    if (a.score != null || !a.dueAt || !/midterm|exam|\btest\b/i.test(a.name)) continue;
+    headsUp(raw(a.name), a.dueAt, m('{{class}} · worth {{weight}}%', { class: classLabel(db, a.classId) ?? '', weight: a.weight }), `/classes/${a.classId}/grades`, `assessment:${a.id}`);
+  }
+  for (const c of teaching
+    ? []
+    : db
+        .select({ id: classes.id, term: classes.term, subject: courses.subject, number: courses.number })
+        .from(enrollments)
+        .innerJoin(classes, eq(enrollments.classId, classes.id))
+        .innerJoin(courses, eq(classes.courseId, courses.id))
+        .where(eq(enrollments.userId, userId))
+        .all()) {
     const exam = finalExamFor(`${c.subject} ${c.number}`, c.term);
     const startsAt = exam && atTime(exam.date, exam.start);
-    if (!exam || !startsAt || startsAt <= now || startsAt > in24h) continue;
+    if (!exam || !startsAt) continue;
+    const name = { key: '{{course}} final exam', params: { course: exam.course } };
+    headsUp(name, startsAt, raw(`${classLabel(db, c.id) ?? ''} · ${exam.location}`), `/classes/${c.id}`, `final:${c.id}`);
+    if (startsAt <= now || startsAt > in24h) continue;
     notify(db, userId, {
       type: 'deadline-soon',
       title: soon('starts', translate(locale, '{{course}} final exam', { course: exam.course }), startsAt, now),
