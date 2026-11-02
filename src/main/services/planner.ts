@@ -3,8 +3,8 @@ import { basename, join } from 'node:path';
 import { and, asc, eq, gte, isNotNull, isNull, lt, lte, max, ne, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { findParts } from '@shared/assignment';
-import { addDays, parseYmd, ymd } from '@shared/dates';
-import { DEFAULT_BUFFER_DAYS, minutesOn, planTasks, weeklyMinutes } from '@shared/planner';
+import { addDays, CURRENT_TERM, parseYmd, ymd } from '@shared/dates';
+import { DEFAULT_BUFFER_DAYS, minutesAroundClasses, minutesOn, planTasks, weeklyMinutes } from '@shared/planner';
 import { randomUUID } from '../crypto';
 import type { DB } from '../db/client';
 import {
@@ -20,6 +20,7 @@ import {
 } from '../db/schema';
 import { AppError, type AuthedContext, type Context, idSchema, nonEmpty, procedure } from '../rpc/core';
 import { isMember, notFound, requireMember } from './access';
+import { myMeetings } from './calendar';
 import { m, notify } from './notifications';
 
 // ST2: assignments broken into tasks, scheduled as early as the student's free study
@@ -256,6 +257,12 @@ export async function deleteUserFiles(db: DB, userId: number) {
 }
 
 export const plannerRouter = {
+  // What the free time could be, going by this term's class times. null with no class times to go by.
+  freeTimeAroundClasses: procedure(z.void(), (_input, ctx) => {
+    const meetings = myMeetings(ctx.db, ctx.userId).filter((m) => m.term === CURRENT_TERM);
+    return meetings.length ? minutesAroundClasses(meetings.map((m) => m.meeting)) : null;
+  }),
+
   // Free study minutes for each weekday, Sunday first. Every open assignment is re-planned.
   setAvailability: procedure(
     z.object({ minutes: z.array(z.number().int().min(0).max(16 * 60)).length(7) }),

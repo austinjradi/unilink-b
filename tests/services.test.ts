@@ -666,6 +666,18 @@ describe('S4 discussion board', () => {
   });
 });
 
+describe('ST2 free time around classes', () => {
+  it('goes by your own class times this term, and offers nothing without any', async () => {
+    const { classId, people } = await classmates('Maya');
+    const [maya] = people;
+    expect(await maya.api.planner.freeTimeAroundClasses()).toBeNull();
+    await maya.api.courses.saveMeetings({ classId, meetings: [{ weekday: 2, startTime: '10:00', endTime: '12:00', location: '' }] });
+    expect(await maya.api.planner.freeTimeAroundClasses()).toEqual([240, 240, 120, 240, 240, 240, 240]);
+    const other = await student('Leo');
+    expect(await other.api.planner.freeTimeAroundClasses()).toBeNull();
+  });
+});
+
 describe('G2 calendar export', () => {
   it('adds planned tasks as all-day events only when asked, and never the finished ones', async () => {
     const { api, ctx } = await student('Maya');

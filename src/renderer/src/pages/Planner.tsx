@@ -152,12 +152,23 @@ export function StudyTimeForm({ onDone }: { onDone?: () => void }) {
       onSuccess: () => onDone?.(),
     },
   );
+  const aroundClasses = useQuery({ queryKey: ['planner', 'aroundClasses'], queryFn: () => rpc.planner.freeTimeAroundClasses() });
   const total = minutes.reduce((a, b) => a + b, 0);
   return (
     <Stack>
       <Text size="sm" c="dimmed">
         {t('Minutes you can study on each day of the week. Study sessions you join count toward them.')}
       </Text>
+      {aroundClasses.data && (
+        <Group gap="xs">
+          <Button size="xs" variant="light" onClick={() => setMinutes(aroundClasses.data!)}>
+            {t('Start from my class times')}
+          </Button>
+          <Text size="xs" c="dimmed" style={{ flex: '1 1 220px' }}>
+            {t('Four hours on a day with no classes, less your time in class, and at least an hour. Change anything before you save.')}
+          </Text>
+        </Group>
+      )}
       <SimpleGrid cols={{ base: 4, xs: 7 }} spacing="xs">
         {[1, 2, 3, 4, 5, 6, 0].map((day) => (
           <NumberInput
@@ -167,6 +178,7 @@ export function StudyTimeForm({ onDone }: { onDone?: () => void }) {
             max={960}
             step={30}
             hideControls
+            styles={{ input: { paddingInline: 6, textAlign: 'center' } }}
             value={minutes[day]}
             onChange={(v) => setMinutes((m) => m.map((x, i) => (i === day ? Number(v) || 0 : x)))}
           />

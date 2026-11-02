@@ -4,7 +4,7 @@ import { cgpaWith, finalIfRemainingAverages, letterFor, parseMark, summarize, te
 import { buildCalendar, parseCalendar } from '@shared/ics';
 import { noClassesOn } from '@shared/keyDates';
 import { isHidden, parseChatLink } from '@shared/links';
-import { DEFAULT_WEEKLY_MINUTES, minutesOn, planTasks, type PlannableTask, weeklyMinutes } from '@shared/planner';
+import { DEFAULT_WEEKLY_MINUTES, minutesAroundClasses, minutesOn, planTasks, type PlannableTask, weeklyMinutes } from '@shared/planner';
 import { passwordProblems } from '@shared/validation';
 import { parseCourseQuery, parseSchedule } from '@shared/courseQuery';
 import { goalOutlook, summarizeRecord, termOrder } from '@shared/academics';
@@ -682,5 +682,16 @@ describe('A1 CGPA goal', () => {
   it('says so when straight As would not be enough', () => {
     expect(goalOutlook(record, 3.9, 15)).toEqual({ kind: 'out-of-reach', best: 3.33, creditsOfAs: 270 });
     expect(goalOutlook(record, 4, 15)).toEqual({ kind: 'out-of-reach', best: 3.33, creditsOfAs: null });
+  });
+});
+
+describe('ST2 free time around classes', () => {
+  it('takes class time off a four-hour day, down to an hour, rounded to a quarter hour', () => {
+    const minutes = minutesAroundClasses([
+      { weekday: 1, startTime: '10:05', endTime: '11:25' },
+      { weekday: 1, startTime: '13:35', endTime: '14:55' },
+      { weekday: 3, startTime: '08:30', endTime: '13:30' },
+    ]);
+    expect(minutes).toEqual([240, 75, 240, 60, 240, 240, 240]);
   });
 });

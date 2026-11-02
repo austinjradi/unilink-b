@@ -15,6 +15,19 @@ export function weeklyMinutes(saved: number[] | null | undefined): number[] {
 
 export const minutesOn = (weekly: number[], day: string) => weekly[parseYmd(day).getDay()] ?? 0;
 
+// A starting point for the free time, Sunday first: four hours on a day with no classes, less
+// the time spent in class, and at least an hour.
+export function minutesAroundClasses(meetings: { weekday: number; startTime: string; endTime: string }[]): number[] {
+  const clock = (time: string) => {
+    const [hours, minutes] = time.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+  return Array.from({ length: 7 }, (_, weekday) => {
+    const inClass = meetings.filter((m) => m.weekday === weekday).reduce((sum, m) => sum + clock(m.endTime) - clock(m.startTime), 0);
+    return Math.max(60, Math.round((240 - inClass) / 15) * 15);
+  });
+}
+
 export interface PlannableTask {
   id: number;
   minutes: number;
