@@ -319,3 +319,21 @@ h3,
     min-height: 0;
   }
 }
+
+/* For keyboard users: the first thing Tab reaches, shown only when it has focus. */
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 1000;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--mantine-color-body);
+  color: var(--mantine-color-text);
+  font-weight: 700;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus {
+  transform: none;
+}

@@ -466,6 +466,7 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
       </Text>
       <TextInput
         placeholder={t('Search posts')}
+        aria-label={t('Search posts')}
         leftSection={<IconSearch size={16} />}
         radius="xl"
         value={search}
@@ -650,6 +651,7 @@ function ReplyBox({ postId, isQuestion }: { postId: number; isQuestion: boolean 
       <Group align="flex-end" gap="xs" wrap="nowrap">
         <Textarea
           placeholder={isQuestion ? t('Write an answer…') : t('Write a reply…')}
+          aria-label={isQuestion ? t('Write an answer…') : t('Write a reply…')}
           autosize
           minRows={1}
           value={body}

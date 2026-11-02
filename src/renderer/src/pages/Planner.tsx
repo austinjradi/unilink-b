@@ -301,7 +301,7 @@ function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onE
         }}
       >
         <Group mt="md" gap="xs">
-          <TextInput size="xs" placeholder={t('Add a task…')} value={adding} onChange={(e) => setAdding(e.currentTarget.value)} style={{ flex: 1 }} />
+          <TextInput size="xs" placeholder={t('Add a task…')} aria-label={t('Add a task…')} value={adding} onChange={(e) => setAdding(e.currentTarget.value)} style={{ flex: 1 }} />
           <Button size="xs" variant="light" type="submit" disabled={!adding.trim()} loading={addTask.isPending}>
             {t('Add')}
           </Button>

@@ -89,7 +89,8 @@ The interface follows the team's wireframes in `A2Team.pdf`:
 - **Settings:** sections down the side.
 
 The design uses rounded fonts (Nunito, with Fredoka for headings), bundled locally through Fontsource, and
-works in light and dark mode.
+works in light and dark mode. Text meets WCAG AA contrast in both (the colours are set in `theme.ts`), controls have accessible names,
+and keyboard users get a skip link.
 
 ## Getting started
 

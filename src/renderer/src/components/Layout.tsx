@@ -91,6 +91,9 @@ export function Layout({ children }: { children: ReactNode }) {
 
   return (
     <AppShell header={{ height: 72 }} padding={{ base: 'sm', sm: 'lg' }}>
+      <UnstyledButton className="skip-link" onClick={() => document.getElementById('content')?.focus()}>
+        {t('Skip to content')}
+      </UnstyledButton>
       <AppShell.Header px={{ base: 'sm', sm: 'lg' }} style={{ borderBottom: '2px solid var(--ul-rule)' }}>
         <Group h="100%" justify="space-between" wrap="nowrap" gap="md">
           <UnstyledButton component={Link} to="/" aria-label={t('UniLink home')} className="header-logo">
@@ -99,7 +102,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
           <Group gap={6} wrap="nowrap" component="nav" className="nav-tabs">
             {nav.map((item) => (
-              <Link key={item.to} to={item.to} className="nav-pill" data-active={item.match(pathname) || undefined}>
+              <Link key={item.to} to={item.to} className="nav-pill" data-active={item.match(pathname) || undefined} aria-current={item.match(pathname) ? 'page' : undefined}>
                 {t(item.label)}
               </Link>
             ))}
@@ -153,7 +156,7 @@ export function Layout({ children }: { children: ReactNode }) {
         </Group>
       </AppShell.Header>
 
-      <AppShell.Main>
+      <AppShell.Main id="content" tabIndex={-1} style={{ outline: 'none' }}>
         <Box maw={1400} mx="auto">
           {children}
         </Box>

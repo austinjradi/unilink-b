@@ -136,7 +136,7 @@ export function KindBadge({ kind }: { kind: string }) {
 export function ClashNote({ codes }: { codes: string[] }) {
   if (!codes.length) return null;
   return (
-    <Group gap={4} wrap="nowrap" c="orange.7">
+    <Group gap={4} wrap="nowrap" c="orange">
       <IconAlertTriangle size={12} style={{ flexShrink: 0 }} />
       <Text size="xs" inherit>
         {t('Clashes with {{codes}}', { codes: codes.join(', ') })}

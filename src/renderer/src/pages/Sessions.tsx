@@ -96,6 +96,7 @@ export function SessionSearchPage() {
         mb="md"
         maw={520}
         placeholder={t('Search by course, topic, type or place')}
+        aria-label={t('Search by course, topic, type or place')}
         leftSection={<IconSearch size={18} />}
         value={search}
         onChange={(e) => setSearch(e.currentTarget.value)}

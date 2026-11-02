@@ -20,7 +20,7 @@ export function Home() {
   const me = useMe();
   return (
     <>
-      <Text fz={30} fw={600} className="display" mb="md">
+      <Text component="h1" fz={30} fw={600} className="display" mt={0} mb="md">
         {t('Hi {{name}}', { name: me.name.split(' ')[0] })} <span aria-hidden>👋</span>
         <Text span c="dimmed" fz="md" fw={500} ml="sm">
           {dayjs().format(t('dddd, MMMM D'))}
@@ -121,6 +121,7 @@ function TodayTasks() {
               size="xs"
               radius="xl"
               placeholder={t('Add a task…')}
+              aria-label={t('Add a task…')}
               value={title}
               onChange={(e) => setTitle(e.currentTarget.value)}
               rightSection={

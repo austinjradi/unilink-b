@@ -58,13 +58,28 @@ export const theme = createTheme({
   },
 });
 
+// A hex colour with each channel scaled down.
+const darker = (hex: string, by: number) =>
+  `#${[1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * by).toString(16).padStart(2, '0')).join('')}`;
+
 // In dark mode Mantine paints "light" badges, tags and chips with an opaque,
 // heavily darkened shade (maroon, brown). Use a see-through tint with pastel
 // text instead, which keeps the soft look of the light theme.
+// Light mode's grey text, tags and coloured text are darkened to reach WCAG AA contrast (4.5:1).
 export const cssVariablesResolver: CSSVariablesResolver = (t) => ({
   variables: {},
-  light: {},
+  light: {
+    '--mantine-color-dimmed': '#5f6672',
+    ...Object.fromEntries(
+      Object.entries(t.colors).flatMap(([name, shades]) => [
+        [`--mantine-color-${name}-light-color`, darker(shades[9], 0.7)],
+        [`--mantine-color-${name}-text`, darker(shades[9], 0.8)],
+        [`--mantine-color-${name}-outline`, darker(shades[9], 0.8)],
+      ]),
+    ),
+  },
   dark: {
+    '--mantine-color-dimmed': '#a6aac4',
     '--mantine-color-anchor': `var(--mantine-color-${t.primaryColor}-3)`,
     ...Object.fromEntries(
       Object.entries(t.colors).flatMap(([name, shades]) => [

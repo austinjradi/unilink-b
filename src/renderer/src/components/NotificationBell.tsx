@@ -20,7 +20,7 @@ export function NotificationBell() {
   return (
     <Popover opened={opened} onChange={setOpened} position="bottom-end" width="min(380px, calc(100vw - 16px))" shadow="md">
       <Popover.Target>
-        <Indicator label={unread > 9 ? '9+' : unread} size={16} disabled={!unread} offset={6} color="red">
+        <Indicator label={unread > 9 ? '9+' : unread} size={16} disabled={!unread} offset={6} color="red.8">
           <ActionIcon variant="subtle" color="gray" size="lg" onClick={() => setOpened((o) => !o)} aria-label={t('Notifications')}>
             <IconBell size={20} />
           </ActionIcon>

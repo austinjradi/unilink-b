@@ -101,7 +101,7 @@ export function SignIn() {
       <form onSubmit={form.onSubmit((v) => signIn.mutate(v))}>
         <Stack>
           <TextInput label={t('McGill email')} placeholder={t('first.last@mail.mcgill.ca')} required {...form.getInputProps('email')} />
-          <PasswordInput label={t('Password')} required {...form.getInputProps('password')} />
+          <PasswordInput visibilityToggleButtonProps={{ 'aria-label': t('Show or hide the password') }} label={t('Password')} required {...form.getInputProps('password')} />
           <Group justify="space-between">
             <Anchor component={Link} to="/reset" size="sm">
               {t('Forgot password?')}
@@ -272,10 +272,10 @@ export function SignUp() {
               : t('Classmates see your name, email, pronouns and faculty once you post or reply in a class.')}
           </Text>
           <div>
-            <PasswordInput label={t('Password')} required mb={6} {...form.getInputProps('password')} />
+            <PasswordInput visibilityToggleButtonProps={{ 'aria-label': t('Show or hide the password') }} label={t('Password')} required mb={6} {...form.getInputProps('password')} />
             <PasswordChecklist password={form.values.password} email={form.values.email} />
           </div>
-          <PasswordInput label={t('Confirm password')} required {...form.getInputProps('confirm')} />
+          <PasswordInput visibilityToggleButtonProps={{ 'aria-label': t('Show or hide the password') }} label={t('Confirm password')} required {...form.getInputProps('confirm')} />
           <Button type="submit" loading={signUp.isPending}>
             {t('Create account')}
           </Button>
@@ -322,7 +322,7 @@ export function ResetPassword() {
             <TextInput label={t('McGill email')} required {...form.getInputProps('email')} />
             <TextInput label={t('Recovery code')} placeholder="XXXX-XXXX-XXXX" required {...form.getInputProps('recoveryCode')} />
             <div>
-              <PasswordInput label={t('New password')} required mb={6} {...form.getInputProps('password')} />
+              <PasswordInput visibilityToggleButtonProps={{ 'aria-label': t('Show or hide the password') }} label={t('New password')} required mb={6} {...form.getInputProps('password')} />
               <PasswordChecklist password={form.values.password} email={form.values.email} />
             </div>
             <Group justify="space-between">

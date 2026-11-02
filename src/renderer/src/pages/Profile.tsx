@@ -229,10 +229,10 @@ export function ChangePassword() {
     <SectionCard title={t('Change password')}>
       <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
         <Stack>
-          <PasswordInput label={t('Current password')} {...form.getInputProps('currentPassword')} />
+          <PasswordInput visibilityToggleButtonProps={{ 'aria-label': t('Show or hide the password') }} label={t('Current password')} {...form.getInputProps('currentPassword')} />
           <Group grow>
-            <PasswordInput label={t('New password')} description={t('At least 12 characters. A short phrase is easiest to remember.')} {...form.getInputProps('newPassword')} />
-            <PasswordInput label={t('Confirm new password')} {...form.getInputProps('confirm')} />
+            <PasswordInput visibilityToggleButtonProps={{ 'aria-label': t('Show or hide the password') }} label={t('New password')} description={t('At least 12 characters. A short phrase is easiest to remember.')} {...form.getInputProps('newPassword')} />
+            <PasswordInput visibilityToggleButtonProps={{ 'aria-label': t('Show or hide the password') }} label={t('Confirm new password')} {...form.getInputProps('confirm')} />
           </Group>
           <Group justify="flex-end">
             <Button type="submit" variant="default" loading={save.isPending}>
@@ -272,7 +272,7 @@ export function DeleteAccount() {
         >
           <Stack>
             <Text size="sm">{t('Enter your password to confirm.')}</Text>
-            <PasswordInput label={t('Password')} value={password} onChange={(e) => setPassword(e.currentTarget.value)} data-autofocus />
+            <PasswordInput visibilityToggleButtonProps={{ 'aria-label': t('Show or hide the password') }} label={t('Password')} value={password} onChange={(e) => setPassword(e.currentTarget.value)} data-autofocus />
             <Checkbox
               checked={keepPosts}
               onChange={(e) => setKeepPosts(e.currentTarget.checked)}
