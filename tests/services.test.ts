@@ -666,6 +666,56 @@ describe('S4 discussion board', () => {
   });
 });
 
+describe('Search', () => {
+  it('finds things across the app, only in your classes and only what you can see', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo', 'Ana');
+    const [maya, leo, ana] = people;
+    const outsider = await student('Sam');
+    const search = async (s: { api: RpcClient<AppRouter> }, query: string) => (await s.api.search.everything({ query })).map((r) => `${r.kind}:${r.title}`);
+
+    await maya.api.board.create({ classId, kind: 'question', topic: 'Exams', title: 'Master theorem help', body: 'Case 2?', visibility: 'class', audienceEmails: [] });
+    const { id: replied } = await maya.api.board.create({ classId, kind: 'note', topic: 'Logistics', title: 'Room change', body: 'Now in Leacock', visibility: 'class', audienceEmails: [] });
+    await leo.api.board.reply({ postId: replied, body: 'Does the master theorem apply here?' });
+    await maya.api.courses.addAssessment({ classId, name: 'Master quiz', weight: 10, dueAt: null });
+    await maya.api.calendar.addDeadline({ classId, kind: 'quiz', title: 'Master problems', dueAt: new Date(2026, 9, 20), notes: '' });
+    await maya.api.calendar.addDeadline({ classId: null, kind: 'other', title: 'Master my own deadline', dueAt: new Date(2026, 9, 20), notes: '' });
+    await maya.api.planner.create({ title: 'Master plan', classId: null, dueAt: new Date(2026, 9, 20, 23, 59), notes: '', tasks: problems(30), attachmentPath: null });
+    await maya.api.studySessions.create({ classId, ...session({ title: 'Master review' }) });
+    await maya.api.studySessions.create({ classId, ...session({ title: 'Master secret', visibility: 'invite' }) });
+    await maya.api.links.add({ classId, url: 'https://discord.gg/master251', label: 'Master chat', purpose: 'course' });
+
+    // A title match, and a post found through a word in one of its replies.
+    expect((await search(maya, 'master')).sort()).toEqual(
+      [
+        'chat:Master chat',
+        'deadline:Master my own deadline',
+        'deadline:Master problems',
+        'graded:Master quiz',
+        'plan:Master plan',
+        'post:Master theorem help',
+        'post:Room change',
+        'session:Master review',
+        'session:Master secret',
+      ].sort(),
+    );
+    // Someone else in the class: no private deadline, plan or invite-only session.
+    expect((await search(ana, 'master')).sort()).toEqual(
+      ['chat:Master chat', 'deadline:Master problems', 'graded:Master quiz', 'post:Master theorem help', 'post:Room change', 'session:Master review'].sort(),
+    );
+    // Someone outside the class gets nothing from it.
+    expect(await search(outsider, 'master')).toEqual([]);
+
+    // A private post stays private.
+    await maya.api.board.create({ classId, kind: 'note', topic: 'Logistics', title: 'Quietly hidden', body: 'x', visibility: 'selected', audienceEmails: [leo.email] });
+    expect(await search(leo, 'quietly')).toEqual(['post:Quietly hidden']);
+    expect(await search(ana, 'quietly')).toEqual([]);
+
+    expect((await search(maya, 'COMP 251'))[0]).toBe('class:COMP 251-001');
+    expect(await search(maya, 'm')).toEqual([]);
+    expect((await maya.api.search.everything({ query: 'theorem help' }))[0].to).toBe(`/classes/${classId}/discussion?post=${(await maya.api.board.feed({ classIds: [classId], topics: [], since: null, search: 'theorem help' }))[0].id}`);
+  });
+});
+
 describe('S4 images', () => {
   const tmpFile = async (name: string, size = 10) => {
     const file = join(tmpdir(), name);

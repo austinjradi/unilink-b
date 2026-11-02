@@ -10,6 +10,7 @@ import { t, tx } from '../lib/i18n';
 import { useAction, useMe } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
 import { GoatAvatar, GoatSvg } from './Goat';
+import { GlobalSearch } from './GlobalSearch';
 import { NotificationBell } from './NotificationBell';
 
 // Top navigation from the wireframes: logo, pill tabs, then the student and their goat.
@@ -137,6 +138,7 @@ export function Layout({ children }: { children: ReactNode }) {
                 ))}
               </Menu.Dropdown>
             </Menu>
+            <GlobalSearch />
             <NotificationBell />
             <Menu position="bottom-end" width={220}>
               <Menu.Target>

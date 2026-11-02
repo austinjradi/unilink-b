@@ -30,7 +30,7 @@ const postFields = {
   body: nonEmpty('Post', 10_000),
 };
 
-function canSee(userId: number) {
+export function canSeePost(userId: number) {
   return or(
     eq(posts.visibility, 'class'),
     eq(posts.authorId, userId),
@@ -64,7 +64,7 @@ function lastSeen(db: DB, userId: number, now: Date) {
 }
 
 function visiblePost(db: DB, userId: number, postId: number) {
-  const post = db.select().from(posts).where(and(eq(posts.id, postId), canSee(userId))).get() ?? notFound('post');
+  const post = db.select().from(posts).where(and(eq(posts.id, postId), canSeePost(userId))).get() ?? notFound('post');
   requireMember(db, userId, post.classId);
   return post;
 }
@@ -280,7 +280,7 @@ export const boardRouter = {
         .where(
           and(
             inArray(posts.classId, ids),
-            canSee(ctx.userId),
+            canSeePost(ctx.userId),
             topics.length ? inArray(posts.topic, topics) : undefined,
             from ? gte(posts.createdAt, from) : undefined,
             search ? or(like(posts.title, term), like(posts.body, term)) : undefined,
@@ -325,7 +325,7 @@ export const boardRouter = {
     for (const p of ctx.db
       .select({ classId: posts.classId, authorId: posts.authorId, createdAt: posts.createdAt })
       .from(posts)
-      .where(and(inArray(posts.classId, ids), canSee(ctx.userId), isNull(posts.deletedAt)))
+      .where(and(inArray(posts.classId, ids), canSeePost(ctx.userId), isNull(posts.deletedAt)))
       .all()) {
       if (p.authorId !== ctx.userId && p.createdAt.getTime() > seen(p.classId)) counts.set(p.classId, (counts.get(p.classId) ?? 0) + 1);
     }
@@ -500,7 +500,7 @@ export const boardRouter = {
     return ctx.db
       .select({ id: posts.id, title: posts.title, body: posts.body, kind: posts.kind, acceptedReplyId: posts.acceptedReplyId })
       .from(posts)
-      .where(and(eq(posts.classId, classId), canSee(ctx.userId), isNull(posts.deletedAt)))
+      .where(and(eq(posts.classId, classId), canSeePost(ctx.userId), isNull(posts.deletedAt)))
       .all()
       .map(({ body, ...p }) => ({ ...p, score: similarity(query, p.title, body) }))
       .filter((p) => p.score > 0)

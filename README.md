@@ -72,7 +72,9 @@ uploaded it, like everything else here. Students can't hand work in; assignments
 
 The interface follows the team's wireframes in `A2Team.pdf`:
 
-- **Top navigation:** pill tabs, and your goat avatar on the right. On phones the tabs move into a menu.
+- **Top navigation:** pill tabs, and your goat avatar on the right. On phones the tabs move into a menu. The search icon (or
+  Ctrl/Cmd+K) searches your classes, posts and replies, deadlines, graded work, study sessions, plans and group chats at once,
+  and only what you could already see elsewhere (`services/search.ts`).
 - **Goat mascot:** customizable under Settings → Goat (`components/Goat.tsx`, `shared/goat.ts`).
 - **Home:** today's tasks and deadline countdowns on the left, a cross-class discussion feed with 🐐
   reactions in the middle, and filters on the right.

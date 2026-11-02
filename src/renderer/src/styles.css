@@ -268,6 +268,12 @@ h3,
   }
 }
 
+@media (max-width: 1100px) {
+  .nav-pill {
+    padding: 6px 8px;
+  }
+}
+
 /* Web build on phones: the tabs scroll sideways instead of pushing the bell and
    account menu off the screen, and the header logo drops its wordmark. */
 .nav-tabs {

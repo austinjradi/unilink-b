@@ -119,7 +119,7 @@ function joinWeeks(ctx: AuthedContext, session: SessionRow) {
 }
 
 // Invite-only sessions are visible to the people in them, and to nobody else in the class.
-function canSee(db: DB, userId: number, session: SessionRow) {
+export function canSeeSession(db: DB, userId: number, session: SessionRow) {
   return session.visibility === 'class' || !!membership(db, session.id, userId);
 }
 
@@ -306,7 +306,7 @@ export const studySessionsRouter = {
       .where(and(eq(studySessions.classId, classId), gte(studySessions.endsAt, ctx.now())))
       .orderBy(asc(studySessions.startsAt))
       .all()
-      .filter((s) => canSee(ctx.db, ctx.userId, s));
+      .filter((s) => canSeeSession(ctx.db, ctx.userId, s));
     return describe(ctx.db, ctx.userId, rows, ctx.now());
   }),
 
@@ -328,7 +328,7 @@ export const studySessionsRouter = {
       .orderBy(desc(studySessions.startsAt))
       .limit(20)
       .all()
-      .filter((s) => canSee(ctx.db, ctx.userId, s));
+      .filter((s) => canSeeSession(ctx.db, ctx.userId, s));
     return describe(ctx.db, ctx.userId, rows, ctx.now());
   }),
 
@@ -371,7 +371,7 @@ export const studySessionsRouter = {
       .orderBy(asc(studySessions.startsAt))
       .all()
       .map((r) => r.session)
-      .filter((s) => canSee(ctx.db, ctx.userId, s));
+      .filter((s) => canSeeSession(ctx.db, ctx.userId, s));
     return describe(ctx.db, ctx.userId, rows, ctx.now());
   }),
 
@@ -457,7 +457,7 @@ export const studySessionsRouter = {
   joinSeries: procedure(z.object({ sessionId: idSchema }), ({ sessionId }, ctx) => {
     const session = getSession(ctx.db, sessionId);
     requireMember(ctx.db, ctx.userId, session.classId);
-    if (!canSee(ctx.db, ctx.userId, session)) notFound('study session');
+    if (!canSeeSession(ctx.db, ctx.userId, session)) notFound('study session');
     return ctx.db.transaction((tx) => joinWeeks({ ...ctx, db: tx as unknown as DB }, session));
   }),
 
@@ -465,7 +465,7 @@ export const studySessionsRouter = {
   join: procedure(z.object({ sessionId: idSchema }), ({ sessionId }, ctx) => {
     const session = getSession(ctx.db, sessionId);
     requireMember(ctx.db, ctx.userId, session.classId);
-    if (!canSee(ctx.db, ctx.userId, session)) notFound('study session');
+    if (!canSeeSession(ctx.db, ctx.userId, session)) notFound('study session');
     return joinSession(ctx, session);
   }),
 
