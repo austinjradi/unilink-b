@@ -4,6 +4,8 @@ const plural = (key: string, one: string, other = key) => ({ [`${key}_one`]: one
 export const EN: Record<string, string> = {
   ...plural('(from {{count}} of {{total}} classes with marks)', '(from {{count}} of {{total}} classes with marks)'),
   ...plural('+{{count}} more', '+{{count}} more'),
+  ...plural('{{count}} days', '{{count}} day'),
+  ...plural('{{count}} focus sessions this week', '{{count}} focus session this week'),
   ...plural('Added {{count}} components', 'Added {{count}} component'),
   ...plural('Add {{count}} components', 'Add {{count}} component'),
   ...plural('{{count}} credits left after this term: about {{pace}} a term to graduate in {{year}}.', '{{count}} credit left after this term: about {{pace}} a term to graduate in {{year}}.'),

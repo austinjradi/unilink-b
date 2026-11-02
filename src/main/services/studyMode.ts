@@ -1,8 +1,8 @@
-import { and, eq, gte, isNull, lt } from 'drizzle-orm';
+import { and, eq, gt, gte, isNull, lt } from 'drizzle-orm';
 import { z } from 'zod';
 import { addDays, atTime, parseYmd, termRange, ymd } from '@shared/dates';
 import { noClassesOn } from '@shared/keyDates';
-import { type FocusWindow, studyModeStatus } from '@shared/studyMode';
+import { type FocusWindow, focusSummary, studyModeStatus } from '@shared/studyMode';
 import type { DB } from '../db/client';
 import {
   classes,
@@ -10,6 +10,7 @@ import {
   courseInfo,
   courses,
   enrollments,
+  focusLog,
   plannerTasks,
   studyModeSettings,
   studySessionMembers,
@@ -108,7 +109,27 @@ export function currentStudyMode(ctx: AuthedContext) {
   };
 }
 
+// A session stopped or replaced ends now. One that already ran its course keeps its planned end.
+function endFocus(ctx: AuthedContext) {
+  ctx.db
+    .update(focusLog)
+    .set({ endedAt: ctx.now() })
+    .where(and(eq(focusLog.userId, ctx.userId), isNull(focusLog.endedAt), gt(focusLog.plannedEnd, ctx.now())))
+    .run();
+}
+
+function startFocus(ctx: AuthedContext, minutes: number, focusTaskId: number | null) {
+  endFocus(ctx);
+  const plannedEnd = new Date(ctx.now().getTime() + minutes * 60_000);
+  saveSettings(ctx.db, ctx.userId, { manualUntil: plannedEnd, pausedUntil: null, focusTaskId });
+  ctx.db.insert(focusLog).values({ userId: ctx.userId, startedAt: ctx.now(), plannedEnd }).run();
+}
+
 export const studyModeRouter = {
+  focusTime: procedure(z.void(), (_input, ctx) =>
+    focusSummary(ctx.db.select().from(focusLog).where(eq(focusLog.userId, ctx.userId)).all(), ctx.now()),
+  ),
+
   status: procedure(z.void(), (_input, ctx) => {
     const { settings, status } = currentStudyMode(ctx);
     const { manualUntil: _m, pausedUntil: _p, userId: _u, focusTaskId, ...prefs } = settings;
@@ -135,15 +156,14 @@ export const studyModeRouter = {
   ),
 
   start: procedure(z.object({ minutes: z.number().int().min(5).max(8 * 60) }), ({ minutes }, ctx) => {
-    saveSettings(ctx.db, ctx.userId, { manualUntil: new Date(ctx.now().getTime() + minutes * 60_000), pausedUntil: null, focusTaskId: null });
+    startFocus(ctx, minutes, null);
   }),
 
   // ST1 + ST2: a focus session as long as the planned task is meant to take.
   focusOnTask: procedure(z.object({ taskId: idSchema }), ({ taskId }, ctx) => {
     ownTask(ctx.db, ctx.userId, taskId);
     const task = ctx.db.select({ minutes: plannerTasks.minutes }).from(plannerTasks).where(eq(plannerTasks.id, taskId)).get()!;
-    const minutes = Math.min(8 * 60, task.minutes);
-    saveSettings(ctx.db, ctx.userId, { manualUntil: new Date(ctx.now().getTime() + minutes * 60_000), pausedUntil: null, focusTaskId: taskId });
+    startFocus(ctx, Math.min(8 * 60, task.minutes), taskId);
   }),
 
   clearFocusTask: procedure(z.void(), (_input, ctx) => {
@@ -152,6 +172,7 @@ export const studyModeRouter = {
 
   // Ends a focus session, and pauses any class or study session window running right now.
   stop: procedure(z.void(), (_input, ctx) => {
+    endFocus(ctx);
     saveSettings(ctx.db, ctx.userId, { manualUntil: null, pausedUntil: null });
     const { status } = currentStudyMode(ctx);
     if (status.active) saveSettings(ctx.db, ctx.userId, { pausedUntil: status.until });

@@ -72,6 +72,7 @@ function StudyModePill() {
   if (!status.data?.active) return null;
   return (
     <Group
+      className="study-pill"
       gap={6}
       wrap="nowrap"
       px="sm"
@@ -81,10 +82,7 @@ function StudyModePill() {
       <IconFocus2 size={16} />
       <Tooltip label={status.data.focusTask ?? t('Study mode')}>
         <UnstyledButton component={Link} to="/study-mode">
-          <Text size="xs" fw={800} style={{ whiteSpace: 'nowrap' }} visibleFrom="xl">
-            {t('Study mode · until {{time}}', { time: fmtTime(status.data.until!) })}
-          </Text>
-          <Text size="xs" fw={800} style={{ whiteSpace: 'nowrap' }} hiddenFrom="xl">
+          <Text size="xs" fw={800} style={{ whiteSpace: 'nowrap' }}>
             {t('until {{time}}', { time: fmtTime(status.data.until!) })}
           </Text>
         </UnstyledButton>

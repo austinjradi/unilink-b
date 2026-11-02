@@ -97,7 +97,7 @@ The interface follows the team's wireframes in `A2Team.pdf`:
   or a poll's time that overlaps one of your classes or another session you're going to says so (`busyChecker` in `services/calendar.ts`). A
   section's tab can also **find a time**: offer two to five times, classmates tick the ones that work, and only the counts show.
   Picking one sets up the session and tells everyone who answered, who then choose whether to join (`services/timePolls.ts`).
-- **Study Mode:** its own tab, with a pill in the top bar while it's on. A planned task (on Home or the Planner) can start a
+- **Study Mode:** its own tab, with a pill in the top bar while it's on, a live countdown, and your own focus time this week and last. A planned task (on Home or the Planner) can start a
   **focus session as long as the task is meant to take**, and when it ends the app asks whether you finished it.
 - **Degree plan:** which of your courses count and what's left, with the **credits a term** it takes to graduate in your expected year.
 - **Course record:** a chart of **GPA by term** (`components/GpaTrend.tsx`), credits and CGPA, plus a **CGPA goal**: type the CGPA you're aiming for and see what your next credits
@@ -319,7 +319,7 @@ the next seven days (nothing if nothing is due; it can be turned off for desktop
 | Professors: who can change what, assignments, moderation | `services/access.ts` (`canEditShared`, `requireTeacher`), `services/assignments.ts`, `services/board.ts` |
 
 The database changes are migrations `0004_version_b` (new tables and columns), `0005_version_b_cleanup`
-(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows`, `0010_sign_in_limits`, `0011_second_grading_scheme`, `0012_weekly_sessions`, `0013_professors`, `0014_board_images`, `0015_mute_replies`, `0016_days_off`, `0017_post_reports`, `0018_course_outline`, `0019_cgpa_goal`, `0020_focus_on_task`, `0021_time_polls`, `0022_several_marks`, `0023_weekly_todos` and `0024_assignment_release`.
+(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows`, `0010_sign_in_limits`, `0011_second_grading_scheme`, `0012_weekly_sessions`, `0013_professors`, `0014_board_images`, `0015_mute_replies`, `0016_days_off`, `0017_post_reports`, `0018_course_outline`, `0019_cgpa_goal`, `0020_focus_on_task`, `0021_time_polls`, `0022_several_marks`, `0023_weekly_todos`, `0024_assignment_release` and `0025_focus_log`.
 
 ## Not built yet
 

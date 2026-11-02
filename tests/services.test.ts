@@ -721,6 +721,31 @@ describe('A4 several marks in one component', () => {
   });
 });
 
+describe('ST1 focus time', () => {
+  it('logs focus sessions as they actually ran, for the student alone', async () => {
+    const { api } = await student('Maya');
+    const other = await student('Leo');
+    // Clock: Monday 5 October 2026, 9:00.
+    await api.studyMode.start({ minutes: 50 });
+    clock = new Date(2026, 9, 5, 9, 20);
+    expect(await api.studyMode.focusTime()).toMatchObject({ thisWeek: 20, sessions: 1, streak: 1 });
+    // Stopped early, it counts what was spent.
+    await api.studyMode.stop();
+    clock = new Date(2026, 9, 5, 11);
+    expect((await api.studyMode.focusTime()).thisWeek).toBe(20);
+    // Left to run, it counts in full. Starting another one in the middle ends the first.
+    await api.studyMode.start({ minutes: 25 });
+    clock = new Date(2026, 9, 5, 12);
+    expect((await api.studyMode.focusTime()).thisWeek).toBe(45);
+    await api.studyMode.start({ minutes: 60 });
+    clock = new Date(2026, 9, 5, 12, 10);
+    await api.studyMode.start({ minutes: 30 });
+    clock = new Date(2026, 9, 5, 13);
+    expect(await api.studyMode.focusTime()).toMatchObject({ thisWeek: 85, sessions: 4 });
+    expect(await other.api.studyMode.focusTime()).toEqual({ thisWeek: 0, sessions: 0, lastWeek: 0, streak: 0 });
+  });
+});
+
 describe('ST2 taking today off', () => {
   it('moves what was planned for today, and undoing it puts it back', async () => {
     const { api } = await student('Maya');

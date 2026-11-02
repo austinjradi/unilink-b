@@ -38,6 +38,7 @@ import {
   deadlineDone,
   deadlines,
   enrollments,
+  focusLog,
   notifications,
   plannerAssignments,
   plannerTasks,
@@ -131,7 +132,7 @@ export const demoEmail = (name: string) =>
 // section's graded items. 4: a professor teaching COMP 251. 5: their course outline. 6: a thread
 // with code in it and a reported post waiting for them, to show those off.
 const SEED_KEY = 'demo_seed';
-const SEED_VERSION = '10';
+const SEED_VERSION = '11';
 const HOUR = 3_600_000;
 
 function hash(password: string) {
@@ -184,6 +185,7 @@ export function seedDemoData(db: DB) {
   seedTimePoll(db);
   seedSeveralMarks(db);
   seedMathNote(db);
+  seedFocusHistory(db);
   followSeededThreads(db);
   db.insert(appState)
     .values({ key: SEED_KEY, value: SEED_VERSION })
@@ -521,6 +523,19 @@ function seedProfessor(db: DB, passwordHash: string) {
 
 // What a visitor wouldn't otherwise run into: a question with a code block and a link, and one
 // that's been reported, so the professor has something to moderate.
+// ST1: a couple of weeks of focus sessions, so the sign-in accounts have some time to look at.
+function seedFocusHistory(db: DB) {
+  const now = Date.now();
+  for (const email of Object.values(CORE_EMAILS)) {
+    const userId = db.select({ id: users.id }).from(users).where(eq(users.email, email)).get()?.id;
+    if (!userId || db.select({ id: focusLog.id }).from(focusLog).where(eq(focusLog.userId, userId)).get()) continue;
+    for (const [daysAgo, minutes] of [[1, 50], [2, 25], [3, 90], [5, 50], [8, 50], [9, 25], [12, 90]]) {
+      const startedAt = new Date(now - daysAgo * 24 * HOUR);
+      db.insert(focusLog).values({ userId, startedAt, plannedEnd: new Date(startedAt.getTime() + minutes * 60_000) }).run();
+    }
+  }
+}
+
 // S4: Samuel's midterm notes in COMP 251, in math.
 const MATH_TITLE = 'Master theorem, the three cases';
 

@@ -9,6 +9,7 @@ import {
   courseRecords,
   deadlines,
   enrollments,
+  focusLog,
   plannerAssignments,
   plannerTasks,
   posts,
@@ -152,6 +153,11 @@ export function collectMyData(db: DB, userId: number) {
       .where(eq(timePollVotes.userId, userId))
       .all()
       .map(({ classId, ...a }) => ({ class: cls(classId), ...a })),
+    focusSessions: db
+      .select({ startedAt: focusLog.startedAt, plannedEnd: focusLog.plannedEnd, endedAt: focusLog.endedAt })
+      .from(focusLog)
+      .where(eq(focusLog.userId, userId))
+      .all(),
     studyMode: db
       .select({
         autoForClasses: studyModeSettings.autoForClasses,

@@ -316,6 +316,27 @@ h3,
   }
 }
 
+/* The study mode pill takes the room the tabs needed, and French tabs need more of it. */
+@media (max-width: 1300px) {
+  header:has(.study-pill) .nav-tabs {
+    display: none;
+  }
+
+  header:has(.study-pill) .nav-menu {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 1380px) {
+  :root[lang='fr'] header:has(.study-pill) .nav-tabs {
+    display: none;
+  }
+
+  :root[lang='fr'] header:has(.study-pill) .nav-menu {
+    display: inline-flex;
+  }
+}
+
 /* Phones: shorter month cells, and the week as a list of days. */
 @media (max-width: 640px) {
   .month-cell {

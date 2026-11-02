@@ -9,7 +9,7 @@ import { passwordProblems } from '@shared/validation';
 import { parseCourseQuery, parseSchedule } from '@shared/courseQuery';
 import { goalOutlook, gpaTrend, summarizeRecord, termOrder } from '@shared/academics';
 import { evaluateDegree, graduationPace, type Program } from '@shared/degree';
-import { type FocusWindow, studyModeStatus } from '@shared/studyMode';
+import { focusSummary, type FocusWindow, studyModeStatus } from '@shared/studyMode';
 import { parseScheme, parseSyllabus } from '@shared/syllabus';
 import { findParts, looksLikeExam, minutesForParts } from '@shared/assignment';
 import { clashes, groupMeetings } from '@shared/meetings';
@@ -892,5 +892,33 @@ describe('A1 GPA by term', () => {
       { term: 'Winter 2026', gpa: 3.3, cgpa: 3.4 },
     ]);
     expect(gpaTrend(summarizeRecord([]).terms)).toEqual([]);
+  });
+});
+
+describe('ST1 focus time', () => {
+  // Wednesday 7 October 2026, 12:00: the week started on Monday the 5th.
+  const now = new Date(2026, 9, 7, 12);
+  const entry = (day: number, minutes: number, endedAfter?: number) => {
+    const startedAt = new Date(2026, 9, day, 9);
+    return { startedAt, plannedEnd: new Date(startedAt.getTime() + minutes * 60_000), endedAt: endedAfter == null ? null : new Date(startedAt.getTime() + endedAfter * 60_000) };
+  };
+
+  it('adds up this week and last week, with stops counted as they happened', () => {
+    // Monday 28 September (day -2 of October) starts last week, and the Sunday before it doesn't count.
+    const summary = focusSummary([entry(5, 50), entry(6, 90, 30), entry(4, 25), entry(1, 50), entry(-2, 25), entry(-3, 40)], now);
+    expect(summary).toMatchObject({ thisWeek: 80, sessions: 2, lastWeek: 100 });
+  });
+
+  it('counts a running session up to now, and skips one stopped straight away', () => {
+    const running = { startedAt: new Date(2026, 9, 7, 11, 40), plannedEnd: new Date(2026, 9, 7, 12, 30), endedAt: null };
+    expect(focusSummary([running], now)).toMatchObject({ thisWeek: 20, sessions: 1 });
+    expect(focusSummary([entry(6, 50, 0)], now)).toMatchObject({ thisWeek: 0, sessions: 0, streak: 0 });
+  });
+
+  it('counts days in a row, which today not having one yet does not break', () => {
+    expect(focusSummary([entry(6, 50), entry(5, 50), entry(4, 50), entry(2, 50)], now).streak).toBe(3);
+    expect(focusSummary([entry(7, 30), entry(6, 50)], new Date(2026, 9, 7, 12)).streak).toBe(2);
+    expect(focusSummary([entry(5, 50)], now).streak).toBe(0);
+    expect(focusSummary([], now)).toEqual({ thisWeek: 0, sessions: 0, lastWeek: 0, streak: 0 });
   });
 });

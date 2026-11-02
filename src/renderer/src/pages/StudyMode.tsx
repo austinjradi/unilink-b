@@ -1,4 +1,5 @@
-import { Alert, Badge, Button, Card, Grid, Group, List, Stack, Switch, Text, ThemeIcon, Title } from '@mantine/core';
+import { useEffect, useState } from 'react';
+import { Alert, Badge, Button, Card, Grid, Group, List, SimpleGrid, Stack, Switch, Text, ThemeIcon, Title } from '@mantine/core';
 import { IconBellOff, IconFocus2, IconInfoCircle } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Empty, Loading, PageHeader, SectionCard } from '../components/ui';
@@ -24,6 +25,7 @@ export function StudyModePage() {
         <Grid.Col span={{ base: 12, lg: 7 }}>
           <Stack gap="lg">
             <StatusCard status={status.data} />
+            <FocusTime />
             <Settings status={status.data} />
           </Stack>
         </Grid.Col>
@@ -51,6 +53,63 @@ export function StudyModePage() {
   );
 }
 
+// A clock counting down to the end of what's running.
+function TimeLeft({ until }: { until: Date }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const seconds = Math.max(0, Math.round((until.getTime() - now) / 1000));
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const hours = Math.floor(seconds / 3600);
+  const clock = `${hours ? `${hours}:` : ''}${hours ? pad(Math.floor(seconds / 60) % 60) : Math.floor(seconds / 60)}:${pad(seconds % 60)}`;
+  return (
+    <Text fz={36} fw={700} lh={1.1} mt={6} className="display" role="timer" style={{ fontVariantNumeric: 'tabular-nums' }}>
+      {t('{{time}} left', { time: clock })}
+    </Text>
+  );
+}
+
+const duration = (minutes: number) => (minutes >= 60 ? `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')}` : `${minutes} min`);
+
+// ST1: how much time has gone into focus sessions. Only you see this.
+function FocusTime() {
+  const time = useQuery({ queryKey: ['studyMode', 'focusTime'], queryFn: () => rpc.studyMode.focusTime(), refetchInterval: 60_000 });
+  if (!time.data) return null;
+  const { thisWeek, sessions, lastWeek, streak } = time.data;
+  const stat = (label: string, value: string) => (
+    <div>
+      <Text size="xs" c="dimmed" fw={700}>
+        {label}
+      </Text>
+      <Text fw={800} size="lg">
+        {value}
+      </Text>
+    </div>
+  );
+  return (
+    <SectionCard title={t('Your focus time')} actions={<Text size="xs" c="dimmed">{t('Only you see this')}</Text>}>
+      {thisWeek || lastWeek || streak ? (
+        <SimpleGrid cols={3}>
+          {stat(t('This week'), thisWeek ? `${duration(thisWeek)}` : '—')}
+          {stat(t('Last week'), lastWeek ? duration(lastWeek) : '—')}
+          {stat(t('In a row'), t('{{count}} days', { count: streak }))}
+        </SimpleGrid>
+      ) : (
+        <Text size="sm" c="dimmed">
+          {t('Start a focus session, and your time shows up here.')}
+        </Text>
+      )}
+      {sessions > 0 && (
+        <Text size="xs" c="dimmed" mt="xs">
+          {t('{{count}} focus sessions this week', { count: sessions })}
+        </Text>
+      )}
+    </SectionCard>
+  );
+}
+
 function StatusCard({ status }: { status: Status }) {
   const start = useAction((minutes: number) => rpc.studyMode.start({ minutes }), { success: 'Focus session started' });
   const stop = useAction(() => rpc.studyMode.stop(), { success: 'Study mode off' });
@@ -65,6 +124,7 @@ function StatusCard({ status }: { status: Status }) {
           <div>
             <Title order={3}>{status.active ? t('Study mode is on') : t('Study mode is off')}</Title>
             {status.active ? (
+              <>
               <Text>
                 {status.reason === 'manual' ? (status.focusTask ?? t('Focus session')) : status.label} ·{' '}
                 {t('until {{time}}', { time: fmtTime(status.until!) })}
@@ -75,6 +135,8 @@ function StatusCard({ status }: { status: Status }) {
                   </Text>
                 )}
               </Text>
+              <TimeLeft until={status.until!} />
+              </>
             ) : status.pausedWindow ? (
               <Text c="dimmed">
                 {t('Switched off for {{label}} (until {{time}}).', { label: status.pausedWindow.label, time: fmtTime(status.pausedWindow.end) })}

@@ -593,3 +593,18 @@ export const timePollVotes = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.optionId, t.userId] })],
 );
+
+// ST1: focus sessions started by hand, to show how much time went into them. Only ever shown to
+// the student whose they are.
+export const focusLog = sqliteTable(
+  'focus_log',
+  {
+    id: id(),
+    userId: userRef(),
+    startedAt: timestamp('started_at').notNull(),
+    plannedEnd: timestamp('planned_end').notNull(),
+    // Set when it's stopped early; otherwise it ran until plannedEnd.
+    endedAt: timestamp('ended_at'),
+  },
+  (t) => [index('focus_log_user_idx').on(t.userId, t.startedAt)],
+);
