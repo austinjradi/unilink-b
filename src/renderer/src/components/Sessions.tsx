@@ -86,6 +86,11 @@ export function SessionRow({ session: s, onDetails }: { session: Session; onDeta
             {place(s)}
           </Text>
         </Group>
+        {s.clash && (
+          <Text size="xs" fw={700} c="orange" lineClamp={1}>
+            {t('You have {{what}} then', { what: s.clash })}
+          </Text>
+        )}
       </div>
       <div style={{ width: 100 }}>
         <Text size="lg" fw={600} lh={1.2}>

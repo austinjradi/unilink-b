@@ -76,7 +76,7 @@ The interface follows the team's wireframes in `A2Team.pdf`:
   Ctrl/Cmd+K) searches your classes, posts and replies, deadlines, graded work, study sessions, plans and group chats at once,
   and only what you could already see elsewhere (`services/search.ts`).
 - **Goat mascot:** customizable under Settings → Goat (`components/Goat.tsx`, `shared/goat.ts`).
-- **Home:** today's tasks and deadline countdowns on the left, a cross-class discussion feed with 🐐
+- **Home:** a checklist of first steps for a new account, ticked off as they're done; today's tasks and deadline countdowns on the left, a cross-class discussion feed with 🐐
   reactions in the middle, and filters on the right.
 - **Threads:** one list of replies, with the accepted answer pinned first, and a Follow button for reply notifications. Posts and replies you haven't sent are kept as drafts on this device, per account. A classmate's name opens their
   profile card; the feed sorts by newest or most 🐐, and posts since your last visit to a class are marked New
@@ -89,7 +89,8 @@ The interface follows the team's wireframes in `A2Team.pdf`:
 - **Courses:** each class card shows the next lecture, the next thing due and unanswered questions; a class's
   Overview lists what's coming up in it.
 - **Group chat links:** cards with Open/Report buttons.
-- **Study Sessions:** your upcoming sessions, plus a search page you can filter by class, format, free spots and date. A
+- **Study Sessions:** your upcoming sessions, plus a search page you can filter by class, format, free spots and date. A session
+  or a poll's time that overlaps one of your classes or another session you're going to says so (`busyChecker` in `services/calendar.ts`). A
   section's tab can also **find a time**: offer two to five times, classmates tick the ones that work, and only the counts show.
   Picking one sets up the session and tells everyone who answered, who then choose whether to join (`services/timePolls.ts`).
 - **Study Mode:** its own tab, with a pill in the top bar while it's on. A planned task (on Home or the Planner) can start a

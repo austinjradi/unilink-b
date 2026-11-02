@@ -80,6 +80,30 @@ export function myMeetings(db: DB, userId: number) {
     .all();
 }
 
+// What a student already has on at a given time: one of their classes (not on a break or holiday),
+// or a session they're going to. Returns a checker, so a list only looks these up once.
+export function busyChecker(db: DB, userId: number) {
+  const label = classLabels(db);
+  const meetings = myMeetings(db, userId);
+  const sessions = db
+    .select({ id: studySessions.id, title: studySessions.title, startsAt: studySessions.startsAt, endsAt: studySessions.endsAt })
+    .from(studySessionMembers)
+    .innerJoin(studySessions, eq(studySessionMembers.sessionId, studySessions.id))
+    .where(and(eq(studySessionMembers.userId, userId), eq(studySessionMembers.status, 'going'), isNull(studySessions.cancelledAt)))
+    .all();
+  return (start: Date, end: Date, exceptSessionId?: number): string | null => {
+    const day = ymd(start);
+    if (!noClassesOn(day)) {
+      for (const { meeting: m, term } of meetings) {
+        const range = termRange(term);
+        if (m.weekday !== start.getDay() || day < range.start || day > range.end) continue;
+        if (atTime(day, m.startTime) < end && start < atTime(day, m.endTime)) return label.get(m.classId) ?? null;
+      }
+    }
+    return sessions.find((s) => s.id !== exceptSessionId && s.startsAt < end && start < s.endsAt)?.title ?? null;
+  };
+}
+
 // Your private deadlines plus the shared deadlines of every class you're in, with whether
 // you've checked each one off.
 export function visibleDeadlines(db: DB, userId: number, from?: Date, to?: Date) {

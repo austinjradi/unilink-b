@@ -720,6 +720,32 @@ describe('A4 several marks in one component', () => {
   });
 });
 
+describe('S3 sessions that clash', () => {
+  it('warns about your classes and other sessions at that time, except on breaks', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    await maya.api.courses.saveMeetings({ classId, meetings: [{ weekday: 1, startTime: '10:00', endTime: '12:00', location: '' }] });
+
+    // Clock: Monday 5 October 2026. Class is Mondays 10:00 to 12:00.
+    const at = (day: number, start: number, end: number) => ({ startsAt: new Date(2026, 9, day, start), endsAt: new Date(2026, 9, day, end) });
+    const during = await leo.api.studySessions.create({ classId, ...session({ title: 'During class', ...at(5, 11, 13) }) });
+    const after = await leo.api.studySessions.create({ classId, ...session({ title: 'Right after', ...at(5, 12, 14) }) });
+    const breakWeek = await leo.api.studySessions.create({ classId, ...session({ title: 'Reading break', ...at(12, 11, 13) }) });
+    const clash = async () => Object.fromEntries((await maya.api.studySessions.list({ classId })).map((s) => [s.id, s.clash]));
+    expect(await clash()).toMatchObject({ [during.id]: 'COMP 251-001', [after.id]: null, [breakWeek.id]: null });
+
+    // Another session you're going to counts; a session doesn't clash with itself.
+    await maya.api.studySessions.join({ sessionId: after.id });
+    const overlapping = await leo.api.studySessions.create({ classId, ...session({ title: 'Overlapping', ...at(5, 13, 15) }) });
+    expect(await clash()).toMatchObject({ [after.id]: null, [overlapping.id]: 'Right after' });
+
+    // Polls too.
+    await leo.api.timePolls.create({ classId, title: 'Review', minutes: 60, times: [new Date(2026, 9, 5, 11), new Date(2026, 9, 6, 11)] });
+    const [poll] = await maya.api.timePolls.list({ classId });
+    expect(poll.options.map((o) => o.clash)).toEqual(['COMP 251-001', null]);
+  });
+});
+
 describe('S3 finding a time', () => {
   const times = [new Date(2026, 9, 7, 18), new Date(2026, 9, 8, 18), new Date(2026, 9, 9, 18)];
 

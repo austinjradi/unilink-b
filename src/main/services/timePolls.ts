@@ -4,6 +4,7 @@ import type { DB } from '../db/client';
 import { enrollments, studySessions, timePollOptions, timePolls, timePollVotes, users } from '../db/schema';
 import { AppError, idSchema, nonEmpty, procedure } from '../rpc/core';
 import { classLabel, notFound, requireMember } from './access';
+import { busyChecker } from './calendar';
 import { m, notify, raw } from './notifications';
 
 // S3: someone who doesn't know when suits people offers a few times, and the section says which
@@ -32,6 +33,7 @@ export const timePollsRouter = {
       .where(and(classId != null ? eq(timePolls.classId, classId) : inArray(timePolls.classId, mine), isNull(timePolls.closedAt)))
       .orderBy(asc(timePolls.createdAt))
       .all();
+    const busy = busyChecker(ctx.db, ctx.userId);
     return polls.flatMap(({ poll, hostName }) => {
       const options = ctx.db
         .select()
@@ -60,6 +62,7 @@ export const timePollsRouter = {
             endsAt: o.endsAt,
             votes: votes.filter((v) => v.optionId === o.id).length,
             voted: votes.some((v) => v.optionId === o.id && v.userId === ctx.userId),
+            clash: busy(o.startsAt, o.endsAt),
           })),
         },
       ];

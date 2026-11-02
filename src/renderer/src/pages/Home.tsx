@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ActionIcon, Anchor, Badge, Button, Card, Checkbox, Collapse, Group, RingProgress, Stack, Text, TextInput, Tooltip } from '@mantine/core';
-import { IconChevronDown, IconChevronRight, IconListCheck, IconPlus, IconRepeat, IconTrash } from '@tabler/icons-react';
+import { IconChevronDown, IconChevronRight, IconCircle, IconCircleCheck, IconListCheck, IconPlus, IconRepeat, IconTrash, IconX } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { parseTaskDate } from '@shared/taskDate';
@@ -42,35 +42,77 @@ export function Home() {
   );
 }
 
-// A new account's first steps, shown until they've joined a class.
+// A new account's first steps, ticked off as they're done, until they all are or it's dismissed.
 function Welcome() {
-  const professor = useMe().role === 'professor';
+  const me = useMe();
+  const professor = me.role === 'professor';
+  const hidden = `unilink-welcome-hidden-${me.id}`;
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(hidden) === '1';
+    } catch {
+      return false;
+    }
+  });
   const mine = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
-  if (!mine.data || mine.data.length) return null;
+  const first = mine.data?.[0]?.id;
+  const around = useQuery({ queryKey: ['planner', 'aroundClasses'], queryFn: () => rpc.planner.freeTimeAroundClasses(), enabled: !professor });
+  const plans = useQuery({ queryKey: ['planner', 'list'], queryFn: () => rpc.planner.list(), enabled: !professor });
+  const scheme = useQuery({ queryKey: ['courses', 'assessments', first], queryFn: () => rpc.courses.assessments({ classId: first! }), enabled: professor && first != null });
+  const posted = useQuery({ queryKey: ['assignments', first], queryFn: () => rpc.assignments.list({ classId: first! }), enabled: professor && first != null });
+  if (!mine.data || dismissed) return null;
+  const inClass = (tab = '') => (first != null ? `/classes/${first}${tab && `/${tab}`}` : '/courses/find');
+  const goat = { to: '/settings/goat', label: t('Dress up your goat'), done: me.avatar != null };
   const steps = professor
     ? [
-        { to: '/courses/find', label: t('Find the sections you teach') },
-        { to: '/settings/goat', label: t('Dress up your goat') },
+        { to: '/courses/find', label: t('Find the sections you teach'), done: first != null },
+        { to: inClass('grades'), label: t('Set the grading scheme'), done: !!scheme.data?.length },
+        { to: inClass('assignments'), label: t('Post an assignment'), done: !!posted.data?.length },
+        goat,
       ]
     : [
-        { to: '/courses/find', label: t('Find and join your classes') },
-        { to: '/calendar', label: t('Add deadlines to your calendar') },
-        { to: '/planner?new=1', label: t('Plan out an assignment') },
-        { to: '/settings/goat', label: t('Dress up your goat') },
+        { to: '/courses/find', label: t('Find and join your classes'), done: first != null },
+        { to: inClass(), label: t('Add your class times'), done: around.data != null },
+        { to: '/settings/account', label: t('Set your free study time'), done: me.weeklyStudyMinutes != null },
+        { to: '/planner?new=1', label: t('Plan out an assignment'), done: !!plans.data?.length },
+        goat,
       ];
+  if (steps.every((step) => step.done)) return null;
+  const hide = () => {
+    setDismissed(true);
+    try {
+      localStorage.setItem(hidden, '1');
+    } catch {
+      // It just comes back next time.
+    }
+  };
   return (
     <Card padding="md">
-      <Text fw={800} size="lg" className="display">
-        {t('Welcome to UniLink!')}
-      </Text>
+      <Group justify="space-between" wrap="nowrap" align="flex-start">
+        <Text fw={800} size="lg" className="display">
+          {t('Welcome to UniLink!')}
+        </Text>
+        <ActionIcon variant="subtle" color="gray" size="sm" onClick={hide} aria-label={t('Hide these steps')}>
+          <IconX size={14} />
+        </ActionIcon>
+      </Group>
       <Text size="sm" c="dimmed" mb="sm">
         {t('A few things to start with:')}
       </Text>
       <Stack gap={6}>
-        {steps.map((step, i) => (
-          <Anchor key={step.to} component={Link} to={step.to} size="sm" fw={700}>
-            {i + 1}. {step.label}
-          </Anchor>
+        {steps.map((step) => (
+          <Group key={step.label} gap={8} wrap="nowrap">
+            {step.done ? <IconCircleCheck size={16} color="var(--mantine-color-teal-filled)" aria-label={t('Done')} /> : <IconCircle size={16} color="var(--mantine-color-dimmed)" aria-hidden />}
+            {step.done ? (
+              <Text size="sm" c="dimmed" td="line-through">
+                {step.label}
+              </Text>
+            ) : (
+              <Anchor component={Link} to={step.to} size="sm" fw={700}>
+                {step.label}
+              </Anchor>
+            )}
+          </Group>
         ))}
       </Stack>
     </Card>

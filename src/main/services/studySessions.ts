@@ -8,6 +8,7 @@ import type { DB } from '../db/client';
 import { classes, courses, enrollments, studySessionMembers, studySessions, users } from '../db/schema';
 import { AppError, type AuthedContext, idSchema, nonEmpty, procedure } from '../rpc/core';
 import { classLabel, classLabels, isMember, notFound, requireMember, sectionCode } from './access';
+import { busyChecker } from './calendar';
 import { m, type NotifyInput, notify } from './notifications';
 
 // S3 in version B:
@@ -143,6 +144,7 @@ function describe(db: DB, userId: number, rows: SessionRow[], now: Date) {
     .orderBy(asc(studySessionMembers.createdAt))
     .all();
   const labels = classLabels(db);
+  const busy = busyChecker(db, userId);
 
   // For "Join every week": the upcoming weeks of each series, and the ones you're in.
   const seriesIds = [...new Set(rows.map((r) => r.seriesId).filter((id): id is number => id != null))];
@@ -177,6 +179,8 @@ function describe(db: DB, userId: number, rows: SessionRow[], now: Date) {
       inviteCode: isHost ? s.inviteCode : null,
       meetingUrl: attending ? s.meetingUrl : '',
       classLabel: labels.get(s.classId) ?? '',
+      // A class or another session of yours at the same time.
+      clash: s.cancelledAt || s.endsAt < now ? null : busy(s.startsAt, s.endsAt, s.id),
       hostFirstName: going.find((m) => m.userId === s.hostId)?.name.split(' ')[0] ?? null,
       hostIsProfessor: going.find((m) => m.userId === s.hostId)?.role === 'professor',
       goingCount: going.length,

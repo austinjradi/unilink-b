@@ -64,6 +64,8 @@ function PollCard({ poll, showClass, onPick }: { poll: Poll; showClass: boolean;
           <Group key={o.id} justify="space-between" wrap="nowrap" gap="sm">
             <Checkbox
               label={`${fmtDateTime(o.startsAt)}–${fmtTime(o.endsAt)}`}
+              description={o.clash ? t('You have {{what}} then', { what: o.clash }) : undefined}
+              styles={{ description: { color: 'var(--mantine-color-orange-text)', fontWeight: 700 } }}
               checked={o.voted}
               onChange={(e) => vote.mutate({ optionId: o.id, on: e.currentTarget.checked })}
             />
