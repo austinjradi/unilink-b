@@ -17,11 +17,12 @@ import {
   TextInput,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { IconAlertTriangle, IconDownload, IconEye, IconMail } from '@tabler/icons-react';
+import { IconAlertTriangle, IconDownload, IconEye, IconMail, IconRestore } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { FACULTIES, passwordProblems, PRONOUNS } from '@shared/validation';
 import { SectionCard } from '../components/ui';
 import { fromNow } from '../lib/format';
+import { restoreBackup } from '../lib/backup';
 import { clearDrafts } from '../lib/drafts';
 import { useAction, useMe } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
@@ -46,6 +47,20 @@ export function PrivacyPanel() {
         <Button variant="default" w="fit-content" leftSection={<IconDownload size={16} />} onClick={() => download.mutate()} loading={download.isPending}>
           {t('Download my data')}
         </Button>
+      </SectionCard>
+      {/* There's no server, so this is the only copy of anything anyone keeps here. */}
+      <SectionCard title={t('Back up this browser')}>
+        <Text size="sm" c="dimmed" mb="sm">
+          {t('Everything in UniLink is saved only in this browser, so clearing its data would lose it. A backup keeps it all in one file you can restore here or on another computer. It holds every account used in this browser, with notes and marks, so keep it somewhere private.')}
+        </Text>
+        <Group gap="xs">
+          <Button variant="default" leftSection={<IconDownload size={16} />} onClick={() => void window.unilink.downloadBackup()}>
+            {t('Download a backup')}
+          </Button>
+          <Button variant="default" leftSection={<IconRestore size={16} />} onClick={restoreBackup}>
+            {t('Restore a backup')}
+          </Button>
+        </Group>
       </SectionCard>
     </Stack>
   );

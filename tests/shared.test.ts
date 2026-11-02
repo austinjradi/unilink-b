@@ -12,6 +12,7 @@ import { type FocusWindow, studyModeStatus } from '@shared/studyMode';
 import { parseSyllabus } from '@shared/syllabus';
 import { findParts, minutesForParts } from '@shared/assignment';
 import { clashes, groupMeetings } from '@shared/meetings';
+import { BACKUP_APP, readBackup, writeBackup } from '@shared/backup';
 import { parsePost } from '@shared/postText';
 import { keywords, similarity } from '@shared/similar';
 import { parseTranscript } from '@shared/transcript';
@@ -521,5 +522,42 @@ COMP 251 Tutorial`;
       { subject: 'COMP', number: '251', section: null },
       { subject: 'MATH', number: '240', section: null },
     ]);
+  });
+});
+
+describe('backups', () => {
+  const sqlite = new TextEncoder().encode('SQLite format 3\0 and the rest of the file');
+  const file = { path: '/attachments/a-handout.pdf', type: 'application/pdf', bytes: new Uint8Array([0, 1, 2, 255]) };
+  const edited = (change: (raw: Record<string, unknown>) => void) => {
+    const raw = JSON.parse(writeBackup({ db: sqlite, files: [file] }, new Date(2026, 10, 2)));
+    change(raw);
+    return JSON.stringify(raw);
+  };
+
+  it('round-trips the database and files, byte for byte', () => {
+    const large = new Uint8Array(300_000).map((_, i) => i % 251);
+    const back = readBackup(writeBackup({ db: sqlite, files: [file, { ...file, path: '/attachments/big.png', type: 'image/png', bytes: large }] }, new Date()));
+    expect(back?.db).toEqual(sqlite);
+    expect(back?.files.map((f) => [f.path, f.type])).toEqual([['/attachments/a-handout.pdf', 'application/pdf'], ['/attachments/big.png', 'image/png']]);
+    expect(back?.files[1].bytes).toEqual(large);
+  });
+
+  it('refuses anything that is not a UniLink backup', () => {
+    expect(readBackup('not json')).toBeNull();
+    expect(readBackup('{"app":"something-else"}')).toBeNull();
+    expect(readBackup(edited((raw) => (raw.app = 'other')))).toBeNull();
+    expect(readBackup(edited((raw) => (raw.version = 2)))).toBeNull();
+    expect(readBackup(edited((raw) => (raw.db = btoa('not a database'))))).toBeNull();
+    expect(readBackup(edited((raw) => (raw.files = 'nope')))).toBeNull();
+    expect(edited(() => {})).toContain(BACKUP_APP);
+  });
+
+  it('only puts files where attachments belong, and never as something that runs', () => {
+    const withFile = (f: object) => edited((raw) => (raw.files = [{ data: btoa('x'), type: 'text/plain', ...f }]));
+    expect(readBackup(withFile({ path: 'db' }))).toBeNull();
+    expect(readBackup(withFile({ path: '/attachments/../db' }))).toBeNull();
+    expect(readBackup(withFile({ path: '/attachments/x.txt' }))?.files[0].type).toBe('text/plain');
+    expect(readBackup(withFile({ path: '/attachments/x.svg', type: 'image/svg+xml' }))?.files[0].type).toBe('application/octet-stream');
+    expect(readBackup(withFile({ path: '/attachments/x.html', type: 'text/html' }))?.files[0].type).toBe('application/octet-stream');
   });
 });

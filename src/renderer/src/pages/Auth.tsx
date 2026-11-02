@@ -28,6 +28,7 @@ import { FACULTIES, MCGILL_EMAIL, PASSWORD_RULES, passwordProblems, PRONOUNS, ST
 import { GoatAvatar } from '../components/Goat';
 import { Logo } from '../components/Layout';
 import { useAction } from '../lib/hooks';
+import { restoreBackup } from '../lib/backup';
 import { rpc } from '../lib/rpc';
 import { LanguageSwitch } from '../components/LanguageSwitch';
 import { getLocale, t } from '../lib/i18n';
@@ -139,6 +140,10 @@ export function SignIn() {
                 {t('Everything is saved in this browser only.')}{' '}
                 <Anchor component="button" type="button" size="xs" onClick={confirmReset}>
                   {t('Reset demo data')}
+                </Anchor>{' '}
+                ·{' '}
+                <Anchor component="button" type="button" size="xs" onClick={restoreBackup}>
+                  {t('Restore a backup')}
                 </Anchor>
               </Text>
             </Alert>

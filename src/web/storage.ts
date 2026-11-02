@@ -53,6 +53,11 @@ export async function remove(key: string) {
   await request('readwrite', (s) => s.delete(key));
 }
 
+export async function keys() {
+  const saved = (await request('readonly', (s) => s.getAllKeys())) ?? [];
+  return [...new Set([...saved.map(String), ...memory.keys()])];
+}
+
 export async function clearAll() {
   memory.clear();
   await request('readwrite', (s) => s.clear());

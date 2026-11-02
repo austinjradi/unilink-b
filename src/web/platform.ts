@@ -17,7 +17,7 @@ export function onNavigate(callback: (link: string) => void) {
 const originalName = (path: string) => basename(path).replace(/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}-/, '');
 
 // Types a browser tab can show itself; anything else is downloaded.
-const VIEWABLE = /^(image\/|text\/plain$|application\/pdf$)/;
+const VIEWABLE = /^(image\/(png|jpeg|gif|webp)$|text\/plain$|application\/pdf$)/;
 
 // Plain-text handouts that browsers don't always give a text/* type.
 const TEXT_FILE = /\.(txt|md|markdown|tex|rst)$/i;

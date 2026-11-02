@@ -142,6 +142,10 @@ configuration: GitHub Pages, Netlify, Vercel, Cloudflare Pages, or any web serve
 The site needs HTTPS (or `localhost`) for system notifications, and to work offline and install to a home screen;
 everything else also works over plain HTTP, e.g. from a phone on the same network with `npm run dev -- --host`.
 
+**Backups:** with no server, a browser's copy is the only copy. Settings → Privacy downloads everything in the browser
+(the database and attachments) as one file, without anyone's sign-in, and it can be restored there or from the sign-in
+screen on another computer. Restoring replaces what's there, after checking the file (`shared/backup.ts`).
+
 **Offline:** since everything a visitor saves is already in their browser, the built site keeps working with no
 connection after one visit, and can be installed like an app (`public/manifest.webmanifest`). The service worker
 (`src/web/sw.js`, its file list filled in by `vite.config.ts`) always tries the network for the page itself, so a

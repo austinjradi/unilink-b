@@ -4,8 +4,9 @@ import { openDatabase } from '../main/db/client';
 import { DEMO_HANDOUTS, seedDemoData } from '../main/db/demo';
 import { type Context, dispatch, type RpcResult } from '../main/rpc/core';
 import { appRouter } from '../main/rpc/router';
+import { readBackup, writeBackup } from '../shared/backup';
 import { backgroundTick, initialTickState } from '../main/services/studyMode';
-import { FILES_DIR, addPickedFile } from './node/fs';
+import { FILES_DIR, addPickedFile, download } from './node/fs';
 import { onNavigate, platform } from './platform';
 import * as storage from './storage';
 
@@ -98,6 +99,44 @@ window.unilink = {
   onNavigate,
   // A file the page already has (a pasted screenshot), usable like one from chooseFile.
   addFile: addPickedFile,
+  async downloadBackup() {
+    await ready;
+    await saving;
+    // Without anyone's sign-in: whoever restores it signs in again with their password.
+    const copy = new SQL.Database(sqlite.export());
+    sqlite.run('PRAGMA foreign_keys = ON');
+    copy.run("DELETE FROM app_state WHERE key = 'session_token'; DELETE FROM auth_sessions;");
+    const db = copy.export();
+    copy.close();
+    const files = [];
+    for (const path of await storage.keys()) {
+      if (!path.startsWith(`${FILES_DIR}/`)) continue;
+      const blob = await storage.load<Blob>(path);
+      if (blob) files.push({ path, type: blob.type, bytes: new Uint8Array(await blob.arrayBuffer()) });
+    }
+    download(new Blob([writeBackup({ db, files }, new Date())], { type: 'application/json' }), 'my-unilink-backup.unilink');
+  },
+  async restoreBackup(file) {
+    await ready;
+    const backup = readBackup(await file.text());
+    if (!backup) return false;
+    // It has to open as a database with accounts in it before anything here is replaced.
+    try {
+      const check = new SQL.Database(backup.db);
+      check.exec('SELECT count(*) FROM users');
+      check.close();
+    } catch {
+      return false;
+    }
+    resetting = true;
+    await saving;
+    await storage.clearAll();
+    await storage.save(DB_KEY, backup.db);
+    for (const f of backup.files) await storage.save(f.path, new Blob([f.bytes as BlobPart], { type: f.type }));
+    channel?.postMessage({ type: 'reset' });
+    location.reload();
+    return true;
+  },
   async resetDemo() {
     resetting = true;
     await saving;
