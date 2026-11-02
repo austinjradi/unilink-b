@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useState } from 'react';
+import { createContext, type KeyboardEvent, useContext, useState } from 'react';
 import {
   ActionIcon,
   Alert,
@@ -6,6 +6,7 @@ import {
   Box,
   Button,
   Card,
+  Chip,
   Checkbox,
   Grid,
   Group,
@@ -23,7 +24,7 @@ import {
 } from '@mantine/core';
 import { DateTimePicker } from '@mantine/dates';
 import { useForm } from '@mantine/form';
-import { useMediaQuery } from '@mantine/hooks';
+import { useMediaQuery, useLocalStorage } from '@mantine/hooks';
 import {
   IconAlertTriangle,
   IconArrowRight,
@@ -69,6 +70,30 @@ const mondayOf = (day: string) => {
 };
 
 // A3 in the layout of the wireframe (A2Team.pdf p. 7).
+// Classes switched off in the calendar's filter. What belongs to no class always shows.
+const HiddenClasses = createContext<number[]>([]);
+
+function ClassFilter({ hidden, onChange }: { hidden: number[]; onChange: (hidden: number[]) => void }) {
+  const mine = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
+  const classes = mine.data ?? [];
+  if (classes.length < 2) return null;
+  return (
+    <Group gap={6} mb="md" aria-label={t('Classes shown on the calendar')} role="group">
+      {classes.map((c) => (
+        <Chip
+          key={c.id}
+          size="xs"
+          variant="outline"
+          checked={!hidden.includes(c.id)}
+          onChange={(shown) => onChange(shown ? hidden.filter((id) => id !== c.id) : [...hidden, c.id])}
+        >
+          {c.code}
+        </Chip>
+      ))}
+    </Group>
+  );
+}
+
 export function CalendarPage() {
   const navigate = useNavigate();
   const today = ymd(new Date());
@@ -84,6 +109,8 @@ export function CalendarPage() {
   const [editing, setEditing] = useState<Deadline | 'new' | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [importing, setImporting] = useState(false);
+  // Remembered between visits, on this device.
+  const [hidden, setHidden] = useLocalStorage<number[]>({ key: 'unilink-calendar-hidden-classes', defaultValue: [] });
 
   const exportIcs = useAction(() => rpc.calendar.exportIcs(), {
     success: (r) => (r ? t('Exported {{count}} events. Import the file into Google Calendar.', { count: r.count }) : ''),
@@ -142,6 +169,7 @@ export function CalendarPage() {
         }
       />
 
+      <HiddenClasses.Provider value={hidden}>
       <Grid gap="lg" columns={24}>
         <Grid.Col span={{ base: 24, lg: 17 }}>
           <Card padding="md">
@@ -185,6 +213,7 @@ export function CalendarPage() {
                 ]}
               />
             </Group>
+            {view !== 'key' && <ClassFilter hidden={hidden} onChange={setHidden} />}
             {view === 'month' && <MonthView cursor={cursor} today={today} selected={selected} onSelect={pick} />}
             {view === 'week' && <WeekView start={mondayOf(cursor)} today={today} selected={selected} onSelect={pick} />}
             {view === 'semester' && <SemesterView />}
@@ -198,6 +227,7 @@ export function CalendarPage() {
           <DayList day={selected} today={today} />
         </Grid.Col>
       </Grid>
+      </HiddenClasses.Provider>
 
       <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing === 'new' ? t('Add deadline') : t('Edit deadline')}>
         {editing && <DeadlineForm key={editing === 'new' ? 'new' : editing.id} existing={editing === 'new' ? null : editing} onDone={() => setEditing(null)} />}
@@ -213,10 +243,12 @@ export function CalendarPage() {
 }
 
 function useRange(from: string, to: string) {
+  const hidden = useContext(HiddenClasses);
   return useQuery({
     queryKey: ['calendar', from, to],
     queryFn: () => rpc.calendar.range({ from, to }),
     placeholderData: keepPreviousData,
+    select: (events) => events.filter((e) => e.classId == null || !hidden.includes(e.classId)),
   });
 }
 
@@ -522,15 +554,16 @@ function KeyDatesView() {
 }
 
 function Upcoming({ onViewAll }: { onViewAll: () => void }) {
+  const hidden = useContext(HiddenClasses);
   const upcoming = useQuery({ queryKey: ['calendar', 'upcoming', 7], queryFn: () => rpc.calendar.upcoming({ days: 7 }) });
   const sessions = useQuery({ queryKey: ['studySessions', 'mine'], queryFn: () => rpc.studySessions.mine() });
   const remove = useAction((id: number) => rpc.calendar.removeDeadline({ id }), { success: 'Deadline removed' });
 
   const soon = dayjs().add(7, 'day');
   const items = [
-    ...(upcoming.data ?? []).map((e) => ({ key: e.key, title: e.title, sub: e.classLabel, when: e.start, end: null as Date | null, kind: eventKind(e), deadlineId: e.addedBy == null ? e.deadlineId : null, addedBy: e.addedBy })),
+    ...(upcoming.data ?? []).filter((e) => e.classId == null || !hidden.includes(e.classId)).map((e) => ({ key: e.key, title: e.title, sub: e.classLabel, when: e.start, end: null as Date | null, kind: eventKind(e), deadlineId: e.addedBy == null ? e.deadlineId : null, addedBy: e.addedBy })),
     ...(sessions.data ?? [])
-      .filter((s) => s.myStatus === 'going' && dayjs(s.startsAt).isBefore(soon))
+      .filter((s) => s.myStatus === 'going' && dayjs(s.startsAt).isBefore(soon) && !hidden.includes(s.classId))
       .map((s) => ({ key: `s${s.id}`, title: s.title, sub: s.classLabel, when: s.startsAt, end: s.endsAt, kind: 'session', deadlineId: null, addedBy: null })),
   ].sort((a, b) => a.when.getTime() - b.when.getTime());
 

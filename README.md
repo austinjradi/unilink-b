@@ -76,12 +76,12 @@ The interface follows the team's wireframes in `A2Team.pdf`:
   (counted on its course card).
 - **Grade Calculator:** a "You need at least X%" bubble and a scenarios table, and below them every class this term with a
   projected term GPA and CGPA on McGill's scale.
-- **Calendar & Planner:** Month, Week, Semester and Key dates views. Pick any day to list everything on it; on phones
+- **Calendar & Planner:** Month, Week, Semester and Key dates views, with a chip per class to show or hide it. Pick any day to list everything on it; on phones
   the month shows a coloured dot per event.
 - **Courses:** each class card shows the next lecture, the next thing due and unanswered questions; a class's
   Overview lists what's coming up in it.
 - **Group chat links:** cards with Open/Report buttons.
-- **Study Sessions:** your upcoming sessions, plus a search page.
+- **Study Sessions:** your upcoming sessions, plus a search page you can filter by class, format, free spots and date.
 - **Study Mode:** its own tab, with a pill in the top bar while it's on.
 - **Settings:** sections down the side.
 

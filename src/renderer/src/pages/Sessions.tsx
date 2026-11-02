@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Button, Modal, Text, TextInput } from '@mantine/core';
+import { Button, Chip, Group, Modal, Select, Text, TextInput } from '@mantine/core';
 import { useDebouncedValue } from '@mantine/hooks';
 import { IconPlus, IconSearch, IconUsersGroup } from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import dayjs from 'dayjs';
 import { Link, useParams } from 'react-router';
 import { JoinByCode, SessionForm, SessionInvite, SessionList, SessionsCard } from '../components/Sessions';
 import { Empty, Loading, PageHeader } from '../components/ui';
@@ -62,11 +63,25 @@ export function SessionsPage() {
 export function SessionSearchPage() {
   const [search, setSearch] = useState('');
   const [debounced] = useDebouncedValue(search, 200);
+  const [classId, setClassId] = useState<string | null>(null);
+  const [format, setFormat] = useState<'in-person' | 'online' | null>(null);
+  const [hasRoom, setHasRoom] = useState(false);
+  const [soon, setSoon] = useState(false);
+  const classes = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
   const found = useQuery({
     queryKey: ['studySessions', 'browse', debounced],
     queryFn: () => rpc.studySessions.browse({ search: debounced }),
     placeholderData: keepPreviousData,
   });
+  const nextWeek = dayjs().add(7, 'day');
+  const filtered = (found.data ?? []).filter(
+    (s) =>
+      (!classId || s.classId === Number(classId)) &&
+      (!format || s.format === format) &&
+      (!hasRoom || !s.isFull) &&
+      (!soon || dayjs(s.startsAt).isBefore(nextWeek)),
+  );
+  const filtering = !!classId || !!format || hasRoom || soon;
   return (
     <>
       <PageHeader
@@ -86,14 +101,39 @@ export function SessionSearchPage() {
         onChange={(e) => setSearch(e.currentTarget.value)}
         autoFocus
       />
+      <Group gap="xs" mb="md">
+        <Select
+          size="xs"
+          radius="xl"
+          w={170}
+          clearable
+          placeholder={t('All my classes')}
+          aria-label={t('Class')}
+          data={(classes.data ?? []).map((c) => ({ value: String(c.id), label: c.code }))}
+          value={classId}
+          onChange={setClassId}
+        />
+        <Chip size="sm" variant="outline" checked={format === 'in-person'} onChange={(on) => setFormat(on ? 'in-person' : null)}>
+          {t('In person')}
+        </Chip>
+        <Chip size="sm" variant="outline" checked={format === 'online'} onChange={(on) => setFormat(on ? 'online' : null)}>
+          {t('Online')}
+        </Chip>
+        <Chip size="sm" variant="outline" checked={hasRoom} onChange={setHasRoom}>
+          {t('Spots left')}
+        </Chip>
+        <Chip size="sm" variant="outline" checked={soon} onChange={setSoon}>
+          {t('Next 7 days')}
+        </Chip>
+      </Group>
       {found.isPending ? (
         <Loading />
       ) : (
         <SessionList
-          sessions={found.data ?? []}
+          sessions={filtered}
           empty={
             <Empty>
-              {search ? t('No sessions match.') : t('No upcoming sessions in your classes yet.')}{' '}
+              {search || filtering ? t('No sessions match.') : t('No upcoming sessions in your classes yet.')}{' '}
               <Text span inherit>
                 {t('Be the first to create one!')}
               </Text>
