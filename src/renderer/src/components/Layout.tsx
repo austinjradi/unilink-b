@@ -81,6 +81,12 @@ export function Layout({ children }: { children: ReactNode }) {
   // Clicking a desktop notification opens what it's about.
   useEffect(() => window.unilink.onNavigate((link) => navigate(link)), [navigate]);
 
+  // Tab titles name the page ("Calendar · UniLink"), for history and many open tabs.
+  const section = NAV.find((item) => item.match(pathname));
+  useEffect(() => {
+    document.title = section ? `${t(section.label)} · UniLink` : 'UniLink';
+  }, [section]);
+
   return (
     <AppShell header={{ height: 72 }} padding={{ base: 'sm', sm: 'lg' }}>
       <AppShell.Header px={{ base: 'sm', sm: 'lg' }} style={{ borderBottom: '2px solid var(--ul-rule)' }}>
