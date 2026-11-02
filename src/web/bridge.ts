@@ -5,7 +5,7 @@ import { DEMO_HANDOUTS, seedDemoData } from '../main/db/demo';
 import { type Context, dispatch, type RpcResult } from '../main/rpc/core';
 import { appRouter } from '../main/rpc/router';
 import { backgroundTick, initialTickState } from '../main/services/studyMode';
-import { FILES_DIR } from './node/fs';
+import { FILES_DIR, addPickedFile } from './node/fs';
 import { onNavigate, platform } from './platform';
 import * as storage from './storage';
 
@@ -96,6 +96,8 @@ window.unilink = {
     return result;
   },
   onNavigate,
+  // A file the page already has (a pasted screenshot), usable like one from chooseFile.
+  addFile: addPickedFile,
   async resetDemo() {
     resetting = true;
     await saving;

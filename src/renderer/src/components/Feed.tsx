@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ClipboardEvent, type ReactNode, useEffect, useState } from 'react';
 import {
   ActionIcon,
   Anchor,
@@ -12,6 +12,7 @@ import {
   Drawer,
   Grid,
   Group,
+  Image,
   Modal,
   Popover,
   SegmentedControl,
@@ -44,9 +45,11 @@ import {
   IconMessageCircle,
   IconMessages,
   IconPencil,
+  IconPhoto,
   IconPlus,
   IconSearch,
   IconTrash,
+  IconX,
 } from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router';
@@ -129,6 +132,79 @@ function Body({ text }: { text: string }) {
         ),
       )}
     </>
+  );
+}
+
+// A post's or reply's images: click one to see it full size in a new tab.
+function Images({ images, height }: { images: { id: number; name: string }[]; height: number }) {
+  if (!images.length) return null;
+  return (
+    <Group gap="xs" mt="xs">
+      {images.map((image) => (
+        <StoredImage key={image.id} image={image} height={height} />
+      ))}
+    </Group>
+  );
+}
+
+function StoredImage({ image, height }: { image: { id: number; name: string }; height: number }) {
+  const url = useQuery({ queryKey: ['board', 'image', image.id], queryFn: () => rpc.board.imageUrl({ id: image.id }), staleTime: Infinity });
+  if (!url.data) return null;
+  return (
+    <Anchor href={url.data} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} aria-label={t('Open {{name}} full size', { name: image.name })}>
+      <Image src={url.data} alt={image.name} h={height} w="auto" maw="100%" radius="md" fit="contain" style={{ border: '1.5px solid var(--ul-border)' }} />
+    </Anchor>
+  );
+}
+
+// Images waiting to go out with a post or reply, picked or pasted.
+const MAX_IMAGES = 4;
+
+function useImageDraft() {
+  const [images, setImages] = useState<{ path: string; name: string }[]>([]);
+  const choose = useAction(() => rpc.board.chooseImage(), { onSuccess: (file) => file && setImages((list) => [...list, file].slice(0, MAX_IMAGES)) });
+  return {
+    images,
+    choose,
+    remove: (index: number) => setImages((list) => list.filter((_, i) => i !== index)),
+    clear: () => setImages([]),
+    // A screenshot pasted into the text goes in as an image instead of doing nothing.
+    onPaste: (e: ClipboardEvent<HTMLTextAreaElement>) => {
+      const files = [...e.clipboardData.files].filter((file) => file.type.startsWith('image/'));
+      if (!files.length) return;
+      e.preventDefault();
+      setImages((list) => [...list, ...files.map((file) => ({ path: window.unilink.addFile(file), name: file.name }))].slice(0, MAX_IMAGES));
+    },
+  };
+}
+
+function ImageDraft({ draft }: { draft: ReturnType<typeof useImageDraft> }) {
+  return (
+    <Group gap="xs">
+      <Button size="xs" variant="default" leftSection={<IconPhoto size={14} />} onClick={() => draft.choose.mutate()} disabled={draft.images.length >= MAX_IMAGES}>
+        {t('Add image')}
+      </Button>
+      {!draft.images.length && (
+        <Text size="xs" c="dimmed">
+          {t('or paste a screenshot into the text')}
+        </Text>
+      )}
+      {draft.images.map((image, i) => (
+        <Badge
+          key={image.path}
+          variant="light"
+          color="gray"
+          tt="none"
+          rightSection={
+            <ActionIcon size={14} variant="transparent" color="gray" onClick={() => draft.remove(i)} aria-label={t('Remove {{name}}', { name: image.name })}>
+              <IconX size={12} />
+            </ActionIcon>
+          }
+        >
+          {image.name}
+        </Badge>
+      ))}
+    </Group>
   );
 }
 
@@ -271,6 +347,7 @@ function PostCard({ post, onOpen }: { post: FeedPost; onOpen: () => void }) {
               <Body text={post.body} />
             </Text>
           )}
+          <Images images={post.images} height={110} />
           <Group mt="sm">
             <ReactionBar
               goats={post.goats}
@@ -534,21 +611,31 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
 
 function ReplyBox({ postId, isQuestion }: { postId: number; isQuestion: boolean }) {
   const [body, setBody] = useState('');
-  const send = useAction(() => rpc.board.reply({ postId, body }), { onSuccess: () => setBody('') });
+  const draft = useImageDraft();
+  const send = useAction(() => rpc.board.reply({ postId, body, images: draft.images.map((image) => image.path) }), {
+    onSuccess: () => {
+      setBody('');
+      draft.clear();
+    },
+  });
   return (
-    <Group align="flex-end" gap="xs" wrap="nowrap">
-      <Textarea
-        placeholder={isQuestion ? t('Write an answer…') : t('Write a reply…')}
-        autosize
-        minRows={1}
-        value={body}
-        onChange={(e) => setBody(e.currentTarget.value)}
-        style={{ flex: 1 }}
-      />
-      <Button onClick={() => send.mutate()} disabled={!body.trim()} loading={send.isPending}>
-        {t('Reply')}
-      </Button>
-    </Group>
+    <Stack gap={6}>
+      <Group align="flex-end" gap="xs" wrap="nowrap">
+        <Textarea
+          placeholder={isQuestion ? t('Write an answer…') : t('Write a reply…')}
+          autosize
+          minRows={1}
+          value={body}
+          onChange={(e) => setBody(e.currentTarget.value)}
+          onPaste={draft.onPaste}
+          style={{ flex: 1 }}
+        />
+        <Button onClick={() => send.mutate()} disabled={!body.trim()} loading={send.isPending}>
+          {t('Reply')}
+        </Button>
+      </Group>
+      <ImageDraft draft={draft} />
+    </Stack>
   );
 }
 
@@ -613,6 +700,7 @@ function ReplyItem({ reply, postId, canAccept, canModerate }: { reply: Reply; po
               <Body text={reply.body} />
             </Text>
           )}
+          <Images images={reply.images} height={140} />
           <Group gap="xs" mt={6}>
             <ReactionBar goats={reply.goats} goated={reply.goated} onGoat={() => react.mutate()} />
             {canAccept && !reply.mine && (
@@ -768,6 +856,7 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
           <Text component="div" mt="xs" style={{ whiteSpace: 'pre-wrap' }}>
             <Body text={p.body} />
           </Text>
+          <Images images={p.images} height={220} />
           <Group mt="sm" justify="space-between">
             <ReactionBar goats={p.goats} goated={p.goated} comments={p.replies.length} onGoat={() => react.mutate()} />
             <Tooltip label={p.following ? t('Stop getting notified of new replies') : t('Get notified of new replies')}>
@@ -819,6 +908,7 @@ function PostForm({
   onOpenPost: (postId: number) => void;
 }) {
   const professor = useMe().role === 'professor';
+  const draft = useImageDraft();
   const myClasses = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
   const form = useForm({
     initialValues: {
@@ -856,7 +946,7 @@ function PostForm({
         await rpc.board.update({ postId: existing.id, kind: v.kind, topic: v.topic, title: v.title, body: v.body });
         return { id: existing.id };
       }
-      return rpc.board.create({ ...v, classId: Number(v.classId) });
+      return rpc.board.create({ ...v, classId: Number(v.classId), images: draft.images.map((image) => image.path) });
     },
     { success: existing ? 'Post updated' : 'Posted', onSuccess: (r) => onDone(r.id) },
   );
@@ -921,7 +1011,15 @@ function PostForm({
             </Stack>
           </Card>
         )}
-        <Textarea label={t('Post')} description={t('Put code between `backticks`, or between lines of ``` for a block.')} autosize minRows={5} {...form.getInputProps('body')} />
+        <Textarea
+          label={t('Post')}
+          description={t('Put code between `backticks`, or between lines of ``` for a block.')}
+          autosize
+          minRows={5}
+          onPaste={existing ? undefined : draft.onPaste}
+          {...form.getInputProps('body')}
+        />
+        {!existing && <ImageDraft draft={draft} />}
         {!existing && (
           <>
             <SegmentedControl

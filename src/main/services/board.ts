@@ -1,13 +1,16 @@
-import { and, asc, count, desc, eq, gte, inArray, isNull, like, or, sql } from 'drizzle-orm';
+import { rm, stat } from 'node:fs/promises';
+import { basename } from 'node:path';
+import { and, asc, count, desc, eq, gte, inArray, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { goatFor } from '@shared/goat';
 import { keywords, similarity } from '@shared/similar';
 import type { DB } from '../db/client';
-import { boardVisits, classes, courses, enrollments, postAudience, postFollows, postReactions, posts, replies, replyReactions, users } from '../db/schema';
+import { boardImages, boardVisits, classes, courses, enrollments, postAudience, postFollows, postReactions, posts, replies, replyReactions, users } from '../db/schema';
 import { AppError, type AuthedContext, idSchema, nonEmpty, procedure } from '../rpc/core';
 import { classLabel, FORMER_STUDENT_EMAIL, notFound, requireMember, requireTeacher, sectionCode, studentsOf, teaches } from './access';
 import { visibleClassmatesByEmail } from './classes';
 import { m, notify, raw } from './notifications';
+import { storeAttachment } from './planner';
 
 // S4 in version B: Ed-style, closer to a Q&A site. A post is a question or a note, filed
 // under one of a fixed set of topics. Replies are one flat list; whoever asked a question
@@ -71,6 +74,53 @@ function ownPost(db: DB, userId: number, postId: number) {
   if (post.authorId !== userId) throw new AppError('You can only change your own posts.', 'FORBIDDEN');
   if (post.deletedAt) throw new AppError('This post was deleted.');
   return post;
+}
+
+// S4: screenshots and photos in posts and replies. SVGs are left out: they can carry scripts.
+const IMAGE_FILE = /\.(png|jpe?g|gif|webp)$/i;
+const MAX_IMAGES = 4;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const imagePaths = z.array(z.string()).max(MAX_IMAGES, 'A post or reply can have up to 4 images.').default([]);
+
+// Copies the picked images in, checking them all first so a bad one stops the whole post.
+async function storeImages(ctx: AuthedContext, paths: string[]) {
+  for (const path of paths) {
+    if (!IMAGE_FILE.test(basename(path))) throw new AppError('Images can be PNG, JPEG, GIF or WebP.');
+    const info = await stat(path).catch(() => null);
+    if (!info) throw new AppError('That file could not be read.');
+    if (info.size > MAX_IMAGE_BYTES) throw new AppError('Images can be up to 5 MB.');
+  }
+  return Promise.all(paths.map((path) => storeAttachment(ctx, path)));
+}
+
+async function deleteImages(ctx: AuthedContext, which: SQL | undefined) {
+  const rows = ctx.db.select().from(boardImages).where(which).all();
+  await Promise.all(rows.map((image) => rm(image.path, { force: true })));
+  if (rows.length) ctx.db.delete(boardImages).where(inArray(boardImages.id, rows.map((image) => image.id))).run();
+}
+
+const ownImagesOf = (postId: number) => and(eq(boardImages.postId, postId), isNull(boardImages.replyId));
+
+function imagesFor(db: DB, postIds: number[]) {
+  if (!postIds.length) return [];
+  return db
+    .select({ id: boardImages.id, name: boardImages.name, postId: boardImages.postId, replyId: boardImages.replyId })
+    .from(boardImages)
+    .where(inArray(boardImages.postId, postIds))
+    .orderBy(asc(boardImages.id))
+    .all();
+}
+
+// When an account goes along with its posts and replies, so do their images.
+export async function deleteAuthoredImages(ctx: AuthedContext) {
+  const rows = ctx.db
+    .select({ id: boardImages.id })
+    .from(boardImages)
+    .innerJoin(posts, eq(boardImages.postId, posts.id))
+    .leftJoin(replies, eq(boardImages.replyId, replies.id))
+    .where(or(eq(posts.authorId, ctx.userId), eq(replies.authorId, ctx.userId)))
+    .all();
+  if (rows.length) await deleteImages(ctx, inArray(boardImages.id, rows.map((r) => r.id)));
 }
 
 // Posting or replying follows a thread, unless the student unfollowed it before.
@@ -185,7 +235,7 @@ export const boardRouter = {
       const goats = sql<number>`(select count(*) from ${postReactions} where ${postReactions.postId} = ${posts.id})`.mapWith(Number);
       const seen = lastSeen(ctx.db, ctx.userId, now);
 
-      return ctx.db
+      const rows = ctx.db
         .select({
           id: posts.id,
           classId: posts.classId,
@@ -225,8 +275,13 @@ export const boardRouter = {
         // On one class's board, what its professor pinned comes first.
         .orderBy(...(ids.length === 1 ? [sql`${posts.pinnedAt} is null`] : []), ...(sort === 'top' ? [desc(goats)] : []), desc(posts.createdAt), desc(posts.id))
         .limit(100)
-        .all()
-        .map((p) => ({ ...withGoat(p), isNew: p.authorId !== ctx.userId && !p.deletedAt && p.createdAt.getTime() > seen(p.classId) }));
+        .all();
+      const images = imagesFor(ctx.db, rows.map((p) => p.id)).filter((image) => image.replyId == null);
+      return rows.map((p) => ({
+        ...withGoat(p),
+        isNew: p.authorId !== ctx.userId && !p.deletedAt && p.createdAt.getTime() > seen(p.classId),
+        images: images.filter((image) => image.postId === p.id),
+      }));
     },
   ),
 
@@ -274,6 +329,7 @@ export const boardRouter = {
       .where(eq(replies.postId, postId))
       .orderBy(asc(replies.createdAt), asc(replies.id))
       .all();
+    const images = imagesFor(ctx.db, [postId]);
     const replyGoats = replyRows.length
       ? ctx.db
           .select()
@@ -298,6 +354,7 @@ export const boardRouter = {
       classLabel: label ?? '',
       mine: post.authorId === ctx.userId,
       canModerate: teaches(ctx.db, ctx.userId, post.classId),
+      images: images.filter((image) => image.replyId == null),
       goats: reactions.length,
       goated: reactions.some((r) => r.userId === ctx.userId),
       following: !!ctx.db
@@ -312,6 +369,7 @@ export const boardRouter = {
           ...withGoat(r),
           accepted: r.id === post.acceptedReplyId,
           endorsed: r.endorsedAt != null,
+          images: images.filter((image) => image.replyId === r.id),
           mine: r.authorId === ctx.userId,
           goats: replyGoats.filter((g) => g.replyId === r.id).length,
           goated: replyGoats.some((g) => g.replyId === r.id && g.userId === ctx.userId),
@@ -326,8 +384,9 @@ export const boardRouter = {
       ...postFields,
       visibility: z.enum(['class', 'selected']),
       audienceEmails: z.array(z.string()),
+      images: imagePaths,
     }),
-    ({ classId, audienceEmails, ...fields }, ctx) => {
+    async ({ classId, audienceEmails, images, ...fields }, ctx) => {
       requireMember(ctx.db, ctx.userId, classId);
       const audience =
         fields.visibility === 'selected'
@@ -336,6 +395,7 @@ export const boardRouter = {
       if (fields.visibility === 'selected' && !audience.length) {
         throw new AppError('Pick at least one classmate who can see this post.');
       }
+      const stored = await storeImages(ctx, images);
       const created = ctx.db.transaction((tx) => {
         const post = tx
           .insert(posts)
@@ -343,6 +403,7 @@ export const boardRouter = {
           .returning({ id: posts.id })
           .get();
         if (audience.length) tx.insert(postAudience).values(audience.map((u) => ({ postId: post.id, userId: u.id }))).run();
+        if (stored.length) tx.insert(boardImages).values(stored.map((f) => ({ postId: post.id, name: f.attachmentName, path: f.attachmentPath }))).run();
         follow(tx, post.id, ctx.userId);
         return post;
       });
@@ -371,8 +432,9 @@ export const boardRouter = {
   }),
 
   // A post with replies is blanked rather than deleted, so the answers stay readable.
-  remove: procedure(z.object({ postId: idSchema }), ({ postId }, ctx) => {
+  remove: procedure(z.object({ postId: idSchema }), async ({ postId }, ctx) => {
     ownPost(ctx.db, ctx.userId, postId);
+    await deleteImages(ctx, ownImagesOf(postId));
     const replyCount = ctx.db.select({ n: count() }).from(replies).where(eq(replies.postId, postId)).get()?.n ?? 0;
     if (!replyCount) {
       ctx.db.delete(posts).where(eq(posts.id, postId)).run();
@@ -415,6 +477,18 @@ export const boardRouter = {
       .map(({ score: _, ...p }) => p);
   }),
 
+  chooseImage: procedure(z.void(), async (_input, ctx) => {
+    const path = await ctx.platform.chooseFile({ title: 'Add an image', filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }] });
+    return path ? { path, name: basename(path) } : null;
+  }),
+
+  // Where the page can show an image, for anyone who can see its post.
+  imageUrl: procedure(z.object({ id: idSchema }), async ({ id }, ctx) => {
+    const image = ctx.db.select().from(boardImages).where(eq(boardImages.id, id)).get() ?? notFound('image');
+    visiblePost(ctx.db, ctx.userId, image.postId);
+    return ctx.platform.fileUrl(image.path);
+  }),
+
   // Follow a thread to hear about every new reply, or stop following it.
   follow: procedure(z.object({ postId: idSchema, following: z.boolean() }), ({ postId, following }, ctx) => {
     visiblePost(ctx.db, ctx.userId, postId);
@@ -426,10 +500,12 @@ export const boardRouter = {
   }),
 
   // Replies are one flat list under the post. Everyone following the thread hears about it.
-  reply: procedure(z.object({ postId: idSchema, body: nonEmpty('Reply', 5000) }), ({ postId, body }, ctx) => {
+  reply: procedure(z.object({ postId: idSchema, body: nonEmpty('Reply', 5000), images: imagePaths }), async ({ postId, body, images }, ctx) => {
     const post = visiblePost(ctx.db, ctx.userId, postId);
     if (post.lockedAt && !teaches(ctx.db, ctx.userId, post.classId)) throw new AppError('The professor locked this thread.', 'FORBIDDEN');
-    ctx.db.insert(replies).values({ postId, body, authorId: ctx.userId }).run();
+    const stored = await storeImages(ctx, images);
+    const reply = ctx.db.insert(replies).values({ postId, body, authorId: ctx.userId }).returning({ id: replies.id }).get();
+    if (stored.length) ctx.db.insert(boardImages).values(stored.map((f) => ({ postId, replyId: reply.id, name: f.attachmentName, path: f.attachmentPath }))).run();
     follow(ctx.db, postId, ctx.userId);
     if (post.deletedAt) return;
     const replierName = ctx.db.select({ name: users.name }).from(users).where(eq(users.id, ctx.userId)).get()?.name;
@@ -500,8 +576,9 @@ export const boardRouter = {
 
   // Removing someone's post works like deleting your own: a thread with replies stays up,
   // blanked. The author is told, with the reason if there is one.
-  removeAsProfessor: procedure(z.object({ postId: idSchema, reason: z.string().trim().max(500) }), ({ postId, reason }, ctx) => {
+  removeAsProfessor: procedure(z.object({ postId: idSchema, reason: z.string().trim().max(500) }), async ({ postId, reason }, ctx) => {
     const post = moderatedPost(ctx, postId);
+    await deleteImages(ctx, ownImagesOf(postId));
     const replyCount = ctx.db.select({ n: count() }).from(replies).where(eq(replies.postId, postId)).get()?.n ?? 0;
     if (replyCount) {
       ctx.db.update(posts).set({ title: '', body: '', deletedAt: ctx.now(), removedByProfessor: true, pinnedAt: null }).where(eq(posts.id, postId)).run();
@@ -519,9 +596,10 @@ export const boardRouter = {
     return { kept: replyCount > 0 };
   }),
 
-  removeReplyAsProfessor: procedure(z.object({ replyId: idSchema, reason: z.string().trim().max(500) }), ({ replyId, reason }, ctx) => {
+  removeReplyAsProfessor: procedure(z.object({ replyId: idSchema, reason: z.string().trim().max(500) }), async ({ replyId, reason }, ctx) => {
     const reply = ctx.db.select().from(replies).where(eq(replies.id, replyId)).get() ?? notFound('reply');
     const post = moderatedPost(ctx, reply.postId);
+    await deleteImages(ctx, eq(boardImages.replyId, replyId));
     ctx.db.transaction((tx) => {
       tx.update(posts).set({ acceptedReplyId: null }).where(eq(posts.acceptedReplyId, replyId)).run();
       tx.delete(replies).where(eq(replies.id, replyId)).run();
@@ -536,9 +614,10 @@ export const boardRouter = {
     }
   }),
 
-  removeReply: procedure(z.object({ replyId: idSchema }), ({ replyId }, ctx) => {
+  removeReply: procedure(z.object({ replyId: idSchema }), async ({ replyId }, ctx) => {
     const reply = ctx.db.select().from(replies).where(eq(replies.id, replyId)).get() ?? notFound('reply');
     if (reply.authorId !== ctx.userId) throw new AppError('You can only delete your own replies.', 'FORBIDDEN');
+    await deleteImages(ctx, eq(boardImages.replyId, replyId));
     ctx.db.transaction((tx) => {
       tx.update(posts).set({ acceptedReplyId: null }).where(eq(posts.acceptedReplyId, replyId)).run();
       tx.delete(replies).where(eq(replies.id, replyId)).run();

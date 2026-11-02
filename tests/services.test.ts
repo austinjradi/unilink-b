@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
@@ -49,6 +49,7 @@ function newContext(): Context {
       chooseSaveLocation: async () => null,
       openPath: async () => {},
       readText: async (path) => readFile(path, 'utf8'),
+      fileUrl: async (path) => `file://${path}`,
       showNotification: (n) => shown.push(n.title),
       systemDndSupported: () => true,
       setSystemDnd: async (on) => {
@@ -662,6 +663,71 @@ describe('S4 discussion board', () => {
     expect((await feed({ topics: ['Assignments'] }))[0]).toMatchObject({ goats: 1, goated: true, kind: 'question' });
     await maya.api.board.react({ postId: first });
     expect((await feed({ topics: ['Assignments'] }))[0].goats).toBe(0);
+  });
+});
+
+describe('S4 images', () => {
+  const tmpFile = async (name: string, size = 10) => {
+    const file = join(tmpdir(), name);
+    await writeFile(file, Buffer.alloc(size));
+    return file;
+  };
+  const post = { kind: 'question' as const, topic: 'Exams', title: 'What does this error mean?', body: 'See the screenshot.', visibility: 'class' as const, audienceEmails: [] };
+
+  it('adds images to posts and replies, for whoever can see them', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo', 'Ana');
+    const [maya, leo, ana] = people;
+    const png = await tmpFile('unilink-test-error.png');
+    const { id: postId } = await maya.api.board.create({ ...post, classId, images: [png] });
+    await leo.api.board.reply({ postId, body: 'Same here', images: [await tmpFile('unilink-test-mine.jpg')] });
+
+    const [fromFeed] = await ana.api.board.feed({ classIds: [classId], topics: [], since: null, search: '' });
+    expect(fromFeed.images.map((image) => image.name)).toEqual(['unilink-test-error.png']);
+    const thread = await ana.api.board.get({ postId });
+    expect(thread.images.map((image) => image.name)).toEqual(['unilink-test-error.png']);
+    expect(thread.replies[0].images.map((image) => image.name)).toEqual(['unilink-test-mine.jpg']);
+    expect(await ana.api.board.imageUrl({ id: thread.images[0].id })).toContain('unilink-test-error.png');
+
+    // A private post's image is as private as the post.
+    await leo.api.board.create({ ...post, classId, title: 'Hi' });
+    const { id: secret } = await maya.api.board.create({ ...post, classId, visibility: 'selected', audienceEmails: [leo.email], images: [png] });
+    const [hidden] = (await leo.api.board.get({ postId: secret })).images;
+    expect(await leo.api.board.imageUrl({ id: hidden.id })).toContain('.png');
+    await expectCode(ana.api.board.imageUrl({ id: hidden.id }), 'NOT_FOUND');
+  });
+
+  it('only takes reasonable image files, and checks before posting anything', async () => {
+    const { classId, people } = await classmates('Maya');
+    const [maya] = people;
+    const good = await tmpFile('unilink-test-ok.png');
+    await expect(maya.api.board.create({ ...post, classId, images: [good, await tmpFile('unilink-test.svg')] })).rejects.toThrow('PNG, JPEG, GIF or WebP');
+    await expect(maya.api.board.create({ ...post, classId, images: [await tmpFile('unilink-test-big.png', 6 * 1024 * 1024)] })).rejects.toThrow('up to 5 MB');
+    await expectCode(maya.api.board.create({ ...post, classId, images: Array(5).fill(good) }), 'BAD_INPUT');
+    expect(await maya.api.board.feed({ classIds: [classId], topics: [], since: null, search: '' })).toEqual([]);
+  });
+
+  it('deletes images with what they belong to, keeping the rest of the thread', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const png = await tmpFile('unilink-test-gone.png');
+    const stored = async () => (await readdir(maya.ctx.filesDir)).filter((name) => name.endsWith('unilink-test-gone.png')).length;
+    const before = await stored();
+
+    const { id: postId } = await maya.api.board.create({ ...post, classId, images: [png] });
+    await leo.api.board.reply({ postId, body: 'Me too', images: [png] });
+    expect(await stored()).toBe(before + 2);
+
+    // Maya deletes her post: her image goes, Leo's reply and image stay.
+    expect(await maya.api.board.remove({ postId })).toEqual({ kept: true });
+    let thread = await leo.api.board.get({ postId });
+    expect(thread.images).toEqual([]);
+    expect(thread.replies[0].images).toHaveLength(1);
+    expect(await stored()).toBe(before + 1);
+
+    await leo.api.board.removeReply({ replyId: thread.replies[0].id });
+    thread = await leo.api.board.get({ postId });
+    expect(thread.replies).toEqual([]);
+    expect(await stored()).toBe(before);
   });
 });
 

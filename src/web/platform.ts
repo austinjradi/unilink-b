@@ -22,6 +22,9 @@ const VIEWABLE = /^(image\/|text\/plain$|application\/pdf$)/;
 // Plain-text handouts that browsers don't always give a text/* type.
 const TEXT_FILE = /\.(txt|md|markdown|tex|rst)$/i;
 
+// One object URL per file for as long as the page is open.
+const fileUrls = new Map<string, string>();
+
 // One line of text per line in the PDF, so headings like "Question 2" start a line.
 async function pdfText(blob: Blob) {
   const [pdfjs, worker] = await Promise.all([import('pdfjs-dist'), import('pdfjs-dist/build/pdf.worker.min.mjs?url')]);
@@ -67,6 +70,14 @@ export const platform: Platform = {
     const blob = await readBlob(path);
     const tab = VIEWABLE.test(blob.type) ? window.open(URL.createObjectURL(blob), '_blank') : null;
     if (!tab) download(blob, originalName(path));
+  },
+
+  async fileUrl(path) {
+    const known = fileUrls.get(path);
+    if (known) return known;
+    const url = URL.createObjectURL(await readBlob(path));
+    fileUrls.set(path, url);
+    return url;
   },
 
   // PDFs are read with pdf.js, loaded the first time one is attached.

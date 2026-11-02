@@ -244,6 +244,7 @@ both versions.
 | S3.5 | Host leaves; session changes | Hosts can't leave, only cancel. Edits don't notify | Leaving **hands the session to the next person going** (cancelled only if nobody's left). Moving the time or place **notifies everyone in it** |
 | S4 | Post types and topics | Free-form "type" with suggestions (Assignment, Midterm, Just yapping…) | Posts are a **question or a note**, under a **fixed topic list** (Lectures, Assignments, Exams, Labs and tutorials, Logistics, Off-topic) |
 | S4 | Replies | Threaded, one level of replies to replies | **One flat list.** Whoever asked can **accept an answer**: it's pinned first, the question shows as answered, and the feed can filter to unanswered questions |
+| S4 | Anything besides text in a post? | Inline code | Code blocks and clickable links, and **up to 4 images** per post or reply (PNG, JPEG, GIF or WebP, 5 MB each), added or pasted as a screenshot. Images follow the post's visibility and go when it's deleted |
 | S4 | Repeated questions | Nothing | While you write a title, the composer lists up to three **similar posts** in the class you can see (answered ones marked), so you can open the existing thread instead |
 | S4 | Who hears about new replies? | The post's author | **Everyone following the thread**: posting or replying follows it, anyone who can see it can follow or unfollow (unfollowing sticks), and the feed can show only followed threads |
 | S4 | Deleting a post | Deletes its replies too | A post **with replies is blanked** and the thread stays; one without replies is removed |
@@ -275,7 +276,7 @@ hidden links and failed sign-ins instead of invitations and individual reports; 
 | Sections, wildcard search, classmate visibility, time clashes | `db/catalogue.ts` (`sectionsFor`), `services/classes.ts`, `shared/courseQuery.ts`, `shared/meetings.ts` |
 | Link identity, purposes, hiding rule | `shared/links.ts`, `services/links.ts` |
 | Invite codes, waitlist, hand-off, weekly series | `services/studySessions.ts` |
-| Questions, accepted answers, topics, deleted posts, following threads, similar posts | `services/board.ts`, `components/Feed.tsx`, `shared/similar.ts` |
+| Questions, accepted answers, topics, deleted posts, following threads, similar posts, images, formatting | `services/board.ts`, `components/Feed.tsx`, `shared/similar.ts`, `shared/postText.ts` |
 | Shared section info and private marks | `services/courses.ts`, `services/calendar.ts` (`visibleDeadlines`), `db/schema.ts` (`class_details`, `assessment_scores`, `deadline_done`) |
 | Unlisted weight, a second scheme | `shared/grades.ts`, `services/courses.ts` (`setSecondScheme`) |
 | Passphrases, recovery codes, sign-in pauses, deletion | `shared/validation.ts`, `services/auth.ts`, `services/access.ts` (`formerStudentId`) |
@@ -285,7 +286,7 @@ hidden links and failed sign-ins instead of invitations and individual reports; 
 | Professors: who can change what, assignments, moderation | `services/access.ts` (`canEditShared`, `requireTeacher`), `services/assignments.ts`, `services/board.ts` |
 
 The database changes are migrations `0004_version_b` (new tables and columns), `0005_version_b_cleanup`
-(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows`, `0010_sign_in_limits`, `0011_second_grading_scheme`, `0012_weekly_sessions` and `0013_professors`.
+(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows`, `0010_sign_in_limits`, `0011_second_grading_scheme`, `0012_weekly_sessions`, `0013_professors` and `0014_board_images`.
 
 ## Not built yet
 

@@ -236,6 +236,22 @@ export const replies = sqliteTable(
   (t) => [index('replies_post_idx').on(t.postId)],
 );
 
+// S4: images in posts and replies. The files live in ctx.filesDir, like planner attachments.
+export const boardImages = sqliteTable(
+  'board_images',
+  {
+    id: id(),
+    postId: integer('post_id')
+      .notNull()
+      .references(() => posts.id, { onDelete: 'cascade' }),
+    // Set when the image belongs to a reply rather than the post itself.
+    replyId: integer('reply_id').references(() => replies.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    path: text('path').notNull(),
+  },
+  (t) => [index('board_images_post_idx').on(t.postId)],
+);
+
 // --- A3 Dates and deadlines ----------------------------------------------------
 
 export const classMeetings = sqliteTable('class_meetings', {

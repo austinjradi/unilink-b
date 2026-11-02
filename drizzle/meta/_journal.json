@@ -99,6 +99,13 @@
       "when": 1793596215604,
       "tag": "0013_professors",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1793598851273,
+      "tag": "0014_board_images",
+      "breakpoints": true
     }
   ]
 }

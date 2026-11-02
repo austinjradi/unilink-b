@@ -22,6 +22,7 @@ import {
 } from '../db/schema';
 import { AppError, type AuthedContext, type Context, nonEmpty, procedure, publicProcedure } from '../rpc/core';
 import { formerStudentId } from './access';
+import { deleteAuthoredImages } from './board';
 import { collectMyData } from './myData';
 import { deleteUserFiles } from './planner';
 import { m, notify } from './notifications';
@@ -338,6 +339,7 @@ export const profileRouter = {
   deleteAccount: procedure(z.object({ password: z.string(), keepPosts: z.boolean() }), async ({ password, keepPosts }, ctx) => {
     await requirePassword(ctx.db, ctx.userId, password);
     await deleteUserFiles(ctx.db, ctx.userId);
+    if (!keepPosts) await deleteAuthoredImages(ctx);
     ctx.db.transaction((tx) => keepSharedContributions({ ...ctx, db: tx as unknown as DB }, keepPosts));
     const userId = ctx.userId;
     endSession(ctx);

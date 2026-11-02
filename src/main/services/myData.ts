@@ -1,8 +1,9 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull, or } from 'drizzle-orm';
 import type { DB } from '../db/client';
 import {
   assessments,
   assessmentScores,
+  boardImages,
   chatLinks,
   courseInfo,
   courseRecords,
@@ -98,6 +99,14 @@ export function collectMyData(db: DB, userId: number) {
         ...a,
         tasks: tasks.filter((t) => t.assignmentId === id).map(({ assignmentId: _, ...t }) => t),
       })),
+    // Their names; the files themselves stay in UniLink, like planner attachments.
+    images: db
+      .select({ name: boardImages.name, post: posts.title })
+      .from(boardImages)
+      .innerJoin(posts, eq(boardImages.postId, posts.id))
+      .leftJoin(replies, eq(boardImages.replyId, replies.id))
+      .where(or(and(eq(posts.authorId, userId), isNull(boardImages.replyId)), eq(replies.authorId, userId)))
+      .all(),
     posts: db
       .select({ classId: posts.classId, kind: posts.kind, topic: posts.topic, title: posts.title, body: posts.body, visibility: posts.visibility, createdAt: posts.createdAt, deletedAt: posts.deletedAt })
       .from(posts)

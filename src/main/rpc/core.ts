@@ -33,6 +33,8 @@ export interface Platform {
   openPath(path: string): Promise<void>;
   // ST2: the text of a picked document (PDF or plain text), or null for kinds it can't read.
   readText(path: string): Promise<string | null>;
+  // S4: a URL the page can show a stored file at.
+  fileUrl(path: string): Promise<string>;
   // G3: an OS notification; clicking it opens `link` in the app.
   showNotification(n: { title: string; body: string; link: string | null }): void;
   // ST1: system-wide Do Not Disturb. Only GNOME exposes this; elsewhere it's unsupported.
