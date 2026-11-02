@@ -250,7 +250,7 @@ invitations and individual reports; study mode follows the section's shared clas
 | Plans that follow a class deadline | `services/planner.ts` (`followMovedDeadlines`), `services/calendar.ts` (`collect`) |
 
 The database changes are migrations `0004_version_b` (new tables and columns), `0005_version_b_cleanup`
-(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) and `0007_board_visits` (new posts since your last visit).
+(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit) and `0008_reply_edits`.
 
 ## Not built yet
 

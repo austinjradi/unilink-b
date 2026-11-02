@@ -1,0 +1,1 @@
+ALTER TABLE `replies` ADD `edited_at` integer;

@@ -217,6 +217,7 @@ export const replies = sqliteTable(
     parentId: integer('parent_id').references((): AnySQLiteColumn => replies.id, { onDelete: 'cascade' }),
     body: text('body').notNull(),
     createdAt: createdAt(),
+    editedAt: timestamp('edited_at'),
   },
   (t) => [index('replies_post_idx').on(t.postId)],
 );

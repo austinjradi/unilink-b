@@ -485,6 +485,8 @@ type Reply = PostDetail['replies'][number];
 function ReplyItem({ reply, postId, canAccept }: { reply: Reply; postId: number; canAccept: boolean }) {
   const react = useAction(() => rpc.board.reactReply({ replyId: reply.id }));
   const remove = useAction(() => rpc.board.removeReply({ replyId: reply.id }));
+  const [draft, setDraft] = useState<string | null>(null);
+  const edit = useAction(() => rpc.board.editReply({ replyId: reply.id, body: draft ?? '' }), { onSuccess: () => setDraft(null) });
   const accept = useAction(() => rpc.board.accept({ postId, replyId: reply.accepted ? null : reply.id }), {
     success: reply.accepted ? t('Answer unmarked') : t('Marked as the answer'),
   });
@@ -509,17 +511,37 @@ function ReplyItem({ reply, postId, canAccept }: { reply: Reply; postId: number;
             <AuthorName who={reply} size="sm" />
             <Text size="xs" c="dimmed">
               {fromNow(reply.createdAt)}
+              {reply.editedAt && ` · ${t('edited')}`}
             </Text>
           </Group>
-          <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
-            <Body text={reply.body} />
-          </Text>
+          {draft != null ? (
+            <Stack gap={6} mt={4}>
+              <Textarea autosize minRows={2} value={draft} onChange={(e) => setDraft(e.currentTarget.value)} aria-label={t('Edit reply')} />
+              <Group gap="xs">
+                <Button size="compact-xs" onClick={() => edit.mutate()} loading={edit.isPending} disabled={!draft.trim()}>
+                  {t('Save')}
+                </Button>
+                <Button size="compact-xs" variant="subtle" color="gray" onClick={() => setDraft(null)}>
+                  {t('Cancel')}
+                </Button>
+              </Group>
+            </Stack>
+          ) : (
+            <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
+              <Body text={reply.body} />
+            </Text>
+          )}
           <Group gap="xs" mt={6}>
             <ReactionBar goats={reply.goats} goated={reply.goated} onGoat={() => react.mutate()} />
             {canAccept && !reply.mine && (
               <Button size="compact-xs" variant="subtle" color="teal" leftSection={<IconCheck size={12} />} onClick={() => accept.mutate()}>
                 {reply.accepted ? t('Unmark answer') : t('Accept answer')}
               </Button>
+            )}
+            {reply.mine && draft == null && (
+              <ActionIcon size="sm" variant="subtle" onClick={() => setDraft(reply.body)} aria-label={t('Edit reply')}>
+                <IconPencil size={14} />
+              </ActionIcon>
             )}
             {reply.mine && (
               <ActionIcon size="sm" variant="subtle" color="red" onClick={() => remove.mutate()} aria-label={t('Delete reply')}>

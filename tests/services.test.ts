@@ -468,6 +468,19 @@ describe('S4 discussion board', () => {
     expect((await unresolved()).map((p) => p.id)).toEqual([postId]);
   });
 
+  it('lets you edit your own replies', async () => {
+    const {
+      classId,
+      people: [maya, leo],
+    } = await classmates('Maya', 'Leo');
+    const { id: postId } = await maya.api.board.create({ classId, kind: 'question', topic: 'Exams', title: 'Calculators allowed?', body: '?', visibility: 'class', audienceEmails: [] });
+    await leo.api.board.reply({ postId, body: 'Yes, any non-programable one.' });
+    const [reply] = (await maya.api.board.get({ postId })).replies;
+    await expectCode(maya.api.board.editReply({ replyId: reply.id, body: 'No' }), 'FORBIDDEN');
+    await leo.api.board.editReply({ replyId: reply.id, body: 'Yes, any non-programmable one.' });
+    expect((await maya.api.board.get({ postId })).replies[0]).toMatchObject({ body: 'Yes, any non-programmable one.', editedAt: clock });
+  });
+
   it('marks posts new until you open the class discussion', async () => {
     const {
       classId,

@@ -217,7 +217,7 @@ export const boardRouter = {
       .get()?.label;
     const reactions = ctx.db.select().from(postReactions).where(eq(postReactions.postId, postId)).all();
     const replyRows = ctx.db
-      .select({ id: replies.id, body: replies.body, createdAt: replies.createdAt, ...authorColumns })
+      .select({ id: replies.id, body: replies.body, createdAt: replies.createdAt, editedAt: replies.editedAt, ...authorColumns })
       .from(replies)
       .innerJoin(users, eq(replies.authorId, users.id))
       .where(eq(replies.postId, postId))
@@ -356,6 +356,12 @@ export const boardRouter = {
         link: `/classes/${post.classId}/discussion?post=${postId}`,
       });
     }
+  }),
+
+  editReply: procedure(z.object({ replyId: idSchema, body: nonEmpty('Reply', 5000) }), ({ replyId, body }, ctx) => {
+    const reply = ctx.db.select().from(replies).where(eq(replies.id, replyId)).get() ?? notFound('reply');
+    if (reply.authorId !== ctx.userId) throw new AppError('You can only edit your own replies.', 'FORBIDDEN');
+    ctx.db.update(replies).set({ body, editedAt: ctx.now() }).where(eq(replies.id, replyId)).run();
   }),
 
   removeReply: procedure(z.object({ replyId: idSchema }), ({ replyId }, ctx) => {
