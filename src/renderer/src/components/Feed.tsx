@@ -55,6 +55,7 @@ import {
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router';
 import { parsePost } from '@shared/postText';
+import { loadDraft, saveDraft } from '../lib/drafts';
 import { fromNow } from '../lib/format';
 import { t, tx } from '../lib/i18n';
 import { useAction, useMe } from '../lib/hooks';
@@ -611,11 +612,17 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
 // --- Thread (p. 10): the post and one flat list of replies, the accepted answer first ----
 
 function ReplyBox({ postId, isQuestion }: { postId: number; isQuestion: boolean }) {
-  const [body, setBody] = useState('');
+  const me = useMe();
+  const draftName = `reply-${postId}`;
+  const [body, setBody] = useState(() => loadDraft<string>(me.id, draftName) ?? '');
+  const write = (text: string) => {
+    setBody(text);
+    saveDraft(me.id, draftName, text.trim() ? text : null);
+  };
   const draft = useImageDraft();
   const send = useAction(() => rpc.board.reply({ postId, body, images: draft.images.map((image) => image.path) }), {
     onSuccess: () => {
-      setBody('');
+      write('');
       draft.clear();
     },
   });
@@ -627,7 +634,7 @@ function ReplyBox({ postId, isQuestion }: { postId: number; isQuestion: boolean 
           autosize
           minRows={1}
           value={body}
-          onChange={(e) => setBody(e.currentTarget.value)}
+          onChange={(e) => write(e.currentTarget.value)}
           onPaste={draft.onPaste}
           style={{ flex: 1 }}
         />
@@ -908,20 +915,28 @@ function PostForm({
   onDone: (postId: number) => void;
   onOpenPost: (postId: number) => void;
 }) {
-  const professor = useMe().role === 'professor';
+  const me = useMe();
+  const professor = me.role === 'professor';
   const draft = useImageDraft();
   // A professor's announcement can go to their other sections too, each its own thread.
   const [also, setAlso] = useState<string[]>([]);
   const myClasses = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
+  const blank = {
+    classId: String(existing?.classId ?? classId ?? ''),
+    kind: (existing?.kind ?? 'question') as 'question' | 'note',
+    topic: existing?.topic ?? '',
+    title: existing?.title ?? '',
+    body: existing?.body ?? '',
+    visibility: (existing?.visibility ?? 'class') as 'class' | 'selected',
+    audienceEmails: [] as string[],
+  };
+  // A new post picks up where the last one was left. (Images aren't kept, only the text.)
+  const draftName = `post-${classId ?? 'home'}`;
+  const [restored, setRestored] = useState(() => (existing ? null : loadDraft<typeof blank>(me.id, draftName)));
   const form = useForm({
-    initialValues: {
-      classId: String(existing?.classId ?? classId ?? ''),
-      kind: (existing?.kind ?? 'question') as 'question' | 'note',
-      topic: existing?.topic ?? '',
-      title: existing?.title ?? '',
-      body: existing?.body ?? '',
-      visibility: (existing?.visibility ?? 'class') as 'class' | 'selected',
-      audienceEmails: [] as string[],
+    initialValues: restored ?? blank,
+    onValuesChange: (values) => {
+      if (!existing) saveDraft(me.id, draftName, values.title.trim() || values.body.trim() ? values : null);
     },
     validate: {
       classId: (v) => (v ? null : t('Pick a class')),
@@ -956,12 +971,37 @@ function PostForm({
       }
       return created;
     },
-    { success: existing ? 'Post updated' : 'Posted', onSuccess: (r) => onDone(r.id) },
+    {
+      success: existing ? 'Post updated' : 'Posted',
+      onSuccess: (r) => {
+        if (!existing) saveDraft(me.id, draftName, null);
+        onDone(r.id);
+      },
+    },
   );
 
   return (
     <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
       <Stack>
+        {restored && (
+          <Group gap="xs">
+            <Text size="xs" c="dimmed">
+              {t('Your draft is back, as you left it.')}
+            </Text>
+            <Anchor
+              component="button"
+              type="button"
+              size="xs"
+              onClick={() => {
+                form.setValues(blank);
+                saveDraft(me.id, draftName, null);
+                setRestored(null);
+              }}
+            >
+              {t('Discard it')}
+            </Anchor>
+          </Group>
+        )}
         <SegmentedControl
           data={[
             { value: 'question', label: t('Question') },

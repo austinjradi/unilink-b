@@ -22,6 +22,7 @@ import { useQuery } from '@tanstack/react-query';
 import { FACULTIES, passwordProblems, PRONOUNS } from '@shared/validation';
 import { SectionCard } from '../components/ui';
 import { fromNow } from '../lib/format';
+import { clearDrafts } from '../lib/drafts';
 import { useAction, useMe } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
 import { t } from '../lib/i18n';
@@ -233,7 +234,11 @@ export function DeleteAccount() {
   const [open, setOpen] = useState(false);
   const [password, setPassword] = useState('');
   const [keepPosts, setKeepPosts] = useState(false);
-  const remove = useAction(() => rpc.profile.deleteAccount({ password, keepPosts }), { success: 'Your account and data were deleted.' });
+  const me = useMe();
+  const remove = useAction(() => rpc.profile.deleteAccount({ password, keepPosts }), {
+    success: 'Your account and data were deleted.',
+    onSuccess: () => clearDrafts(me.id),
+  });
 
   return (
     <SectionCard title={t('Delete account')}>

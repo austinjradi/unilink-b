@@ -72,7 +72,7 @@ The interface follows the team's wireframes in `A2Team.pdf`:
 - **Goat mascot:** customizable under Settings → Goat (`components/Goat.tsx`, `shared/goat.ts`).
 - **Home:** today's tasks and deadline countdowns on the left, a cross-class discussion feed with 🐐
   reactions in the middle, and filters on the right.
-- **Threads:** one list of replies, with the accepted answer pinned first, and a Follow button for reply notifications. A classmate's name opens their
+- **Threads:** one list of replies, with the accepted answer pinned first, and a Follow button for reply notifications. Posts and replies you haven't sent are kept as drafts on this device, per account. A classmate's name opens their
   profile card; the feed sorts by newest or most 🐐, and posts since your last visit to a class are marked New
   (counted on its course card).
 - **Grade Calculator:** a "You need at least X%" bubble and a scenarios table, and below them every class this term with a

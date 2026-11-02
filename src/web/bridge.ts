@@ -102,6 +102,11 @@ window.unilink = {
     resetting = true;
     await saving;
     await storage.clearAll();
+    try {
+      for (const key of Object.keys(localStorage)) if (key.startsWith('unilink-')) localStorage.removeItem(key);
+    } catch {
+      // Nothing to forget if storage is off.
+    }
     channel?.postMessage({ type: 'reset' });
     location.reload();
   },
