@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { finalIfRemainingAverages, letterFor, summarize } from '@shared/grades';
+import { cgpaWith, finalIfRemainingAverages, letterFor, summarize, termGpa } from '@shared/grades';
 import { buildCalendar, parseCalendar } from '@shared/ics';
 import { noClassesOn } from '@shared/keyDates';
 import { isHidden, parseChatLink } from '@shared/links';
@@ -58,6 +58,15 @@ describe('grades (A4)', () => {
     expect(s.remainingWeight).toBe(50);
     expect([s.worstFinal, s.bestFinal]).toEqual([40, 90]);
     expect(s.requirements.find((r) => r.letter === 'A')).toEqual({ letter: 'A', needed: 90, status: 'possible', scheme: 0 });
+  });
+
+  it('projects a term GPA on the McGill scale, weighted by credits', () => {
+    // A (4.0) over 3 credits and B (3.0) over 1 credit; the class with no marks doesn't count.
+    expect(termGpa([{ credits: 3, percent: 90 }, { credits: 1, percent: 72 }, { credits: 3, percent: null }])).toBe(3.75);
+    expect(termGpa([{ credits: 3, percent: null }])).toBeNull();
+    expect(cgpaWith({ gpa: 3, credits: 30 }, { gpa: 4, credits: 10 })).toBe(3.25);
+    expect(cgpaWith({ gpa: null, credits: 0 }, { gpa: 3.5, credits: 12 })).toBe(3.5);
+    expect(cgpaWith({ gpa: 3.2, credits: 30 }, { gpa: null, credits: 0 })).toBe(3.2);
   });
 
   it('takes whichever of two schemes is higher', () => {

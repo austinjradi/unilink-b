@@ -777,6 +777,29 @@ describe('A3–A5 shared section info', () => {
     expect(await maya.api.courses.assessments({ classId })).toEqual([]);
   });
 
+  it('sums up your classes this term, with your own marks and targets only', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    await maya.api.courses.addAssessment({ classId, name: 'Midterm', weight: 40, dueAt: null });
+    await maya.api.courses.addAssessment({ classId, name: 'Final', weight: 60, dueAt: null });
+    const [midterm] = await maya.api.courses.assessments({ classId });
+    await maya.api.courses.setScore({ id: midterm.id, score: 90 });
+    await maya.api.courses.setTarget({ classId, targetGrade: 'A-' });
+
+    const { classes } = await maya.api.courses.standing();
+    expect(classes).toMatchObject([
+      { classId, code: 'COMP 251-001', credits: 3, target: 'A-', hasScheme: true, currentAverage: 90, worstFinal: 36, bestFinal: 96, goal: { letter: 'A-', needed: 73.3, status: 'possible' } },
+    ]);
+    expect((await leo.api.courses.standing()).classes).toMatchObject([{ target: 'A', currentAverage: null, worstFinal: 0, bestFinal: 100 }]);
+
+    // A section with no scheme yet, and the course record's CGPA alongside.
+    await maya.api.classes.join({ classId: (await maya.api.catalogue.search({ query: 'MATH 240', term: 'Fall 2026', level: null }))[0].id });
+    await maya.api.record.add({ code: 'COMP 202', title: '', credits: 3, term: 'Winter 2026', status: 'completed', grade: 'B' });
+    const standing = await maya.api.courses.standing();
+    expect(standing.classes.map((c) => c.hasScheme)).toEqual([true, false]);
+    expect([standing.cgpa, standing.cgpaCredits]).toEqual([3, 3]);
+  });
+
   it('adds a second grading scheme, whichever is higher, for the whole section', async () => {
     const { classId, people } = await classmates('Maya', 'Leo');
     const [maya, leo] = people;

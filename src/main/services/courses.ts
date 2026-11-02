@@ -1,11 +1,12 @@
 import { and, asc, eq, isNotNull, isNull, max, ne, sql, sum } from 'drizzle-orm';
 import { z } from 'zod';
-import { ymd } from '@shared/dates';
-import { MCGILL_SCALE } from '@shared/grades';
+import { summarizeRecord } from '@shared/academics';
+import { CURRENT_TERM, ymd } from '@shared/dates';
+import { MCGILL_SCALE, summarize } from '@shared/grades';
 import type { DB } from '../db/client';
-import { assessments, assessmentScores, classDetails, classMeetings, courseInfo, users } from '../db/schema';
+import { assessments, assessmentScores, classDetails, classes, classMeetings, courseInfo, courseRecords, courses, enrollments, users } from '../db/schema';
 import { AppError, type AuthedContext, idSchema, nonEmpty, procedure } from '../rpc/core';
-import { canEditShared, classLabel, FORMER_STUDENT_EMAIL, notFound, professorsOf, requireMember, requireSharedEditor, studentsOf, teaches } from './access';
+import { canEditShared, classLabel, FORMER_STUDENT_EMAIL, notFound, professorsOf, requireMember, requireSharedEditor, sectionCode, studentsOf, teaches } from './access';
 import { m, notify } from './notifications';
 
 // A5 in version B: everything that's the same for the whole section is entered once and
@@ -129,6 +130,38 @@ export function gradedItems(db: DB, userId: number, classId: number) {
 }
 
 export const coursesRouter = {
+  // A4 across classes: where the student stands in each class this term, and their record so far.
+  standing: procedure(z.void(), (_input, ctx) => {
+    const rows = ctx.db
+      .select({ classId: classes.id, code: sectionCode, credits: courses.credits, target: courseInfo.targetGrade })
+      .from(enrollments)
+      .innerJoin(classes, eq(enrollments.classId, classes.id))
+      .innerJoin(courses, eq(classes.courseId, courses.id))
+      .leftJoin(courseInfo, and(eq(courseInfo.classId, classes.id), eq(courseInfo.userId, ctx.userId)))
+      .where(and(eq(enrollments.userId, ctx.userId), eq(classes.term, CURRENT_TERM)))
+      .orderBy(asc(courses.subject), asc(courses.number))
+      .all();
+    const record = summarizeRecord(ctx.db.select().from(courseRecords).where(eq(courseRecords.userId, ctx.userId)).all());
+    return {
+      cgpa: record.cgpa,
+      cgpaCredits: record.cgpaCredits,
+      classes: rows.map(({ target, ...c }) => {
+        const items = gradedItems(ctx.db, ctx.userId, c.classId);
+        const summary = summarize(items);
+        const targetGrade = target ?? 'A';
+        return {
+          ...c,
+          target: targetGrade,
+          hasScheme: items.length > 0,
+          currentAverage: summary.currentAverage,
+          worstFinal: summary.worstFinal,
+          bestFinal: summary.bestFinal,
+          goal: summary.requirements.find((r) => r.letter === targetGrade) ?? null,
+        };
+      }),
+    };
+  }),
+
   info: procedure(z.object({ classId: idSchema }), ({ classId }, ctx) => {
     requireMember(ctx.db, ctx.userId, classId);
     const shared = ctx.db.select().from(classDetails).where(eq(classDetails.classId, classId)).get();

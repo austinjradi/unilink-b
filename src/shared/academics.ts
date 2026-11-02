@@ -65,8 +65,11 @@ function gpa(records: RecordLike[]): { gpa: number | null; credits: number } {
 export function summarizeRecord(records: RecordLike[]) {
   const sum = (rs: RecordLike[]) => rs.reduce((n, r) => n + r.credits, 0);
   const terms = [...new Set(records.map((r) => r.term))].sort((a, b) => termOrder(a) - termOrder(b));
+  const overall = gpa(records);
   return {
-    cgpa: gpa(records).gpa,
+    cgpa: overall.gpa,
+    // Credits that count in the CGPA.
+    cgpaCredits: overall.credits,
     creditsEarned: sum(records.filter((r) => r.status === 'completed' && earnsCredits(r.grade))),
     creditsInProgress: sum(records.filter((r) => r.status === 'in-progress')),
     creditsPlanned: sum(records.filter((r) => r.status === 'planned')),

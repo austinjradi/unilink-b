@@ -99,7 +99,7 @@ export function GradeCalculator({ classId }: { classId: number }) {
               : t('{{name}} sets the grading scheme for this section. Your grades are private.', { name: managedBy ?? '' })}
         </Text>
         {list.length ? (
-          <Table.ScrollContainer minWidth={760}>
+          <Table.ScrollContainer minWidth={teaching ? 460 : 760}>
             <Table withTableBorder withColumnBorders verticalSpacing="sm" fz="md">
               <Table.Thead>
                 <Table.Tr>

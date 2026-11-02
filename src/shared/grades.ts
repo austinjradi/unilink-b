@@ -131,3 +131,21 @@ export function summarize(items: GradedItem[]): GradeSummary {
     schemes,
   };
 }
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+// A term's grade point average on McGill's scale, weighted by credits, over the classes that
+// have a percentage to go on. null when none does.
+export function termGpa(classes: { credits: number; percent: number | null }[]): number | null {
+  const counted = classes.filter((c) => c.percent != null);
+  const credits = counted.reduce((sum, c) => sum + c.credits, 0);
+  if (!credits) return null;
+  return round2(counted.reduce((sum, c) => sum + letterFor(c.percent!).gpa * c.credits, 0) / credits);
+}
+
+// The CGPA once a term's GPA joins the record so far.
+export function cgpaWith(past: { gpa: number | null; credits: number }, term: { gpa: number | null; credits: number }): number | null {
+  if (term.gpa == null || !term.credits) return past.gpa;
+  if (past.gpa == null || !past.credits) return term.gpa;
+  return round2((past.gpa * past.credits + term.gpa * term.credits) / (past.credits + term.credits));
+}

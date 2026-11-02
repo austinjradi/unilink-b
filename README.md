@@ -74,7 +74,8 @@ The interface follows the team's wireframes in `A2Team.pdf`:
 - **Threads:** one list of replies, with the accepted answer pinned first, and a Follow button for reply notifications. A classmate's name opens their
   profile card; the feed sorts by newest or most 🐐, and posts since your last visit to a class are marked New
   (counted on its course card).
-- **Grade Calculator:** a "You need at least X%" bubble and a scenarios table.
+- **Grade Calculator:** a "You need at least X%" bubble and a scenarios table, and below them every class this term with a
+  projected term GPA and CGPA on McGill's scale.
 - **Calendar & Planner:** Month, Week, Semester and Key dates views. Pick any day to list everything on it; on phones
   the month shows a coloured dot per event.
 - **Courses:** each class card shows the next lecture, the next thing due and unanswered questions; a class's
