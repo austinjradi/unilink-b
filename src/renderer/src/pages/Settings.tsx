@@ -42,6 +42,7 @@ export function SettingsPage() {
   const params = useParams();
   const navigate = useNavigate();
   const tab = TABS.some((tabItem) => tabItem.value === params.tab) ? params.tab! : 'general';
+  const me = useMe();
   const signOut = useAction(() => rpc.auth.signOut());
   // Phones: the sections become a row of tabs above the content (sign out stays in the account menu).
   const narrow = useMediaQuery('(max-width: 48em)');
@@ -82,9 +83,11 @@ export function SettingsPage() {
         <Tabs.Panel value="account">
           <Stack gap="lg" maw={760}>
             <ProfileForm />
-            <SectionCard title={t('Free study time')}>
-              <StudyTimeForm />
-            </SectionCard>
+            {me.role === 'student' && (
+              <SectionCard title={t('Free study time')}>
+                <StudyTimeForm />
+              </SectionCard>
+            )}
             <ChangePassword />
             <DeleteAccount />
           </Stack>

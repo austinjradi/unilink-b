@@ -34,6 +34,8 @@ export const users = sqliteTable('users', {
   gradYear: integer('grad_year'),
   // G4: the one-time recovery code shown at sign-up (and after each reset) replaces emailed reset codes.
   recoveryCodeHash: text('recovery_code_hash'),
+  // Professors teach sections: they run its scheme and details, post assignments and moderate.
+  role: text('role', { enum: ['student', 'professor'] }).notNull().default('student'),
   // G4 "log in securely": wrong passwords or recovery codes since the last sign-in. Every
   // fifth one pauses sign-in and resets until `lockedUntil`.
   failedSignIns: integer('failed_sign_ins').notNull().default(0),
@@ -194,6 +196,10 @@ export const posts = sqliteTable(
     acceptedReplyId: integer('accepted_reply_id'),
     // Deleting a post that has replies keeps the thread and blanks the post.
     deletedAt: timestamp('deleted_at'),
+    // Moderation by the section's professor: pinned first, no new replies, or removed.
+    pinnedAt: timestamp('pinned_at'),
+    lockedAt: timestamp('locked_at'),
+    removedByProfessor: integer('removed_by_professor', { mode: 'boolean' }).notNull().default(false),
     createdAt: createdAt(),
     editedAt: timestamp('edited_at'),
   },
@@ -224,6 +230,8 @@ export const replies = sqliteTable(
     body: text('body').notNull(),
     createdAt: createdAt(),
     editedAt: timestamp('edited_at'),
+    // The section's professor vouches for this reply.
+    endorsedAt: timestamp('endorsed_at'),
   },
   (t) => [index('replies_post_idx').on(t.postId)],
 );
@@ -250,6 +258,10 @@ export const deadlines = sqliteTable(
     title: text('title').notNull(),
     dueAt: timestamp('due_at').notNull(),
     notes: text('notes').notNull().default(''),
+    // An assignment posted by the section's professor, with its handout if there is one.
+    official: integer('official', { mode: 'boolean' }).notNull().default(false),
+    attachmentName: text('attachment_name'),
+    attachmentPath: text('attachment_path'),
     createdAt: createdAt(),
   },
   (t) => [index('deadlines_user_due_idx').on(t.userId, t.dueAt)],

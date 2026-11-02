@@ -3,10 +3,10 @@ import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { GOAT_OPTIONS, type GoatPart, isGoatConfig } from '@shared/goat';
 import { LOCALES } from '@shared/i18n';
-import { FACULTIES, MCGILL_EMAIL, passwordProblems } from '@shared/validation';
+import { FACULTIES, MCGILL_EMAIL, passwordProblems, STAFF_EMAIL } from '@shared/validation';
 import { randomHex, randomInt, scryptHex, sha256Hex as sha256, timingSafeEqualHex } from '../crypto';
 import type { DB } from '../db/client';
-import { DEMO_PASSWORD, DEMO_USERS } from '../db/demo';
+import { DEMO_PASSWORD, DEMO_PROFESSOR, DEMO_USERS } from '../db/demo';
 import {
   appState,
   assessments,
@@ -198,7 +198,15 @@ function keepSharedContributions(ctx: AuthedContext, keepPosts: boolean) {
 export const authRouter = {
   // Demo classmates (see db/demo.ts); the sign-in screen lists them as one-click sign-ins.
   devInfo: publicProcedure(z.void(), (_input, ctx) =>
-    ctx.isDev ? { accounts: DEMO_USERS.map(({ name, email }) => ({ name, email })), password: DEMO_PASSWORD } : null,
+    ctx.isDev
+      ? {
+          accounts: [
+            ...DEMO_USERS.map(({ name, email }) => ({ name, email, professor: false })),
+            { name: DEMO_PROFESSOR.name, email: DEMO_PROFESSOR.email, professor: true },
+          ],
+          password: DEMO_PASSWORD,
+        }
+      : null,
   ),
 
   me: publicProcedure(z.void(), (_input, ctx) => {
@@ -214,8 +222,11 @@ export const authRouter = {
 
   // Returns the recovery code once; it's never shown again.
   signUp: publicProcedure(
-    z.object({ ...profileFields, email, password: z.string(), locale: z.enum(LOCALES).default('en') }),
+    z.object({ ...profileFields, email, password: z.string(), locale: z.enum(LOCALES).default('en'), role: z.enum(['student', 'professor']).default('student') }),
     async ({ email, password, ...fields }, ctx) => {
+      if (fields.role === 'professor' && !STAFF_EMAIL.test(email)) {
+        throw new AppError('Professor accounts use a @mcgill.ca email, not @mail.mcgill.ca.');
+      }
       checkPassword(password, email);
       if (ctx.db.select().from(users).where(eq(users.email, email)).get()) {
         throw new AppError('An account with this email already exists. Try signing in.', 'CONFLICT');

@@ -8,7 +8,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
 import dayjs from 'dayjs';
 import { finalExamFor } from '@shared/keyDates';
-import { Empty, kindColor, Loading, SectionCard } from '../../components/ui';
+import { Empty, kindColor, Loading, SectionCard, Tag } from '../../components/ui';
 import { SyllabusImport } from '../Calendar';
 import { fromNow } from '../../lib/format';
 import { useAction } from '../../lib/hooks';
@@ -47,7 +47,7 @@ export function Overview({ classId, cls }: { classId: number; cls: Out<typeof rp
       <Grid.Col span={{ base: 12, lg: 7 }}>
         <Stack gap="lg">
           <CourseDetails classId={classId} code={cls.code} info={info.data} />
-          <ClassTimes classId={classId} code={cls.code} initial={info.data.meetings} editor={info.data.meetingsEditedBy} />
+          <ClassTimes classId={classId} code={cls.code} initial={info.data.meetings} editor={info.data.meetingsEditedBy} canEdit={info.data.canEdit} />
           <MyNotes classId={classId} initial={info.data.notes} />
         </Stack>
       </Grid.Col>
@@ -70,6 +70,7 @@ function CourseDetails({ classId, code, info }: { classId: number; code: string;
       location: info.location,
     },
   });
+  const readOnly = !info.canEdit;
   const save = useAction((v: typeof form.values) => rpc.courses.saveDetails({ classId, ...v }), {
     success: 'Course details saved for the whole section',
     onSuccess: (_d, v) => form.resetDirty(v),
@@ -80,20 +81,22 @@ function CourseDetails({ classId, code, info }: { classId: number; code: string;
       <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
         <Stack>
           <Group grow>
-            <TextInput label={t('Professor')} placeholder={t('Prof. Jane Doe')} {...form.getInputProps('professor')} />
-            <TextInput label={t('Professor email')} placeholder={t('jane.doe@mcgill.ca')} {...form.getInputProps('professorEmail')} />
+            <TextInput label={t('Professor')} placeholder={t('Prof. Jane Doe')} readOnly={readOnly} {...form.getInputProps('professor')} />
+            <TextInput label={t('Professor email')} placeholder={t('jane.doe@mcgill.ca')} readOnly={readOnly} {...form.getInputProps('professorEmail')} />
           </Group>
           <Group grow>
-            <TextInput label={t('Office hours')} placeholder={t('Tue 14:00–15:30, McConnell 110N')} {...form.getInputProps('officeHours')} />
-            <TextInput label={t('Lecture location')} placeholder={t('Leacock 132')} {...form.getInputProps('location')} />
+            <TextInput label={t('Office hours')} placeholder={t('Tue 14:00–15:30, McConnell 110N')} readOnly={readOnly} {...form.getInputProps('officeHours')} />
+            <TextInput label={t('Lecture location')} placeholder={t('Leacock 132')} readOnly={readOnly} {...form.getInputProps('location')} />
           </Group>
           <Group justify="space-between">
             <Text size="xs" c="dimmed">
-              {t('Anyone in the section can fill these in or fix them.')}
+              {readOnly ? t('Your professor keeps these up to date.') : info.teaching ? t('Everyone in the section sees these.') : t('Anyone in the section can fill these in or fix them.')}
             </Text>
-            <Button type="submit" disabled={!form.isDirty()} loading={save.isPending}>
-              {t('Save details')}
-            </Button>
+            {!readOnly && (
+              <Button type="submit" disabled={!form.isDirty()} loading={save.isPending}>
+                {t('Save details')}
+              </Button>
+            )}
           </Group>
         </Stack>
       </form>
@@ -119,7 +122,7 @@ function MyNotes({ classId, initial }: { classId: number; initial: string }) {
   );
 }
 
-function ClassTimes({ classId, code, initial, editor }: { classId: number; code: string; initial: Meeting[]; editor: Editor }) {
+function ClassTimes({ classId, code, initial, editor, canEdit }: { classId: number; code: string; initial: Meeting[]; editor: Editor; canEdit: boolean }) {
   const strip = (ms: Meeting[]) => ms.map(({ weekday, startTime, endTime, location }) => ({ weekday, startTime, endTime, location }));
   const [rows, setRows] = useState<Meeting[]>(strip(initial));
   useEffect(() => setRows(strip(initial)), [initial]);
@@ -136,21 +139,25 @@ function ClassTimes({ classId, code, initial, editor }: { classId: number; code:
       actions={
         <Group gap="sm">
           <SharedNote code={code} editor={editor} />
-          <Button
-            size="xs"
-            variant="light"
-            leftSection={<IconPlus size={14} />}
-            onClick={() => setRows((r) => [...r, { weekday: 1, startTime: '10:00', endTime: '11:30', location: '' }])}
-          >
-            {t('Add time')}
-          </Button>
+          {canEdit && (
+            <Button
+              size="xs"
+              variant="light"
+              leftSection={<IconPlus size={14} />}
+              onClick={() => setRows((r) => [...r, { weekday: 1, startTime: '10:00', endTime: '11:30', location: '' }])}
+            >
+              {t('Add time')}
+            </Button>
+          )}
         </Group>
       }
     >
       <Stack gap="xs">
         {rows.length === 0 && (
           <Text size="sm" c="dimmed">
-            {t("Nobody has added this section's lectures, tutorials or labs yet. Add them once and they show on everyone's calendar.")}
+            {canEdit
+              ? t("Nobody has added this section's lectures, tutorials or labs yet. Add them once and they show on everyone's calendar.")
+              : t("Your professor hasn't added this section's class times yet.")}
           </Text>
         )}
         {rows.map((m, i) => (
@@ -160,25 +167,29 @@ function ClassTimes({ classId, code, initial, editor }: { classId: number; code:
               value={String(m.weekday)}
               onChange={(v) => v && update(i, { weekday: Number(v) })}
               w={130}
+              disabled={!canEdit}
               allowDeselect={false}
               aria-label={t('Day')}
             />
-            <TimeInput value={m.startTime} onChange={(e) => update(i, { startTime: e.currentTarget.value })} aria-label={t('Start')} w={110} />
+            <TimeInput value={m.startTime} onChange={(e) => update(i, { startTime: e.currentTarget.value })} aria-label={t('Start')} w={110} readOnly={!canEdit} />
             <Text c="dimmed">–</Text>
-            <TimeInput value={m.endTime} onChange={(e) => update(i, { endTime: e.currentTarget.value })} aria-label={t('End')} w={110} />
+            <TimeInput value={m.endTime} onChange={(e) => update(i, { endTime: e.currentTarget.value })} aria-label={t('End')} w={110} readOnly={!canEdit} />
             <TextInput
               placeholder={t('Location')}
               value={m.location}
               onChange={(e) => update(i, { location: e.currentTarget.value })}
               style={{ flex: 1 }}
               aria-label={t('Location')}
+              readOnly={!canEdit}
             />
-            <ActionIcon variant="subtle" color="red" onClick={() => setRows((r) => r.filter((_, j) => j !== i))} aria-label={t('Remove')} mb={4}>
-              <IconTrash size={16} />
-            </ActionIcon>
+            {canEdit && (
+              <ActionIcon variant="subtle" color="red" onClick={() => setRows((r) => r.filter((_, j) => j !== i))} aria-label={t('Remove')} mb={4}>
+                <IconTrash size={16} />
+              </ActionIcon>
+            )}
           </Group>
         ))}
-        {(dirty || rows.length > 0) && (
+        {canEdit && (dirty || rows.length > 0) && (
           <Group justify="flex-end" mt="xs">
             <Button onClick={() => save.mutate()} disabled={!dirty} loading={save.isPending}>
               {t('Save class times')}
@@ -277,10 +288,12 @@ function MembershipCard({ cls }: { cls: Out<typeof rpc.classes.get> }) {
       title: t('Leave {{code}}?', { code: cls.code }),
       children: (
         <Text size="sm">
-          {t("You'll stop seeing its group chats, sessions and discussion. Sessions you're hosting pass to the next person going. What you added to the shared course info stays with the section; your notes, marks and private deadlines are kept in case you rejoin.")}
+          {cls.teaching
+            ? t("What you posted stays with the section. If no other professor teaches it, its students go back to editing the shared course info together.")
+            : t("You'll stop seeing its group chats, sessions and discussion. Sessions you're hosting pass to the next person going. What you added to the shared course info stays with the section; your notes, marks and private deadlines are kept in case you rejoin.")}
         </Text>
       ),
-      labels: { confirm: t('Leave class'), cancel: t('Stay') },
+      labels: { confirm: cls.teaching ? t('Stop teaching') : t('Leave class'), cancel: t('Stay') },
       confirmProps: { color: 'red' },
       onConfirm: () => leave.mutate(),
     });
@@ -288,19 +301,21 @@ function MembershipCard({ cls }: { cls: Out<typeof rpc.classes.get> }) {
   const others = cls.sections.filter((s) => s.id !== cls.id);
 
   return (
-    <SectionCard title={t('Your classmates')}>
+    <SectionCard title={cls.teaching ? t('Your students') : t('Your classmates')}>
       <Text size="sm" mb="xs">
         {t('{{count}} students from {{code}} are on UniLink.', { count: cls.memberCount, code: cls.code })}
       </Text>
       <Text size="sm" c="dimmed" mb="md">
-        {t("There's no member list. A classmate's name, email, pronouns and faculty appear here once they post or reply on the discussion board.")}
+        {cls.teaching
+          ? t("There's no class list here. A student's name, email, pronouns and faculty appear once they post or reply on the discussion board.")
+          : t("There's no member list. A classmate's name, email, pronouns and faculty appear here once they post or reply on the discussion board.")}
       </Text>
       {classmates.data?.length ? (
         <Stack gap="xs" mb="lg">
           {classmates.data.map((c) => (
             <div key={c.id}>
               <Text size="sm" fw={700}>
-                {c.name}
+                {c.name} {c.role === 'professor' && <Tag color="periwinkle">{t('Professor')}</Tag>}
                 {c.pronouns && (
                   <Text span size="xs" c="dimmed" fw={500}>
                     {' '}
@@ -319,7 +334,7 @@ function MembershipCard({ cls }: { cls: Out<typeof rpc.classes.get> }) {
       )}
       <Group>
         <Button variant="light" color="red" onClick={confirmLeave}>
-          {t('Leave class')}
+          {cls.teaching ? t('Stop teaching') : t('Leave class')}
         </Button>
         {others.map((s) => (
           <Button key={s.id} variant="default" component={Link} to={`/classes/${s.id}`}>

@@ -4,8 +4,8 @@ import { goatFor } from '@shared/goat';
 import { keywords, similarity } from '@shared/similar';
 import type { DB } from '../db/client';
 import { boardVisits, classes, courses, enrollments, postAudience, postFollows, postReactions, posts, replies, replyReactions, users } from '../db/schema';
-import { AppError, idSchema, nonEmpty, procedure } from '../rpc/core';
-import { FORMER_STUDENT_EMAIL, notFound, requireMember, sectionCode } from './access';
+import { AppError, type AuthedContext, idSchema, nonEmpty, procedure } from '../rpc/core';
+import { classLabel, FORMER_STUDENT_EMAIL, notFound, requireMember, requireTeacher, sectionCode, studentsOf, teaches } from './access';
 import { visibleClassmatesByEmail } from './classes';
 import { m, notify, raw } from './notifications';
 
@@ -15,6 +15,8 @@ import { m, notify, raw } from './notifications';
 // Deleting a post that has replies keeps the thread and blanks the post.
 // Posts are visible to the whole class or only to selected classmates; 🐐 reactions stay.
 // Students follow the threads they post or reply in (or pick to), and hear about new replies.
+// A section's professor moderates: pins and locks threads, endorses replies, removes what
+// doesn't belong, and their notes go out to the whole section as announcements.
 
 export const SUGGESTED_TOPICS = ['Lectures', 'Assignments', 'Exams', 'Labs and tutorials', 'Logistics', 'Off-topic'];
 
@@ -101,6 +103,15 @@ function followersOf(db: DB, post: typeof posts.$inferSelect) {
     .map((r) => r.id);
 }
 
+// What moderation can reach: posts the professor can see (private ones only if picked).
+function moderatedPost(ctx: AuthedContext, postId: number) {
+  const post = visiblePost(ctx.db, ctx.userId, postId);
+  requireTeacher(ctx.db, ctx.userId, post.classId);
+  return post;
+}
+
+const nameOf = (db: DB, userId: number) => db.select({ name: users.name }).from(users).where(eq(users.id, userId)).get()?.name ?? '';
+
 function audienceOf(db: DB, postId: number) {
   return db
     .select({ id: users.id, name: users.name, email: users.email })
@@ -120,6 +131,7 @@ const authorColumns = {
   authorPronouns: users.pronouns,
   authorFaculty: users.faculty,
   authorGradYear: users.gradYear,
+  authorRole: users.role,
 };
 
 type AuthorRow = { authorId: number; authorAvatar: unknown; authorEmail: string; authorPronouns: string; authorFaculty: string; authorGradYear: number | null };
@@ -187,6 +199,9 @@ export const boardRouter = {
           deletedAt: posts.deletedAt,
           createdAt: posts.createdAt,
           editedAt: posts.editedAt,
+          pinnedAt: posts.pinnedAt,
+          lockedAt: posts.lockedAt,
+          removedByProfessor: posts.removedByProfessor,
           ...authorColumns,
           replyCount: sql<number>`(select count(*) from ${replies} where ${replies.postId} = ${posts.id})`.mapWith(Number),
           goats,
@@ -207,7 +222,8 @@ export const boardRouter = {
             following ? sql`${followsSql(ctx.userId)} > 0` : undefined,
           ),
         )
-        .orderBy(...(sort === 'top' ? [desc(goats)] : []), desc(posts.createdAt), desc(posts.id))
+        // On one class's board, what its professor pinned comes first.
+        .orderBy(...(ids.length === 1 ? [sql`${posts.pinnedAt} is null`] : []), ...(sort === 'top' ? [desc(goats)] : []), desc(posts.createdAt), desc(posts.id))
         .limit(100)
         .all()
         .map((p) => ({ ...withGoat(p), isNew: p.authorId !== ctx.userId && !p.deletedAt && p.createdAt.getTime() > seen(p.classId) }));
@@ -252,7 +268,7 @@ export const boardRouter = {
       .get()?.label;
     const reactions = ctx.db.select().from(postReactions).where(eq(postReactions.postId, postId)).all();
     const replyRows = ctx.db
-      .select({ id: replies.id, body: replies.body, createdAt: replies.createdAt, editedAt: replies.editedAt, ...authorColumns })
+      .select({ id: replies.id, body: replies.body, createdAt: replies.createdAt, editedAt: replies.editedAt, endorsedAt: replies.endorsedAt, ...authorColumns })
       .from(replies)
       .innerJoin(users, eq(replies.authorId, users.id))
       .where(eq(replies.postId, postId))
@@ -273,6 +289,7 @@ export const boardRouter = {
       authorPronouns: writer?.pronouns ?? '',
       authorFaculty: writer?.faculty ?? '',
       authorGradYear: writer?.gradYear ?? null,
+      authorRole: writer?.role ?? ('student' as const),
     });
 
     return {
@@ -280,6 +297,7 @@ export const boardRouter = {
       ...author,
       classLabel: label ?? '',
       mine: post.authorId === ctx.userId,
+      canModerate: teaches(ctx.db, ctx.userId, post.classId),
       goats: reactions.length,
       goated: reactions.some((r) => r.userId === ctx.userId),
       following: !!ctx.db
@@ -288,16 +306,17 @@ export const boardRouter = {
         .where(and(eq(postFollows.postId, postId), eq(postFollows.userId, ctx.userId), eq(postFollows.following, true)))
         .get(),
       audience: post.visibility === 'selected' ? audienceOf(ctx.db, postId) : [],
-      // The accepted answer comes first, then everything else in order.
+      // The accepted answer comes first, then what the professor endorsed, then the rest in order.
       replies: replyRows
         .map((r) => ({
           ...withGoat(r),
           accepted: r.id === post.acceptedReplyId,
+          endorsed: r.endorsedAt != null,
           mine: r.authorId === ctx.userId,
           goats: replyGoats.filter((g) => g.replyId === r.id).length,
           goated: replyGoats.some((g) => g.replyId === r.id && g.userId === ctx.userId),
         }))
-        .sort((a, b) => Number(b.accepted) - Number(a.accepted)),
+        .sort((a, b) => Number(b.accepted) - Number(a.accepted) || Number(b.endorsed) - Number(a.endorsed)),
     };
   }),
 
@@ -317,7 +336,7 @@ export const boardRouter = {
       if (fields.visibility === 'selected' && !audience.length) {
         throw new AppError('Pick at least one classmate who can see this post.');
       }
-      return ctx.db.transaction((tx) => {
+      const created = ctx.db.transaction((tx) => {
         const post = tx
           .insert(posts)
           .values({ ...fields, classId, authorId: ctx.userId, createdAt: ctx.now() })
@@ -327,6 +346,18 @@ export const boardRouter = {
         follow(tx, post.id, ctx.userId);
         return post;
       });
+      // A professor's note to the whole section is an announcement.
+      if (fields.kind === 'note' && fields.visibility === 'class' && teaches(ctx.db, ctx.userId, classId)) {
+        for (const student of studentsOf(ctx.db, classId)) {
+          notify(ctx.db, student.id, {
+            type: 'announcement',
+            title: m('{{class}}: {{title}}', { class: classLabel(ctx.db, classId) ?? '', title: fields.title }),
+            body: raw(fields.body.length > 140 ? `${fields.body.slice(0, 140)}…` : fields.body),
+            link: `/classes/${classId}/discussion?post=${created.id}`,
+          });
+        }
+      }
+      return created;
     },
   ),
 
@@ -397,6 +428,7 @@ export const boardRouter = {
   // Replies are one flat list under the post. Everyone following the thread hears about it.
   reply: procedure(z.object({ postId: idSchema, body: nonEmpty('Reply', 5000) }), ({ postId, body }, ctx) => {
     const post = visiblePost(ctx.db, ctx.userId, postId);
+    if (post.lockedAt && !teaches(ctx.db, ctx.userId, post.classId)) throw new AppError('The professor locked this thread.', 'FORBIDDEN');
     ctx.db.insert(replies).values({ postId, body, authorId: ctx.userId }).run();
     follow(ctx.db, postId, ctx.userId);
     if (post.deletedAt) return;
@@ -439,6 +471,69 @@ export const boardRouter = {
     const reply = ctx.db.select().from(replies).where(eq(replies.id, replyId)).get() ?? notFound('reply');
     if (reply.authorId !== ctx.userId) throw new AppError('You can only edit your own replies.', 'FORBIDDEN');
     ctx.db.update(replies).set({ body, editedAt: ctx.now() }).where(eq(replies.id, replyId)).run();
+  }),
+
+  // Moderation, for the section's professor.
+  pin: procedure(z.object({ postId: idSchema, pinned: z.boolean() }), ({ postId, pinned }, ctx) => {
+    moderatedPost(ctx, postId);
+    ctx.db.update(posts).set({ pinnedAt: pinned ? ctx.now() : null }).where(eq(posts.id, postId)).run();
+  }),
+
+  lock: procedure(z.object({ postId: idSchema, locked: z.boolean() }), ({ postId, locked }, ctx) => {
+    moderatedPost(ctx, postId);
+    ctx.db.update(posts).set({ lockedAt: locked ? ctx.now() : null }).where(eq(posts.id, postId)).run();
+  }),
+
+  endorse: procedure(z.object({ replyId: idSchema, endorsed: z.boolean() }), ({ replyId, endorsed }, ctx) => {
+    const reply = ctx.db.select().from(replies).where(eq(replies.id, replyId)).get() ?? notFound('reply');
+    const post = moderatedPost(ctx, reply.postId);
+    ctx.db.update(replies).set({ endorsedAt: endorsed ? ctx.now() : null }).where(eq(replies.id, replyId)).run();
+    if (endorsed && !reply.endorsedAt && reply.authorId !== ctx.userId) {
+      notify(ctx.db, reply.authorId, {
+        type: 'answer-accepted',
+        title: m('{{name}} endorsed your reply in "{{title}}"', { name: nameOf(ctx.db, ctx.userId), title: post.title }),
+        body: raw(reply.body.length > 140 ? `${reply.body.slice(0, 140)}…` : reply.body),
+        link: `/classes/${post.classId}/discussion?post=${post.id}`,
+      });
+    }
+  }),
+
+  // Removing someone's post works like deleting your own: a thread with replies stays up,
+  // blanked. The author is told, with the reason if there is one.
+  removeAsProfessor: procedure(z.object({ postId: idSchema, reason: z.string().trim().max(500) }), ({ postId, reason }, ctx) => {
+    const post = moderatedPost(ctx, postId);
+    const replyCount = ctx.db.select({ n: count() }).from(replies).where(eq(replies.postId, postId)).get()?.n ?? 0;
+    if (replyCount) {
+      ctx.db.update(posts).set({ title: '', body: '', deletedAt: ctx.now(), removedByProfessor: true, pinnedAt: null }).where(eq(posts.id, postId)).run();
+    } else {
+      ctx.db.delete(posts).where(eq(posts.id, postId)).run();
+    }
+    if (post.authorId !== ctx.userId && !post.deletedAt) {
+      notify(ctx.db, post.authorId, {
+        type: 'moderation',
+        title: m('{{name}} removed your post "{{title}}"', { name: nameOf(ctx.db, ctx.userId), title: post.title }),
+        body: reason ? raw(reason) : undefined,
+        link: `/classes/${post.classId}/discussion`,
+      });
+    }
+    return { kept: replyCount > 0 };
+  }),
+
+  removeReplyAsProfessor: procedure(z.object({ replyId: idSchema, reason: z.string().trim().max(500) }), ({ replyId, reason }, ctx) => {
+    const reply = ctx.db.select().from(replies).where(eq(replies.id, replyId)).get() ?? notFound('reply');
+    const post = moderatedPost(ctx, reply.postId);
+    ctx.db.transaction((tx) => {
+      tx.update(posts).set({ acceptedReplyId: null }).where(eq(posts.acceptedReplyId, replyId)).run();
+      tx.delete(replies).where(eq(replies.id, replyId)).run();
+    });
+    if (reply.authorId !== ctx.userId) {
+      notify(ctx.db, reply.authorId, {
+        type: 'moderation',
+        title: m('{{name}} removed your reply in "{{title}}"', { name: nameOf(ctx.db, ctx.userId), title: post.title || { t: 'a deleted post' } }),
+        body: reason ? raw(reason) : undefined,
+        link: `/classes/${post.classId}/discussion?post=${post.id}`,
+      });
+    }
   }),
 
   removeReply: procedure(z.object({ replyId: idSchema }), ({ replyId }, ctx) => {

@@ -15,6 +15,10 @@ export const NOTIFICATION_TYPES = {
   'plan-moved': { label: 'Plans that moved with a class deadline', desktop: true, email: false },
   'study-mode': { label: 'Study mode turning on and off', desktop: true, email: false },
   'sign-in-attempts': { label: 'Failed sign-in attempts on your account', desktop: true, email: true },
+  announcement: { label: 'Announcements from your professor', desktop: true, email: true },
+  'assignment-posted': { label: 'Assignments your professor posts or moves', desktop: true, email: true },
+  'scheme-changed': { label: 'Changes to a grading scheme by your professor', desktop: true, email: false },
+  moderation: { label: 'Something you posted was removed by a professor', desktop: true, email: true },
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;

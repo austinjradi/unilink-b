@@ -1,4 +1,4 @@
-import { and, count, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull, like, lt, sql } from 'drizzle-orm';
 import { addDays, atTime, CURRENT_TERM, TERMS, ymd } from '@shared/dates';
 import { GOAT_OPTIONS, type GoatConfig, type GoatPart } from '@shared/goat';
 import { type Message, render } from '@shared/i18n';
@@ -63,6 +63,28 @@ export const DEMO_USERS = [
   { name: 'Samuel Côté', email: 'samuel.cote@mail.mcgill.ca', pronouns: '', faculty: 'Science', gradYear: 2027 },
 ] as const;
 
+// A made-up professor who teaches both COMP 251 sections.
+export const DEMO_PROFESSOR = { name: 'Daniel Ouellet', email: 'daniel.ouellet@mcgill.ca', faculty: 'Science' } as const;
+
+// Files live outside the database, so seeding can't store them; web/bridge.ts saves these.
+const HANDOUT_PATH = '/attachments/comp251-practice-set-5.txt';
+export const DEMO_HANDOUTS = [
+  {
+    path: HANDOUT_PATH,
+    text: `COMP 251 Practice set 5: shortest paths
+
+Question 1: Dijkstra by hand (30 points)
+Run Dijkstra's algorithm on the graph from lecture 14, starting at s. Show the priority queue after each step.
+
+Question 2: Negative edges (30 points)
+Give a graph with one negative edge and no negative cycle on which Dijkstra's algorithm returns a wrong answer.
+
+Question 3: Bellman-Ford (40 points)
+Prove that after k rounds, Bellman-Ford has found every shortest path that uses at most k edges.
+`,
+  },
+];
+
 const DEMO_GOATS: GoatConfig[] = [
   { hat: 'toque', eyes: 'happy', horns: 'classic', fur: 'cream', background: 'rose' },
   { hat: 'grad', eyes: 'glasses', horns: 'curly', fur: 'caramel', background: 'lavender' },
@@ -87,9 +109,9 @@ export const demoEmail = (name: string) =>
 
 // Bumped when demo content is added; browsers with an older demo get the new part on next load.
 // 2: the classmates and sections in demoContent.ts. 3: their planned assignments follow the
-// section's graded items.
+// section's graded items. 4: a professor teaching COMP 251.
 const SEED_KEY = 'demo_seed';
-const SEED_VERSION = '3';
+const SEED_VERSION = '4';
 const HOUR = 3_600_000;
 
 function hash(password: string) {
@@ -122,16 +144,17 @@ function seededRandom(seed: number) {
 export function seedDemoData(db: DB) {
   const marker = db.select({ value: appState.value }).from(appState).where(eq(appState.key, SEED_KEY)).get()?.value;
   if (marker === SEED_VERSION) return;
+  const passwordHash = hash(DEMO_PASSWORD);
   if (marker === '2') {
     linkSeededPlans(db);
-  } else {
+  } else if (marker !== '3') {
     // Databases from before the marker already have the first three classmates.
     const fresh = !marker && (db.select({ n: count() }).from(users).get()?.n ?? 0) === 0;
-    const passwordHash = hash(DEMO_PASSWORD);
     if (fresh) seedFirstClassmates(db, passwordHash);
     seedSections(db, passwordHash);
-    followSeededThreads(db);
   }
+  seedProfessor(db, passwordHash);
+  followSeededThreads(db);
   db.insert(appState)
     .values({ key: SEED_KEY, value: SEED_VERSION })
     .onConflictDoUpdate({ target: appState.key, set: { value: SEED_VERSION } })
@@ -171,8 +194,8 @@ function seedFirstClassmates(db: DB, passwordHash: string) {
     tx.insert(classDetails)
       .values({
         classId: comp251,
-        professor: 'Prof. Giulia Alberini',
-        professorEmail: 'giulia.alberini@mcgill.ca',
+        professor: `Prof. ${DEMO_PROFESSOR.name}`,
+        professorEmail: DEMO_PROFESSOR.email,
         officeHours: 'Wed 13:00–14:30, McConnell 110N',
         location: 'Leacock 132',
         updatedById: priya,
@@ -341,6 +364,70 @@ export function quietClassmates(): ClassmateSeed[] {
     quiet.push({ key: `quiet-${quiet.length}`, name, pronouns: rand() < 0.6 ? pick(PRONOUNS.slice(0, 3)) : '', faculty, gradYear: 2027 + Math.floor(rand() * 4), track });
   }
   return quiet;
+}
+
+// Version 4: a professor who runs COMP 251-001 and -002: the scheme and details are theirs,
+// with a posted assignment, a pinned announcement, an answer and an endorsed reply on the board.
+function seedProfessor(db: DB, passwordHash: string) {
+  if (db.select({ id: users.id }).from(users).where(eq(users.email, DEMO_PROFESSOR.email)).get()) return;
+  const sections = [classId(db, 'COMP', '251', '001'), classId(db, 'COMP', '251', '002')];
+  const [comp251] = sections;
+  const now = new Date();
+  db.transaction((tx) => {
+    const professor = tx
+      .insert(users)
+      .values({
+        ...DEMO_PROFESSOR,
+        role: 'professor',
+        passwordHash,
+        avatar: { hat: 'grad', eyes: 'glasses', horns: 'classic', fur: 'white', background: 'mint' },
+      })
+      .returning()
+      .get().id;
+    for (const section of sections) {
+      tx.insert(enrollments).values({ userId: professor, classId: section }).run();
+      const edit = { professor: `Prof. ${DEMO_PROFESSOR.name}`, professorEmail: DEMO_PROFESSOR.email, updatedById: professor, updatedAt: now };
+      tx.insert(classDetails).values({ classId: section, ...edit }).onConflictDoUpdate({ target: classDetails.classId, set: edit }).run();
+    }
+
+    tx.insert(deadlines)
+      .values({
+        userId: professor,
+        classId: comp251,
+        kind: 'assignment',
+        title: 'Practice set 5: shortest paths',
+        dueAt: atTime(addDays(ymd(now), 9), '23:59'),
+        notes: "Not graded, but the midterm's graph questions look a lot like these. Solutions go up the day after it's due.",
+        official: true,
+        attachmentName: 'comp251-practice-set-5.txt',
+        attachmentPath: HANDOUT_PATH,
+        createdAt: new Date(now.getTime() - 26 * HOUR),
+      })
+      .run();
+    tx.insert(posts)
+      .values({
+        classId: comp251,
+        authorId: professor,
+        kind: 'note',
+        topic: 'Exams',
+        title: 'Midterm: what to bring',
+        body: 'Your McGill ID and a pen. One letter-size cheat sheet is allowed, both sides, handwritten or typed. No calculators.',
+        visibility: 'class',
+        pinnedAt: now,
+        createdAt: new Date(now.getTime() - 5 * HOUR),
+      })
+      .run();
+
+    // Answers an open question and vouches for a classmate's answer, if the threads are still there.
+    const open = tx.select({ id: posts.id }).from(posts).where(and(eq(posts.classId, comp251), eq(posts.title, 'Is the midterm cumulative up to graphs?'))).get();
+    if (open) {
+      tx.insert(replies)
+        .values({ postId: open.id, authorId: professor, body: 'Yes, up to and including BFS and DFS. Nothing on shortest paths.', createdAt: new Date(now.getTime() - 3 * HOUR) })
+        .run();
+    }
+    const solved = tx.select({ accepted: posts.acceptedReplyId }).from(posts).where(and(eq(posts.classId, comp251), like(posts.title, 'Master theorem:%'))).get();
+    if (solved?.accepted) tx.update(replies).set({ endorsedAt: now }).where(eq(replies.id, solved.accepted)).run();
+  });
 }
 
 // S4: classmates follow the threads they started or replied in, as they would in the app.

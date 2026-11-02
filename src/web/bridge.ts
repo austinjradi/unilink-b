@@ -1,7 +1,7 @@
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 import wasmUrl from 'sql.js/dist/sql-wasm-browser.wasm?url';
 import { openDatabase } from '../main/db/client';
-import { seedDemoData } from '../main/db/demo';
+import { DEMO_HANDOUTS, seedDemoData } from '../main/db/demo';
 import { type Context, dispatch, type RpcResult } from '../main/rpc/core';
 import { appRouter } from '../main/rpc/router';
 import { backgroundTick, initialTickState } from '../main/services/studyMode';
@@ -56,6 +56,9 @@ async function start(): Promise<Context> {
   // Like a desktop dev build: demo classmates to interact with, and reset codes shown on screen.
   seedDemoData(db);
   persist();
+  for (const { path, text } of DEMO_HANDOUTS) {
+    if (!(await storage.load<Blob>(path).catch(() => undefined))) await storage.save(path, new Blob([text], { type: 'text/plain' }));
+  }
 
   const ctx: Context = { db, session: { userId: null }, platform, isDev: true, filesDir: FILES_DIR, now: () => new Date() };
 

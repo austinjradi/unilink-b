@@ -4,14 +4,15 @@ import { parseCourseQuery } from '@shared/courseQuery';
 import { clashes, type MeetingTime } from '@shared/meetings';
 import { TERMS } from '@shared/dates';
 import type { DB } from '../db/client';
-import { classMeetings, classes, courses, enrollments, postAudience, posts, replies, users } from '../db/schema';
+import { classDetails, classMeetings, classes, courses, enrollments, postAudience, posts, replies, users } from '../db/schema';
 import { AppError, type AuthedContext, idSchema, procedure } from '../rpc/core';
-import { isMember, notFound, requireMember, sectionCode } from './access';
+import { isMember, isProfessor, notFound, professorsOf, requireMember, sectionCode } from './access';
 import { leaveClassSessions } from './studySessions';
 
 // S1: find class sections, join/leave/switch them, list mine. Also G2's course catalogue.
 
-const memberCount = sql<number>`(select count(*) from ${enrollments} where ${enrollments.classId} = ${classes.id})`.mapWith(
+// Students only: a section's professors are listed by name instead.
+const memberCount = sql<number>`(select count(*) from ${enrollments} inner join ${users} on ${users.id} = ${enrollments.userId} where ${enrollments.classId} = ${classes.id} and ${users.role} = 'student')`.mapWith(
   Number,
 );
 
@@ -61,11 +62,13 @@ export function visibleClassmates(db: DB, userId: number, classId: number) {
     ids.add(r.id);
   for (const r of db.select({ id: replies.authorId }).from(replies).where(inArray(replies.postId, visiblePosts)).all())
     ids.add(r.id);
+  // A section's professors are public, whether or not they've posted.
+  for (const professor of professorsOf(db, classId)) ids.add(professor.id);
   ids.delete(userId);
   if (!ids.size) return [];
 
   return db
-    .select({ id: users.id, name: users.name, email: users.email, pronouns: users.pronouns, faculty: users.faculty })
+    .select({ id: users.id, name: users.name, email: users.email, pronouns: users.pronouns, faculty: users.faculty, role: users.role })
     .from(users)
     .innerJoin(enrollments, and(eq(enrollments.userId, users.id), eq(enrollments.classId, classId)))
     .where(inArray(users.id, [...ids]))
@@ -155,15 +158,16 @@ export const catalogueRouter = {
     z.object({ query: z.string().trim().max(100), term: z.string(), level: z.number().int().nullable() }),
     ({ query, term, level }, ctx) => {
       const parsed = parseCourseQuery(query);
-      const mine = new Map(
-        ctx.db
-          .select({ classId: enrollments.classId, courseId: classes.courseId, term: classes.term })
-          .from(enrollments)
-          .innerJoin(classes, eq(enrollments.classId, classes.id))
-          .where(eq(enrollments.userId, ctx.userId))
-          .all()
-          .map((r) => [`${r.courseId}|${r.term}`, r.classId]),
-      );
+      const myRows = ctx.db
+        .select({ classId: enrollments.classId, courseId: classes.courseId, term: classes.term })
+        .from(enrollments)
+        .innerJoin(classes, eq(enrollments.classId, classes.id))
+        .where(eq(enrollments.userId, ctx.userId))
+        .all();
+      const joined = new Set(myRows.map((r) => r.classId));
+      const mine = new Map(myRows.map((r) => [`${r.courseId}|${r.term}`, r.classId]));
+      // Professors can teach several sections of a course; students are in one.
+      const professor = isProfessor(ctx.db, ctx.userId);
       const match =
         parsed.kind === 'code'
           ? and(parsed.subject ? eq(courses.subject, parsed.subject) : undefined, like(courses.number, parsed.number))
@@ -180,8 +184,14 @@ export const catalogueRouter = {
         .all();
       const schedule = schedules(ctx.db, ctx.userId, rows);
       return rows.map((c) => {
-        const inCourse = mine.get(`${c.courseId}|${c.term}`) ?? null;
-        return { ...c, ...schedule(c), joined: inCourse === c.id, otherSectionId: inCourse !== c.id ? inCourse : null };
+        const inCourse = professor ? null : (mine.get(`${c.courseId}|${c.term}`) ?? null);
+        return {
+          ...c,
+          ...schedule(c),
+          professors: professorsOf(ctx.db, c.id).map((p) => p.name),
+          joined: joined.has(c.id),
+          otherSectionId: inCourse !== c.id ? inCourse : null,
+        };
       });
     },
   ),
@@ -198,24 +208,33 @@ export const classesRouter = {
 
   get: procedure(z.object({ classId: idSchema }), ({ classId }, ctx) => {
     const row = classRows(ctx.db).where(eq(classes.id, classId)).get() ?? notFound('class');
-    const otherSection = sameCourseSection(ctx.db, ctx.userId, classId).current;
+    const professor = isProfessor(ctx.db, ctx.userId);
+    const otherSection = professor ? null : sameCourseSection(ctx.db, ctx.userId, classId).current;
     const sectionRows = classRows(ctx.db)
       .where(and(eq(classes.courseId, row.courseId), eq(classes.term, row.term)))
       .orderBy(classes.section)
       .all();
     const schedule = schedules(ctx.db, ctx.userId, sectionRows);
     const sections = sectionRows.map((s) => ({ id: s.id, section: s.section, memberCount: s.memberCount, ...schedule(s) }));
-    return { ...row, ...schedule(row), joined: isMember(ctx.db, ctx.userId, classId), otherSection, sections };
+    const joined = isMember(ctx.db, ctx.userId, classId);
+    return { ...row, ...schedule(row), joined, otherSection, sections, professors: professorsOf(ctx.db, classId), teaching: professor && joined };
   }),
 
-  // S1.2: many classes, each once, and only one section of a course per term.
+  // S1.2: many classes, each once, and only one section of a course per term. Professors
+  // teach as many sections as they like, and their name goes on the course details.
   join: procedure(z.object({ classId: idSchema }), ({ classId }, ctx) => {
     const { current } = sameCourseSection(ctx.db, ctx.userId, classId);
     if (isMember(ctx.db, ctx.userId, classId)) throw new AppError("You're already in this class.", 'CONFLICT');
-    if (current) {
+    const professor = isProfessor(ctx.db, ctx.userId);
+    if (current && !professor) {
       throw new AppError("You're already in {{code}}. Switch sections instead.", 'CONFLICT', { code: current.code });
     }
     ctx.db.insert(enrollments).values({ userId: ctx.userId, classId }).run();
+    if (professor) {
+      const me = ctx.db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, ctx.userId)).get()!;
+      const edit = { professor: `Prof. ${me.name}`, professorEmail: me.email, updatedById: ctx.userId, updatedAt: ctx.now() };
+      ctx.db.insert(classDetails).values({ classId, ...edit }).onConflictDoUpdate({ target: classDetails.classId, set: edit }).run();
+    }
   }),
 
   // Moving to another section of the same course: leave one, join the other.

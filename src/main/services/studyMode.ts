@@ -15,7 +15,7 @@ import {
   studySessions,
 } from '../db/schema';
 import { type AuthedContext, type Context, idSchema, procedure } from '../rpc/core';
-import { requireMember, sectionCode } from './access';
+import { isProfessor, requireMember, sectionCode } from './access';
 import { m, notify, sweepReminders, takeDesktopNotifications } from './notifications';
 
 // ST1: study mode switches on during class times and study sessions (or by hand),
@@ -44,6 +44,8 @@ function saveSettings(db: DB, userId: number, patch: Partial<typeof DEFAULTS>) {
 
 // Class times and study sessions from yesterday through tomorrow.
 function focusWindows(db: DB, userId: number, now: Date): FocusWindow[] {
+  // A professor's class times are when they're teaching, not when to go quiet.
+  if (isProfessor(db, userId)) return [];
   const settings = settingsFor(db, userId);
   const windows: FocusWindow[] = [];
   const today = ymd(now);

@@ -17,13 +17,14 @@ import {
   TextInput,
   ThemeIcon,
   Title,
+  SegmentedControl,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { modals } from '@mantine/modals';
 import { IconCheck, IconInfoCircle, IconKey, IconX } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
-import { FACULTIES, MCGILL_EMAIL, PASSWORD_RULES, passwordProblems, PRONOUNS } from '@shared/validation';
+import { FACULTIES, MCGILL_EMAIL, PASSWORD_RULES, passwordProblems, PRONOUNS, STAFF_EMAIL } from '@shared/validation';
 import { GoatAvatar } from '../components/Goat';
 import { Logo } from '../components/Layout';
 import { useAction } from '../lib/hooks';
@@ -115,7 +116,7 @@ export function SignIn() {
             </Anchor>
           </Text>
           {devInfo.data && (
-            <Alert variant="light" icon={<IconInfoCircle />} title={t('Demo: sign in as a classmate')}>
+            <Alert variant="light" icon={<IconInfoCircle />} title={t('Demo: sign in as a classmate or professor')}>
               <Group gap={6} mb="xs">
                 {devInfo.data.accounts.map((a) => (
                   <Button
@@ -125,14 +126,14 @@ export function SignIn() {
                     disabled={signIn.isPending}
                     onClick={() => signIn.mutate({ email: a.email, password: devInfo.data!.password })}
                   >
-                    {a.name}
+                    {a.professor ? t('{{name}} (professor)', { name: a.name }) : a.name}
                   </Button>
                 ))}
               </Group>
               <Text size="xs">
                 {devInfo.data.accounts.map((a) => a.email).join(', ')}
                 <br />
-                {t('Password:')} <Code>{devInfo.data.password}</Code> {t('(every demo classmate uses it)')}
+                {t('Password:')} <Code>{devInfo.data.password}</Code> {t('(every demo account uses it)')}
               </Text>
               <Text size="xs" c="dimmed" mt="xs">
                 {t('Everything is saved in this browser only.')}{' '}
@@ -189,10 +190,20 @@ function showRecoveryCode(code: string) {
 
 export function SignUp() {
   const form = useForm({
-    initialValues: { name: '', email: '', pronouns: '', faculty: null as string | null, gradYear: null as string | null, password: '', confirm: '' },
+    initialValues: {
+      role: 'student' as 'student' | 'professor',
+      name: '',
+      email: '',
+      pronouns: '',
+      faculty: null as string | null,
+      gradYear: null as string | null,
+      password: '',
+      confirm: '',
+    },
     validate: {
       name: (v) => (v.trim() ? null : t('Enter your name')),
-      email: emailRule,
+      email: (v, values) =>
+        emailRule(v) ?? (values.role === 'professor' && !STAFF_EMAIL.test(v.trim()) ? t('Professor accounts use a @mcgill.ca email, not @mail.mcgill.ca.') : null),
       faculty: (v) => (v ? null : t('Pick your faculty')),
       password: passwordRule,
       confirm: (v, values) => (v === values.password ? null : t('Passwords do not match')),
@@ -201,39 +212,59 @@ export function SignUp() {
   const signUp = useAction(
     (v: typeof form.values) =>
       rpc.auth.signUp({
+        role: v.role,
         name: v.name,
         email: v.email,
         password: v.password,
         pronouns: v.pronouns,
         faculty: (v.faculty ?? '') as Parameters<typeof rpc.auth.signUp>[0]['faculty'],
-        gradYear: v.gradYear ? Number(v.gradYear) : null,
+        gradYear: v.role === 'student' && v.gradYear ? Number(v.gradYear) : null,
         locale: getLocale(),
       }),
-    { success: 'Welcome to UniLink! Start by joining your classes.', onSuccess: (r) => showRecoveryCode(r.recoveryCode) },
+    {
+      success: (r) => (r.user.role === 'professor' ? t('Welcome to UniLink! Start by adding the sections you teach.') : t('Welcome to UniLink! Start by joining your classes.')),
+      onSuccess: (r) => showRecoveryCode(r.recoveryCode),
+    },
   );
   const year = new Date().getFullYear();
+  const professor = form.values.role === 'professor';
 
   return (
-    <AuthCard title={t('Create your account')} subtitle={t('UniLink is for McGill students. Use your McGill email.')}>
+    <AuthCard
+      title={t('Create your account')}
+      subtitle={professor ? t('Teach your sections on UniLink: run the grading scheme, post assignments and moderate the discussion.') : t('UniLink is for McGill students. Use your McGill email.')}
+    >
       <form onSubmit={form.onSubmit((v) => signUp.mutate(v))}>
         <Stack>
+          <SegmentedControl
+            data={[
+              { value: 'student', label: t('Student') },
+              { value: 'professor', label: t('Professor') },
+            ]}
+            aria-label={t('I am a')}
+            {...form.getInputProps('role')}
+          />
           <Group grow align="flex-start">
             <TextInput label={t('Full name')} required {...form.getInputProps('name')} />
             <Autocomplete label={t('Pronouns')} placeholder={t('Optional')} data={[...PRONOUNS]} {...form.getInputProps('pronouns')} />
           </Group>
-          <TextInput label={t('McGill email')} placeholder={t('first.last@mail.mcgill.ca')} required {...form.getInputProps('email')} />
+          <TextInput label={t('McGill email')} placeholder={professor ? t('jane.doe@mcgill.ca') : t('first.last@mail.mcgill.ca')} required {...form.getInputProps('email')} />
           <Group grow align="flex-start">
             <Select label={t('Faculty')} required searchable data={FACULTIES.map((f) => ({ value: f, label: t(f) }))} {...form.getInputProps('faculty')} />
-            <Select
-              label={t('Expected graduation')}
-              placeholder="—"
-              clearable
-              data={Array.from({ length: 7 }, (_, i) => String(year + i))}
-              {...form.getInputProps('gradYear')}
-            />
+            {!professor && (
+              <Select
+                label={t('Expected graduation')}
+                placeholder="—"
+                clearable
+                data={Array.from({ length: 7 }, (_, i) => String(year + i))}
+                {...form.getInputProps('gradYear')}
+              />
+            )}
           </Group>
           <Text size="xs" c="dimmed" mt={-6}>
-            {t('Classmates see your name, email, pronouns and faculty once you post or reply in a class.')}
+            {professor
+              ? t('Students in your sections see your name, email, pronouns and faculty.')
+              : t('Classmates see your name, email, pronouns and faculty once you post or reply in a class.')}
           </Text>
           <div>
             <PasswordInput label={t('Password')} required mb={6} {...form.getInputProps('password')} />

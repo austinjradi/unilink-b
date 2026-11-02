@@ -295,7 +295,7 @@ describe('S1 classes', () => {
 
     await maya.api.board.create({ classId, kind: 'note', topic: 'Logistics', title: 'Hi', body: 'Hello!', visibility: 'class', audienceEmails: [] });
     expect(await leo.api.classes.classmates({ classId })).toEqual([
-      { id: maya.user.id, name: 'Maya', email: maya.email, pronouns: 'she/her', faculty: 'Science' },
+      { id: maya.user.id, name: 'Maya', email: maya.email, pronouns: 'she/her', faculty: 'Science', role: 'student' },
     ]);
     // Section 002 has its own board.
     await expectCode(sam.api.classes.classmates({ classId }), 'FORBIDDEN');
@@ -906,6 +906,199 @@ describe('ST2 assignment planner', () => {
     // Files it can't read (a Word document here) aren't an error, just nothing found.
     ctx.platform.readText = async () => null;
     expect(await api.planner.readParts({ path: file })).toBeNull();
+  });
+});
+
+describe('Professors', () => {
+  async function professor(name: string) {
+    const ctx = newContext();
+    const api = clientFor(ctx);
+    const email = `${name.toLowerCase()}@mcgill.ca`;
+    const { user } = await api.auth.signUp({ name, email, password: PASSWORD, pronouns: '', faculty: 'Science', gradYear: null, role: 'professor' });
+    return { api, user, email, ctx };
+  }
+
+  // A professor teaching COMP 251-001, with two students in it.
+  async function taught() {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const prof = await professor('Ouellet');
+    await prof.api.classes.join({ classId });
+    return { classId, prof, maya: people[0], leo: people[1] };
+  }
+
+  const question = { kind: 'question' as const, topic: 'Exams', title: 'Is it open book?', body: 'Anyone know?', visibility: 'class' as const, audienceEmails: [] };
+
+  it('signs professors up with a @mcgill.ca email, and they can teach several sections', async () => {
+    const api = clientFor(newContext());
+    await expect(
+      api.auth.signUp({ name: 'Maya', email: 'maya@mail.mcgill.ca', password: PASSWORD, pronouns: '', faculty: '', gradYear: null, role: 'professor' }),
+    ).rejects.toThrow('Professor accounts use a @mcgill.ca email');
+
+    const { api: prof, user } = await professor('Ouellet');
+    expect(user.role).toBe('professor');
+    const [first, second] = [await comp251(prof, '001'), await comp251(prof, '002')];
+    await prof.classes.join({ classId: first });
+    await prof.classes.join({ classId: second });
+    expect((await prof.classes.mine()).map((c) => [c.code, c.memberCount])).toEqual([['COMP 251-001', 0], ['COMP 251-002', 0]]);
+    expect(await prof.classes.get({ classId: first })).toMatchObject({ teaching: true, otherSection: null, professors: [{ name: 'Ouellet' }] });
+    expect((await prof.catalogue.search({ query: 'COMP 251', term: 'Fall 2026', level: null })).map((c) => [c.joined, c.otherSectionId])).toEqual([[true, null], [true, null]]);
+    expect(await prof.courses.info({ classId: first })).toMatchObject({ professor: 'Prof. Ouellet', professorEmail: 'ouellet@mcgill.ca', teaching: true, canEdit: true });
+  });
+
+  it('is public to the section, and can be picked as a post audience', async () => {
+    const { classId, prof, maya } = await taught();
+    expect((await maya.api.classes.classmates({ classId })).map((c) => [c.name, c.role])).toEqual([['Ouellet', 'professor']]);
+    const { id } = await maya.api.board.create({ ...question, classId, visibility: 'selected', audienceEmails: [prof.email] });
+    expect((await prof.api.board.get({ postId: id })).title).toBe('Is it open book?');
+    expect((await maya.api.classes.get({ classId })).memberCount).toBe(2);
+  });
+
+  it('takes over the grading scheme, details and class times from the section', async () => {
+    const { classId, prof, maya, leo } = await taught();
+    const { id: other } = await maya.api.board.create({ ...question, classId });
+    expect(other).toBeGreaterThan(0);
+    const component = { classId, name: 'Midterm', weight: 30, dueAt: null };
+    await expectCode(maya.api.courses.addAssessment(component), 'FORBIDDEN');
+    await expectCode(maya.api.courses.saveDetails({ classId, professor: 'Someone', professorEmail: '', officeHours: '', location: '' }), 'FORBIDDEN');
+    await expectCode(maya.api.courses.saveMeetings({ classId, meetings: [] }), 'FORBIDDEN');
+    await expectCode(maya.api.courses.setSecondScheme({ classId, on: true }), 'FORBIDDEN');
+    expect(await maya.api.courses.info({ classId })).toMatchObject({ canEdit: false, teaching: false, managedBy: 'Ouellet' });
+
+    await prof.api.courses.addAssessment(component);
+    await prof.api.courses.addAssessment({ ...component, name: 'Final', weight: 70 });
+    // Told once a day, however many changes there are.
+    const changed = 'The grading scheme for COMP 251-001 changed';
+    expect((await titles(leo)).filter((title) => title === changed)).toHaveLength(1);
+
+    // Marks stay the student's own, and private from the professor.
+    const [midterm] = await maya.api.courses.assessments({ classId });
+    await maya.api.courses.setScore({ id: midterm.id, score: 80 });
+    await expectCode(maya.api.courses.updateAssessment({ id: midterm.id, name: 'Midterm', weight: 20, altWeight: null, dueAt: null }), 'FORBIDDEN');
+    await expectCode(prof.api.courses.setScore({ id: midterm.id, score: 90 }), 'BAD_INPUT');
+    expect((await prof.api.courses.assessments({ classId }))[0].score).toBeNull();
+    // Unlike a student, the professor can remove a component that has marks on it.
+    await prof.api.courses.removeAssessment({ id: midterm.id });
+    expect((await maya.api.courses.assessments({ classId })).map((a) => a.name)).toEqual(['Final']);
+
+    // When the only professor leaves, the section goes back to wiki-style.
+    await prof.api.classes.leave({ classId });
+    await maya.api.courses.addAssessment({ ...component, name: 'Quiz', weight: 10 });
+  });
+
+  it('posts assignments with a handout to everyone in the section', async () => {
+    const { classId, prof, maya, leo } = await taught();
+    const file = join(tmpdir(), 'unilink-test-a3.txt');
+    await writeFile(file, 'Question 1 (10 points)\nQuestion 2 (20 points)\n');
+    const assignment = { classId, title: 'Assignment 3', dueAt: new Date(2026, 9, 20, 23, 59), notes: 'Show your work.', weight: 10, attachmentPath: file };
+
+    await expectCode(maya.api.assignments.post(assignment), 'FORBIDDEN');
+    await expectCode(prof.api.assignments.post({ ...assignment, dueAt: new Date(2026, 0, 1) }), 'BAD_INPUT');
+    const { id } = await prof.api.assignments.post(assignment);
+
+    // On the class's list and the calendar, in the scheme, and everyone's been told.
+    expect(await leo.api.assignments.list({ classId })).toMatchObject([{ id, title: 'Assignment 3', notes: 'Show your work.', attachmentName: 'unilink-test-a3.txt', official: true, done: false }]);
+    expect((await leo.api.calendar.deadlines()).map((d) => d.title)).toEqual(['Assignment 3']);
+    expect((await leo.api.courses.assessments({ classId })).map((a) => [a.name, a.weight])).toEqual([['Assignment 3', 10]]);
+    expect(await titles(maya)).toContain('New assignment: Assignment 3');
+
+    // A student plans from it: the handout's problems are there to read.
+    const handout = await maya.api.assignments.handout({ deadlineId: id });
+    expect(handout?.name).toBe('unilink-test-a3.txt');
+    expect((await maya.api.planner.readParts({ path: handout!.path }))?.map((part) => part.title)).toEqual(['Question 1', 'Question 2']);
+    await maya.api.planner.create({ title: 'Assignment 3', classId, dueAt: assignment.dueAt, notes: '', tasks: [{ title: 'Question 1', minutes: 30 }], attachmentPath: handout!.path, deadlineId: id, assessmentId: null });
+
+    // Only the professor changes it. Moving the date tells students, and plans follow.
+    await expectCode(maya.api.assignments.update({ id, title: 'Mine now', dueAt: assignment.dueAt, notes: '', attachmentPath: null }), 'FORBIDDEN');
+    await expectCode(maya.api.calendar.removeDeadline({ id }), 'FORBIDDEN');
+    const later = new Date(2026, 9, 27, 23, 59);
+    await prof.api.assignments.update({ id, title: 'Assignment 3', dueAt: later, notes: 'Show your work.', attachmentPath: null });
+    expect((await titles(leo)).some((title) => title.startsWith('"Assignment 3" is now due'))).toBe(true);
+    expect((await maya.api.planner.list())[0].dueAt).toEqual(later);
+
+    await expectCode(maya.api.assignments.remove({ id }), 'FORBIDDEN');
+    await prof.api.assignments.remove({ id });
+    expect(await leo.api.assignments.list({ classId })).toEqual([]);
+  });
+
+  it('corrects class deadlines students added, but not private ones', async () => {
+    const { classId, prof, maya } = await taught();
+    const deadline = { kind: 'assignment' as const, title: 'A wrong date', dueAt: new Date(2026, 9, 20, 23, 59), notes: '' };
+    await maya.api.calendar.addDeadline({ ...deadline, classId });
+    await maya.api.calendar.addDeadline({ ...deadline, classId: null, title: 'Private' });
+    const [shared, own] = await maya.api.calendar.deadlines();
+    await prof.api.calendar.removeDeadline({ id: shared.id });
+    await expectCode(prof.api.calendar.removeDeadline({ id: own.id }), 'FORBIDDEN');
+  });
+
+  it('announces, pins, locks, endorses and removes on the discussion board', async () => {
+    const { classId, prof, maya, leo } = await taught();
+    const feed = (s: typeof maya) => s.api.board.feed({ classIds: [classId], topics: [], since: null, search: '' });
+    const { id: postId } = await maya.api.board.create({ ...question, classId });
+    await leo.api.board.create({ ...question, classId, title: 'A later question' });
+
+    // A professor's note to the section is an announcement; a student's isn't.
+    const { id: noteId } = await prof.api.board.create({ ...question, classId, kind: 'note', title: 'No class Friday' });
+    expect(await titles(leo)).toContain('COMP 251-001: No class Friday');
+    await maya.api.board.create({ ...question, classId, kind: 'note', title: 'Notes from Tuesday' });
+    expect(await titles(leo)).not.toContain('COMP 251-001: Notes from Tuesday');
+    expect((await feed(maya)).find((p) => p.id === noteId)?.authorRole).toBe('professor');
+
+    // Pinned first, on that class's board.
+    await expectCode(maya.api.board.pin({ postId, pinned: true }), 'FORBIDDEN');
+    await prof.api.board.pin({ postId, pinned: true });
+    expect((await feed(leo))[0].id).toBe(postId);
+    await prof.api.board.pin({ postId, pinned: false });
+    expect((await feed(leo))[0].id).not.toBe(postId);
+
+    // Locked: no more from students, but the professor can still answer.
+    await leo.api.board.reply({ postId, body: 'I think so' });
+    await expectCode(leo.api.board.lock({ postId, locked: true }), 'FORBIDDEN');
+    await prof.api.board.lock({ postId, locked: true });
+    await expectCode(maya.api.board.reply({ postId, body: 'Thanks' }), 'FORBIDDEN');
+    await prof.api.board.reply({ postId, body: 'It is not.' });
+    await prof.api.board.lock({ postId, locked: false });
+
+    // Endorsed replies come right after an accepted answer; the author hears about it.
+    let thread = await prof.api.board.get({ postId });
+    expect(thread.canModerate).toBe(true);
+    expect((await maya.api.board.get({ postId })).canModerate).toBe(false);
+    const [leoReply, profReply] = thread.replies;
+    await expectCode(maya.api.board.endorse({ replyId: profReply.id, endorsed: true }), 'FORBIDDEN');
+    await prof.api.board.endorse({ replyId: profReply.id, endorsed: true });
+    thread = await maya.api.board.get({ postId });
+    expect(thread.replies.map((r) => [r.body, r.endorsed])).toEqual([['It is not.', true], ['I think so', false]]);
+    await prof.api.board.endorse({ replyId: leoReply.id, endorsed: true });
+    expect(await titles(leo)).toContain('Ouellet endorsed your reply in "Is it open book?"');
+
+    // Removing a reply tells its author why.
+    await expectCode(maya.api.board.removeReplyAsProfessor({ replyId: leoReply.id, reason: '' }), 'FORBIDDEN');
+    await prof.api.board.removeReplyAsProfessor({ replyId: leoReply.id, reason: 'That answer gives away the solution.' });
+    const removedReply = (await leo.api.notifications.list()).items.find((n) => n.title.includes('removed your reply'));
+    expect(removedReply).toMatchObject({ title: 'Ouellet removed your reply in "Is it open book?"', body: 'That answer gives away the solution.' });
+
+    // A post with replies stays as a blank thread; one without is gone.
+    await expectCode(leo.api.board.removeAsProfessor({ postId, reason: '' }), 'FORBIDDEN');
+    expect(await prof.api.board.removeAsProfessor({ postId, reason: 'Off topic' })).toEqual({ kept: true });
+    expect(await maya.api.board.get({ postId })).toMatchObject({ title: '', body: '', removedByProfessor: true });
+    expect(await titles(maya)).toContain('Ouellet removed your post "Is it open book?"');
+    await expectCode(maya.api.board.update({ postId, ...question }), 'BAD_INPUT');
+    const { id: lonely } = await leo.api.board.create({ ...question, classId, title: 'Nobody replied' });
+    expect(await prof.api.board.removeAsProfessor({ postId: lonely, reason: '' })).toEqual({ kept: false });
+    await expectCode(leo.api.board.get({ postId: lonely }), 'NOT_FOUND');
+  });
+
+  it('leaves private posts private, and only moderates its own sections', async () => {
+    const { classId, prof, maya, leo } = await taught();
+    await leo.api.board.create({ ...question, classId, title: 'Hello' });
+    const { id: secret } = await maya.api.board.create({ ...question, classId, visibility: 'selected', audienceEmails: [leo.email] });
+    await expectCode(prof.api.board.get({ postId: secret }), 'NOT_FOUND');
+    await expectCode(prof.api.board.removeAsProfessor({ postId: secret, reason: '' }), 'NOT_FOUND');
+
+    const elsewhere = await professor('Khoury');
+    const { id: post } = await maya.api.board.create({ ...question, classId });
+    await expectCode(elsewhere.api.board.pin({ postId: post, pinned: true }), 'FORBIDDEN');
+    await expectCode(elsewhere.api.assignments.post({ classId, title: 'A', dueAt: new Date(2026, 9, 20), notes: '', weight: null, attachmentPath: null }), 'FORBIDDEN');
+    await expectCode(elsewhere.api.courses.addAssessment({ classId, name: 'Quiz', weight: 5, dueAt: null }), 'FORBIDDEN');
   });
 });
 

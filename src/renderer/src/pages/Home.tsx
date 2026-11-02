@@ -41,14 +41,20 @@ export function Home() {
 
 // A new account's first steps, shown until they've joined a class.
 function Welcome() {
+  const professor = useMe().role === 'professor';
   const mine = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
   if (!mine.data || mine.data.length) return null;
-  const steps = [
-    { to: '/courses/find', label: t('Find and join your classes') },
-    { to: '/calendar', label: t('Add deadlines to your calendar') },
-    { to: '/planner?new=1', label: t('Plan out an assignment') },
-    { to: '/settings/goat', label: t('Dress up your goat') },
-  ];
+  const steps = professor
+    ? [
+        { to: '/courses/find', label: t('Find the sections you teach') },
+        { to: '/settings/goat', label: t('Dress up your goat') },
+      ]
+    : [
+        { to: '/courses/find', label: t('Find and join your classes') },
+        { to: '/calendar', label: t('Add deadlines to your calendar') },
+        { to: '/planner?new=1', label: t('Plan out an assignment') },
+        { to: '/settings/goat', label: t('Dress up your goat') },
+      ];
   return (
     <Card padding="md">
       <Text fw={800} size="lg" className="display">
@@ -198,6 +204,7 @@ function TaskRow({ item, today }: { item: TodayItem; today: string }) {
 
 // "2 d. left" countdowns from the wireframe; the student's own deadlines can be checked off.
 function Deadlines() {
+  const student = useMe().role === 'student';
   const upcoming = useQuery({ queryKey: ['calendar', 'upcoming'], queryFn: () => rpc.calendar.upcoming({ days: 21 }) });
   const setDone = useAction((id: number) => rpc.calendar.setDeadlineDone({ id, done: true }), { success: 'Marked as done' });
 
@@ -243,7 +250,7 @@ function Deadlines() {
                     {fmtDateTime(e.start)}
                   </Text>
                 </div>
-                {e.detail !== 'planner' && e.detail !== 'key' && (
+                {student && e.detail !== 'planner' && e.detail !== 'key' && (
                   <Tooltip label={t('Plan it')}>
                     <ActionIcon
                       size="sm"
@@ -257,7 +264,7 @@ function Deadlines() {
                     </ActionIcon>
                   </Tooltip>
                 )}
-                {e.deadlineId != null && (
+                {student && e.deadlineId != null && (
                   <Checkbox size="xs" mt={2} onChange={() => setDone.mutate(e.deadlineId!)} aria-label={t('Mark {{title}} done', { title: e.title })} />
                 )}
               </Group>

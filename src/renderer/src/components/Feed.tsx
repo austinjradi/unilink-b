@@ -33,6 +33,12 @@ import {
   IconBellRinging,
   IconCheck,
   IconCircleCheck,
+  IconLockOpen,
+  IconMessageOff,
+  IconPin,
+  IconPinnedOff,
+  IconSchool,
+  IconShieldX,
   IconFilter,
   IconLock,
   IconMessageCircle,
@@ -46,7 +52,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router';
 import { fromNow } from '../lib/format';
 import { t, tx } from '../lib/i18n';
-import { useAction } from '../lib/hooks';
+import { useAction, useMe } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
 import { GoatAvatar } from './Goat';
 import { Empty, Loading, Tag } from './ui';
@@ -113,7 +119,24 @@ function Body({ text }: { text: string }) {
   );
 }
 
-type Author = Pick<FeedPost, 'authorName' | 'authorEmail' | 'authorPronouns' | 'authorFaculty' | 'authorGradYear' | 'formerStudent' | 'authorGoat'>;
+type Author = Pick<FeedPost, 'authorName' | 'authorEmail' | 'authorPronouns' | 'authorFaculty' | 'authorGradYear' | 'authorRole' | 'formerStudent' | 'authorGoat'>;
+
+// A professor's removal asks why; the author is told, with the reason if there is one.
+function confirmRemoval(title: string, onConfirm: (reason: string) => void) {
+  let reason = '';
+  modals.openConfirmModal({
+    title,
+    children: (
+      <Stack gap="sm">
+        <Text size="sm">{t("Its author is told. This can't be undone.")}</Text>
+        <Textarea label={t('Tell them why')} placeholder={t('Optional')} autosize minRows={2} maxLength={500} onChange={(e) => (reason = e.currentTarget.value)} />
+      </Stack>
+    ),
+    labels: { confirm: t('Remove'), cancel: t('Keep') },
+    confirmProps: { color: 'red' },
+    onConfirm: () => onConfirm(reason),
+  });
+}
 
 // G4.5 "view profile": a classmate's name opens what they share once they've posted (S1).
 function AuthorName({ who, size }: { who: Author; size?: 'sm' }) {
@@ -128,9 +151,16 @@ function AuthorName({ who, size }: { who: Author; size?: 'sm' }) {
     <Popover position="bottom-start" shadow="md" width={280}>
       <Popover.Target>
         <UnstyledButton style={{ minWidth: 0 }}>
-          <Text fw={700} size={size} truncate className="author-link">
-            {who.authorName}
-          </Text>
+          <Group gap={6} wrap="nowrap">
+            <Text fw={700} size={size} truncate className="author-link">
+              {who.authorName}
+            </Text>
+            {who.authorRole === 'professor' && (
+              <Tag color="periwinkle">
+                <IconSchool size={12} style={{ verticalAlign: -2 }} /> {t('Professor')}
+              </Tag>
+            )}
+          </Group>
         </UnstyledButton>
       </Popover.Target>
       <Popover.Dropdown>
@@ -160,7 +190,9 @@ function AuthorName({ who, size }: { who: Author; size?: 'sm' }) {
 }
 
 // "Question · Answered" / "Question · Unanswered" / "Note".
-function KindTag({ post }: { post: { kind: string; acceptedReplyId: number | null; deletedAt: Date | null } }) {
+function KindTag({ post }: { post: { kind: string; acceptedReplyId: number | null; deletedAt: Date | null; authorRole: string; visibility: string } }) {
+  // A professor's note to the whole section went out to everyone.
+  if (post.kind === 'note' && post.authorRole === 'professor' && post.visibility === 'class') return <Tag color="periwinkle">{t('Announcement')}</Tag>;
   if (post.kind === 'note') return <Tag color="gray">{t('Note')}</Tag>;
   return post.acceptedReplyId ? (
     <Tag color="teal">
@@ -181,7 +213,7 @@ function PostCard({ post, onOpen }: { post: FeedPost; onOpen: () => void }) {
           {/* The tags drop below the name on narrow screens instead of running off the card. */}
           <Group justify="space-between" gap="xs" style={{ rowGap: 4 }}>
             <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
-              {post.deletedAt ? <Text fw={700}>{t('Deleted post')}</Text> : <AuthorName who={post} />}
+              {post.deletedAt ? <Text fw={700}>{post.removedByProfessor ? t('Removed post') : t('Deleted post')}</Text> : <AuthorName who={post} />}
               <Text size="sm" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
                 {fromNow(post.createdAt)}
               </Text>
@@ -197,6 +229,16 @@ function PostCard({ post, onOpen }: { post: FeedPost; onOpen: () => void }) {
                   <IconLock size={14} />
                 </Tooltip>
               )}
+              {post.pinnedAt && (
+                <Tag color="yellow">
+                  <IconPin size={12} style={{ verticalAlign: -2 }} /> {t('Pinned')}
+                </Tag>
+              )}
+              {post.lockedAt && (
+                <Tooltip label={t('Locked: only the professor can reply')}>
+                  <IconMessageOff size={14} />
+                </Tooltip>
+              )}
               <Tag>{post.classLabel}</Tag>
               <TopicTag topic={post.topic} />
               <KindTag post={post} />
@@ -204,7 +246,11 @@ function PostCard({ post, onOpen }: { post: FeedPost; onOpen: () => void }) {
           </Group>
           <UnstyledButton display="block" mt={4} className="clickable" onClick={onOpen} style={{ borderRadius: 6 }}>
             <Text fw={800} size="lg" c={post.deletedAt ? 'dimmed' : undefined}>
-              {post.deletedAt ? t('The author deleted this post. Its replies are still here.') : post.title}
+              {post.removedByProfessor
+                ? t('A professor removed this post. Its replies are still here.')
+                : post.deletedAt
+                  ? t('The author deleted this post. Its replies are still here.')
+                  : post.title}
             </Text>
           </UnstyledButton>
           {!post.deletedAt && (
@@ -495,7 +541,7 @@ function ReplyBox({ postId, isQuestion }: { postId: number; isQuestion: boolean 
 
 type Reply = PostDetail['replies'][number];
 
-function ReplyItem({ reply, postId, canAccept }: { reply: Reply; postId: number; canAccept: boolean }) {
+function ReplyItem({ reply, postId, canAccept, canModerate }: { reply: Reply; postId: number; canAccept: boolean; canModerate: boolean }) {
   const react = useAction(() => rpc.board.reactReply({ replyId: reply.id }));
   const remove = useAction(() => rpc.board.removeReply({ replyId: reply.id }));
   const [draft, setDraft] = useState<string | null>(null);
@@ -503,6 +549,8 @@ function ReplyItem({ reply, postId, canAccept }: { reply: Reply; postId: number;
   const accept = useAction(() => rpc.board.accept({ postId, replyId: reply.accepted ? null : reply.id }), {
     success: reply.accepted ? t('Answer unmarked') : t('Marked as the answer'),
   });
+  const endorse = useAction(() => rpc.board.endorse({ replyId: reply.id, endorsed: !reply.endorsed }));
+  const removeAsProfessor = useAction((reason: string) => rpc.board.removeReplyAsProfessor({ replyId: reply.id, reason }), { success: 'Reply removed' });
   return (
     <Card
       padding="sm"
@@ -514,6 +562,14 @@ function ReplyItem({ reply, postId, canAccept }: { reply: Reply; postId: number;
           <IconCircleCheck size={16} />
           <Text size="xs" fw={800}>
             {t('Accepted answer')}
+          </Text>
+        </Group>
+      )}
+      {reply.endorsed && (
+        <Group gap={4} c="periwinkle" mb={6}>
+          <IconSchool size={16} />
+          <Text size="xs" fw={800}>
+            {t('Endorsed by the professor')}
           </Text>
         </Group>
       )}
@@ -561,6 +617,24 @@ function ReplyItem({ reply, postId, canAccept }: { reply: Reply; postId: number;
                 <IconTrash size={14} />
               </ActionIcon>
             )}
+            {canModerate && (
+              <Button size="compact-xs" variant="subtle" leftSection={<IconSchool size={12} />} onClick={() => endorse.mutate()}>
+                {reply.endorsed ? t('Take back endorsement') : t('Endorse')}
+              </Button>
+            )}
+            {canModerate && !reply.mine && (
+              <Tooltip label={t('Remove this reply')}>
+                <ActionIcon
+                  size="sm"
+                  variant="subtle"
+                  color="red"
+                  onClick={() => confirmRemoval(t('Remove this reply?'), (reason) => removeAsProfessor.mutate(reason))}
+                  aria-label={t('Remove this reply')}
+                >
+                  <IconShieldX size={14} />
+                </ActionIcon>
+              </Tooltip>
+            )}
           </Group>
         </div>
       </Group>
@@ -576,6 +650,12 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
   });
   const remove = useAction(() => rpc.board.remove({ postId }), {
     success: (r) => (r.kept ? t('Post deleted. Its replies stay up.') : t('Post deleted')),
+    onSuccess: (r) => !r.kept && onDeleted(),
+  });
+  const pin = useAction((pinned: boolean) => rpc.board.pin({ postId, pinned }));
+  const lock = useAction((locked: boolean) => rpc.board.lock({ postId, locked }));
+  const removeAsProfessor = useAction((reason: string) => rpc.board.removeAsProfessor({ postId, reason }), {
+    success: 'Post removed',
     onSuccess: (r) => !r.kept && onDeleted(),
   });
 
@@ -604,16 +684,47 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
         <div style={{ flex: 1, minWidth: 0 }}>
           <Group justify="space-between" gap="xs" style={{ rowGap: 4 }}>
             <Group gap="xs">
-              {p.deletedAt ? <Text fw={700}>{t('Deleted post')}</Text> : <AuthorName who={p} />}
+              {p.deletedAt ? <Text fw={700}>{p.removedByProfessor ? t('Removed post') : t('Deleted post')}</Text> : <AuthorName who={p} />}
               <Text size="sm" c="dimmed">
                 {fromNow(p.createdAt)}
                 {p.editedAt && ` · ${t('edited')}`}
               </Text>
             </Group>
             <Group gap={6}>
+              {p.pinnedAt && (
+                <Tag color="yellow">
+                  <IconPin size={12} style={{ verticalAlign: -2 }} /> {t('Pinned')}
+                </Tag>
+              )}
               <Tag>{p.classLabel}</Tag>
               <TopicTag topic={p.topic} />
               <KindTag post={p} />
+              {p.canModerate && !p.deletedAt && (
+                <>
+                  <Tooltip label={p.pinnedAt ? t('Unpin') : t('Pin to the top of the class board')}>
+                    <ActionIcon variant="subtle" onClick={() => pin.mutate(!p.pinnedAt)} aria-label={p.pinnedAt ? t('Unpin') : t('Pin to the top of the class board')}>
+                      {p.pinnedAt ? <IconPinnedOff size={16} /> : <IconPin size={16} />}
+                    </ActionIcon>
+                  </Tooltip>
+                  <Tooltip label={p.lockedAt ? t('Let students reply again') : t('Lock: stop students replying')}>
+                    <ActionIcon variant="subtle" onClick={() => lock.mutate(!p.lockedAt)} aria-label={p.lockedAt ? t('Let students reply again') : t('Lock: stop students replying')}>
+                      {p.lockedAt ? <IconLockOpen size={16} /> : <IconMessageOff size={16} />}
+                    </ActionIcon>
+                  </Tooltip>
+                  {!p.mine && (
+                    <Tooltip label={t('Remove this post')}>
+                      <ActionIcon
+                        variant="subtle"
+                        color="red"
+                        onClick={() => confirmRemoval(t('Remove this post?'), (reason) => removeAsProfessor.mutate(reason))}
+                        aria-label={t('Remove this post')}
+                      >
+                        <IconShieldX size={16} />
+                      </ActionIcon>
+                    </Tooltip>
+                  )}
+                </>
+              )}
               {p.mine && !p.deletedAt && (
                 <>
                   <ActionIcon variant="subtle" onClick={() => onEdit(p)} aria-label={t('Edit post')}>
@@ -627,7 +738,11 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
             </Group>
           </Group>
           <Title order={3} mt={4} c={p.deletedAt ? 'dimmed' : undefined}>
-            {p.deletedAt ? t('The author deleted this post. Its replies are still here.') : p.title}
+            {p.removedByProfessor
+              ? t('A professor removed this post. Its replies are still here.')
+              : p.deletedAt
+                ? t('The author deleted this post. Its replies are still here.')
+                : p.title}
           </Title>
           {p.visibility === 'selected' && (
             <Group gap={4} mt={2} c="dimmed">
@@ -663,9 +778,15 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
         </Text>
       )}
       <Divider label={isQuestion ? t('Answers') : t('Replies')} labelPosition="left" />
-      <ReplyBox postId={postId} isQuestion={isQuestion} />
+      {p.lockedAt && (
+        <Group gap={6} c="dimmed">
+          <IconMessageOff size={14} />
+          <Text size="sm">{p.canModerate ? t("You locked this thread, so students can't reply. You still can.") : t('The professor locked this thread.')}</Text>
+        </Group>
+      )}
+      {(!p.lockedAt || p.canModerate) && <ReplyBox postId={postId} isQuestion={isQuestion} />}
       {p.replies.map((r) => (
-        <ReplyItem key={r.id} reply={r} postId={postId} canAccept={p.mine && isQuestion && !p.deletedAt} />
+        <ReplyItem key={r.id} reply={r} postId={postId} canAccept={p.mine && isQuestion && !p.deletedAt} canModerate={p.canModerate} />
       ))}
     </Stack>
   );
@@ -684,6 +805,7 @@ function PostForm({
   onDone: (postId: number) => void;
   onOpenPost: (postId: number) => void;
 }) {
+  const professor = useMe().role === 'professor';
   const myClasses = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
   const form = useForm({
     initialValues: {
@@ -732,14 +854,16 @@ function PostForm({
         <SegmentedControl
           data={[
             { value: 'question', label: t('Question') },
-            { value: 'note', label: t('Note') },
+            { value: 'note', label: professor ? t('Announcement') : t('Note') },
           ]}
           {...form.getInputProps('kind')}
         />
         <Text size="xs" c="dimmed" mt={-8}>
           {form.values.kind === 'question'
             ? t('You can accept the reply that answers it.')
-            : t('For sharing something: notes, tips, announcements.')}
+            : professor
+              ? t('Everyone in the section gets a notification.')
+              : t('For sharing something: notes, tips, announcements.')}
         </Text>
         <Group grow align="flex-start">
           <Select

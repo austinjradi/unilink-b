@@ -9,7 +9,7 @@ import { LEVELS } from '@shared/courseQuery';
 import { addDays, CURRENT_TERM, ymd } from '@shared/dates';
 import { ClashNote, Empty, Loading, PageHeader, SectionCard, Tag } from '../components/ui';
 import { fmtMeetings } from '../lib/format';
-import { useAction } from '../lib/hooks';
+import { useAction, useMe } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
 import { AcademicsPanel } from './Academics';
 import { t, term } from '../lib/i18n';
@@ -22,10 +22,11 @@ export function CoursesPage() {
   const params = useParams();
   const navigate = useNavigate();
   const tab: CoursesTab = TABS.includes(params.tab as CoursesTab) ? (params.tab as CoursesTab) : 'mine';
+  const student = useMe().role === 'student';
 
   return (
     <>
-      <PageHeader title={t('Courses')} subtitle={t('Your classes, finding new ones, and how they add up toward your degree.')} />
+      <PageHeader title={t('Courses')} subtitle={student ? t('Your classes, finding new ones, and how they add up toward your degree.') : t('The sections you teach, and finding others.')} />
       <Tabs value={tab} onChange={(v) => navigate(`/courses/${v}`)} keepMounted={false} variant="pills" radius="xl">
         <Tabs.List mb="lg">
           <Tabs.Tab value="mine" leftSection={<IconSchool size={16} />}>
@@ -34,12 +35,16 @@ export function CoursesPage() {
           <Tabs.Tab value="find" leftSection={<IconSearch size={16} />}>
             {t('Find courses')}
           </Tabs.Tab>
-          <Tabs.Tab value="record" leftSection={<IconListDetails size={16} />}>
-            {t('Course record')}
-          </Tabs.Tab>
-          <Tabs.Tab value="degree" leftSection={<IconCertificate size={16} />}>
-            {t('Degree plan')}
-          </Tabs.Tab>
+          {student && (
+            <Tabs.Tab value="record" leftSection={<IconListDetails size={16} />}>
+              {t('Course record')}
+            </Tabs.Tab>
+          )}
+          {student && (
+            <Tabs.Tab value="degree" leftSection={<IconCertificate size={16} />}>
+              {t('Degree plan')}
+            </Tabs.Tab>
+          )}
         </Tabs.List>
         <Tabs.Panel value="mine">
           <MyCourses />
@@ -59,6 +64,7 @@ export function CoursesPage() {
 }
 
 function MyCourses() {
+  const professor = useMe().role === 'professor';
   const mine = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
   // At a glance for each class: the next lecture, the next thing due and questions still open.
   const today = ymd(new Date());
@@ -74,7 +80,7 @@ function MyCourses() {
     return (
       <Card>
         <Empty icon={<IconSchool size={22} />}>
-          {t("You haven't joined any courses yet.")}{' '}
+          {professor ? t("You aren't teaching any sections yet.") : t("You haven't joined any courses yet.")}{' '}
           <Text span inherit c="periwinkle" fw={700} component={Link} to="/courses/find">
             {t('Find your courses')}
           </Text>
@@ -142,6 +148,7 @@ function MyCourses() {
 }
 
 function FindCourses() {
+  const professor = useMe().role === 'professor';
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [term, setTerm] = useState<string>(CURRENT_TERM);
@@ -155,7 +162,7 @@ function FindCourses() {
     placeholderData: keepPreviousData,
   });
   const join = useAction((classId: number) => rpc.classes.join({ classId }), {
-    success: 'Joined! Your classmates are here.',
+    success: () => (professor ? t('You now teach this section, and your name is on its course details.') : t('Joined! Your classmates are here.')),
     onSuccess: (_data, classId) => navigate(`/classes/${classId}`),
   });
   const switchTo = useAction((classId: number) => rpc.classes.switchSection({ classId }), {
@@ -216,6 +223,11 @@ function FindCourses() {
                         {fmtMeetings(c.times)}
                       </Text>
                     )}
+                    {c.professors.length > 0 && (
+                      <Text size="xs" c="dimmed">
+                        {t('Taught by {{names}}', { names: c.professors.join(', ') })}
+                      </Text>
+                    )}
                     {!c.joined && <ClashNote codes={c.clashesWith} />}
                   </Table.Td>
                   <Table.Td>{c.credits}</Table.Td>
@@ -231,7 +243,7 @@ function FindCourses() {
                       </Button>
                     ) : (
                       <Button size="xs" onClick={() => join.mutate(c.id)} loading={join.isPending && join.variables === c.id}>
-                        {t('Join')}
+                        {professor ? t('Teach') : t('Join')}
                       </Button>
                     )}
                   </Table.Td>

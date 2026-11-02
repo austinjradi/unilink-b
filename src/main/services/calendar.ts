@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { and, asc, eq, gte, inArray, isNull, lt, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { addDays, atTime, eachDay, parseYmd, termRange, ymd } from '@shared/dates';
@@ -20,7 +20,7 @@ import {
   users,
 } from '../db/schema';
 import { AppError, idSchema, nonEmpty, procedure } from '../rpc/core';
-import { classLabels, FORMER_STUDENT_EMAIL, notFound, requireMember } from './access';
+import { classLabels, FORMER_STUDENT_EMAIL, notFound, requireMember, teaches } from './access';
 import { gradedItems } from './courses';
 
 // A3: one calendar for class times, deadlines, exams, study sessions and planned work.
@@ -316,7 +316,10 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
 
 function ownDeadline(db: DB, userId: number, id: number) {
   const row = db.select().from(deadlines).where(eq(deadlines.id, id)).get() ?? notFound('deadline');
-  if (row.userId !== userId) throw new AppError('Only the person who added this deadline can change it.', 'FORBIDDEN');
+  // The section's professor can also correct or remove a class deadline.
+  if (row.userId !== userId && !(row.classId != null && teaches(db, userId, row.classId))) {
+    throw new AppError('Only the person who added this deadline can change it.', 'FORBIDDEN');
+  }
   return row;
 }
 
@@ -375,8 +378,9 @@ export const calendarRouter = {
     else ctx.db.insert(deadlineDone).values({ deadlineId: id, userId: ctx.userId, doneAt: ctx.now() }).onConflictDoNothing().run();
   }),
 
-  removeDeadline: procedure(z.object({ id: idSchema }), ({ id }, ctx) => {
-    ownDeadline(ctx.db, ctx.userId, id);
+  removeDeadline: procedure(z.object({ id: idSchema }), async ({ id }, ctx) => {
+    const row = ownDeadline(ctx.db, ctx.userId, id);
+    if (row.attachmentPath) await rm(row.attachmentPath, { force: true });
     ctx.db.delete(deadlines).where(eq(deadlines.id, id)).run();
   }),
 

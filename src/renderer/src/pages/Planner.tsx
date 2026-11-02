@@ -378,6 +378,14 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
       classId: source.classId,
       dueAt: source.start,
     });
+    // An assignment the professor posted brings its handout, and the problems in it.
+    if (source.deadlineId == null) return;
+    rpc.assignments.handout({ deadlineId: source.deadlineId }).then((file) => {
+      if (!file) return;
+      setAttachment(file);
+      setFound(null);
+      read.mutate(file.path);
+    });
   };
 
   // Opened from a deadline's "Plan it": start from that deadline once the list is in.

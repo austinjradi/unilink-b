@@ -19,7 +19,7 @@ import {
   users,
 } from '../db/schema';
 import { type AuthedContext, idSchema, procedure } from '../rpc/core';
-import { classLabel } from './access';
+import { classLabel, isProfessor } from './access';
 import { visibleDeadlines } from './calendar';
 import { gradedItems } from './courses';
 
@@ -108,7 +108,9 @@ export function sweepReminders(ctx: AuthedContext) {
   const in30m = new Date(now.getTime() + 30 * 60_000);
   const within24h = (dueAt: AnyColumn) => and(gt(dueAt, now), lte(dueAt, in24h));
 
-  for (const d of visibleDeadlines(db, userId, now, in24h)) {
+  // Deadlines and exam reminders are for the students writing them, not whoever teaches them.
+  const teaching = isProfessor(db, userId);
+  for (const d of teaching ? [] : visibleDeadlines(db, userId, now, in24h)) {
     if (d.done) continue;
     notify(db, userId, {
       type: 'deadline-soon',
@@ -119,7 +121,7 @@ export function sweepReminders(ctx: AuthedContext) {
     });
   }
 
-  const classIds = db.select({ id: enrollments.classId }).from(enrollments).where(eq(enrollments.userId, userId)).all();
+  const classIds = teaching ? [] : db.select({ id: enrollments.classId }).from(enrollments).where(eq(enrollments.userId, userId)).all();
   for (const a of classIds.flatMap((c) => gradedItems(db, userId, c.id))) {
     if (a.score != null || !a.dueAt || a.dueAt <= now || a.dueAt > in24h) continue;
     notify(db, userId, {

@@ -17,6 +17,7 @@ import {
 } from '@mantine/core';
 import { DateTimePicker } from '@mantine/dates';
 import { useForm } from '@mantine/form';
+import { modals } from '@mantine/modals';
 import { IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { finalIfRemainingAverages, hasSecondScheme, letterFor, MCGILL_SCALE, minimumFor, summarize } from '@shared/grades';
@@ -33,6 +34,8 @@ type Assessment = Out<typeof rpc.courses.assessments>[number];
 // Version B: the scheme is shared by the section (anyone can add or fix a component);
 // your grades and target stay private. Weight that isn't listed counts as still to come.
 // A section can add a second scheme ("whichever is higher"); targets use the better one.
+// Once a professor teaches the section the scheme is theirs: they see it without marks (those
+// stay private) or the calculator, and students see it read-only with their own marks.
 export function GradeCalculator({ classId }: { classId: number }) {
   const items = useQuery({ queryKey: ['courses', 'assessments', classId], queryFn: () => rpc.courses.assessments({ classId }) });
   const info = useQuery({ queryKey: ['courses', 'info', classId], queryFn: () => rpc.courses.info({ classId }) });
@@ -46,6 +49,7 @@ export function GradeCalculator({ classId }: { classId: number }) {
 
   if (items.isPending || !items.data || !info.data) return <Loading />;
   const list = items.data;
+  const { canEdit, teaching, managedBy } = info.data;
   const summary = summarize(list);
   const two = hasSecondScheme(list);
   const target = info.data.targetGrade;
@@ -55,12 +59,23 @@ export function GradeCalculator({ classId }: { classId: number }) {
   const remaining = list.filter((a) => a.score == null);
   const single = remaining.length === 1 && scheme.unlistedWeight === 0 ? remaining[0].name : null;
   const restParams = { name: single?.toLowerCase() ?? '', weight: scheme.remainingWeight, min: minimumFor(target) };
+  const confirmRemove = (a: Assessment) => {
+    if (!teaching) return remove.mutate(a.id);
+    modals.openConfirmModal({
+      title: t('Remove {{name}}?', { name: a.name }),
+      children: <Text size="sm">{t("Students who entered a mark for it lose that mark, and they're told the scheme changed.")}</Text>,
+      labels: { confirm: t('Remove'), cancel: t('Keep') },
+      confirmProps: { color: 'red' },
+      onConfirm: () => remove.mutate(a.id),
+    });
+  };
 
   return (
     <Stack gap="lg">
       <Card padding="lg">
         <Group justify="space-between" mb={4}>
-          <Title order={2}>{t('Current grades')}</Title>
+          <Title order={2}>{teaching ? t('Grading scheme') : t('Current grades')}</Title>
+          {canEdit && (
           <Group gap="md">
             {list.length > 0 && (
               <Switch
@@ -74,9 +89,14 @@ export function GradeCalculator({ classId }: { classId: number }) {
               {t('Add component')}
             </Button>
           </Group>
+          )}
         </Group>
         <Text size="xs" c="dimmed" mb="md">
-          {t('The grading scheme is shared with your section, so anyone in it can add or fix a component. Your grades are private.')}
+          {teaching
+            ? t("Students in the section see this scheme and enter their own marks, which stay private, even from you. They're told when you change it.")
+            : canEdit
+              ? t('The grading scheme is shared with your section, so anyone in it can add or fix a component. Your grades are private.')
+              : t('{{name}} sets the grading scheme for this section. Your grades are private.', { name: managedBy ?? '' })}
         </Text>
         {list.length ? (
           <Table.ScrollContainer minWidth={760}>
@@ -86,10 +106,10 @@ export function GradeCalculator({ classId }: { classId: number }) {
                   <Table.Th>{t('Component')}</Table.Th>
                   <Table.Th w={120}>{two ? t('Scheme 1 (%)') : t('Weight (%)')}</Table.Th>
                   {two && <Table.Th w={120}>{t('Scheme 2 (%)')}</Table.Th>}
-                  <Table.Th w={170}>{t('Your grade (%)')}</Table.Th>
-                  <Table.Th w={200}>{t('Weighted contribution (%)')}</Table.Th>
+                  {!teaching && <Table.Th w={170}>{t('Your grade (%)')}</Table.Th>}
+                  {!teaching && <Table.Th w={200}>{t('Weighted contribution (%)')}</Table.Th>}
                   <Table.Th w={140}>{t('Added by')}</Table.Th>
-                  <Table.Th w={90} />
+                  {canEdit && <Table.Th w={90} />}
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -98,6 +118,7 @@ export function GradeCalculator({ classId }: { classId: number }) {
                     <Table.Td fw={600}>{a.name}</Table.Td>
                     <Table.Td>{a.weight}</Table.Td>
                     {two && <Table.Td>{a.altWeight ?? 0}</Table.Td>}
+                    {!teaching && (
                     <Table.Td>
                       <NumberInput
                         key={`${a.id}-${a.score}`}
@@ -118,40 +139,47 @@ export function GradeCalculator({ classId }: { classId: number }) {
                         }}
                       />
                     </Table.Td>
+                    )}
+                    {!teaching && (
                     <Table.Td>
                       {a.score == null
                         ? '—'
                         : [a.weight, ...(two ? [a.altWeight ?? 0] : [])].map((w) => ((w * a.score!) / 100).toFixed(1)).join(' / ')}
                     </Table.Td>
+                    )}
                     <Table.Td>
                       <Text size="xs" c="dimmed">
                         {a.addedBy ? (a.addedBy.former ? t('a former student') : a.addedBy.name) : ''}
                       </Text>
                     </Table.Td>
+                    {canEdit && (
                     <Table.Td>
                       <Group gap={4} justify="flex-end" wrap="nowrap">
                         <ActionIcon variant="subtle" onClick={() => setEditing(a)} aria-label={t('Edit {{name}}', { name: a.name })}>
                           <IconPencil size={16} />
                         </ActionIcon>
-                        <ActionIcon variant="subtle" color="red" onClick={() => remove.mutate(a.id)} aria-label={t('Delete {{name}}', { name: a.name })}>
+                        <ActionIcon variant="subtle" color="red" onClick={() => confirmRemove(a)} aria-label={t('Delete {{name}}', { name: a.name })}>
                           <IconTrash size={16} />
                         </ActionIcon>
                       </Group>
                     </Table.Td>
+                    )}
                   </Table.Tr>
                 ))}
               </Table.Tbody>
             </Table>
           </Table.ScrollContainer>
         ) : (
-          <Empty>{t('Add each graded component from the syllabus with its weight, e.g. "Midterm, 25%".')}</Empty>
+          <Empty>{canEdit ? t('Add each graded component from the syllabus with its weight, e.g. "Midterm, 25%".') : t("Your professor hasn't added the grading scheme yet.")}</Empty>
         )}
         {list.length > 0 && (
           <Group mt="sm" gap="lg">
-            <Text size="sm" c="dimmed">
-              {t('Average so far:')}{' '}
-              <b>{summary.currentAverage == null ? '—' : `${summary.currentAverage}% (${letterFor(summary.currentAverage).letter})`}</b>
-            </Text>
+            {!teaching && (
+              <Text size="sm" c="dimmed">
+                {t('Average so far:')}{' '}
+                <b>{summary.currentAverage == null ? '—' : `${summary.currentAverage}% (${letterFor(summary.currentAverage).letter})`}</b>
+              </Text>
+            )}
             <Text size="sm" c={summary.unlistedWeight === 0 ? 'dimmed' : 'orange'}>
               {t('Weights total')} <b>{summary.totalWeight}%</b>
               {two && ` · ${t('scheme 2: {{weight}}%', { weight: summary.schemes[1].totalWeight })}`}
@@ -161,7 +189,7 @@ export function GradeCalculator({ classId }: { classId: number }) {
         )}
       </Card>
 
-      {list.length > 0 && (
+      {list.length > 0 && !teaching && (
         <Grid gap="lg" align="stretch">
           <Grid.Col span={{ base: 12, md: 3 }}>
             <Title order={3} mb="sm">
@@ -244,6 +272,7 @@ export function GradeCalculator({ classId }: { classId: number }) {
             classId={classId}
             existing={editing === 'new' ? null : editing}
             two={two}
+            teaching={teaching}
             onDone={() => setEditing(null)}
           />
         )}
@@ -294,7 +323,7 @@ function Scenarios({ items, needed, single, two }: { items: Assessment[]; needed
   );
 }
 
-function ComponentForm({ classId, existing, two, onDone }: { classId: number; existing: Assessment | null; two: boolean; onDone: () => void }) {
+function ComponentForm({ classId, existing, two, teaching, onDone }: { classId: number; existing: Assessment | null; two: boolean; teaching: boolean; onDone: () => void }) {
   const form = useForm({
     initialValues: {
       name: existing?.name ?? '',
@@ -346,7 +375,7 @@ function ComponentForm({ classId, existing, two, onDone }: { classId: number; ex
           {...form.getInputProps('dueAt')}
         />
         <Text size="xs" c="dimmed">
-          {t('This changes the grading scheme for the whole section. Enter your own grade in the table.')}
+          {teaching ? t("This changes the grading scheme for the whole section, and students are told.") : t('This changes the grading scheme for the whole section. Enter your own grade in the table.')}
         </Text>
         <Group justify="flex-end">
           <Button type="submit" loading={save.isPending}>

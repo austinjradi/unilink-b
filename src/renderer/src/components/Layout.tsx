@@ -16,10 +16,10 @@ const NAV = [
   { to: '/', label: tx('Home'), match: (p: string) => p === '/' },
   { to: '/courses', label: tx('Courses'), match: (p: string) => p.startsWith('/courses') || p.startsWith('/classes') },
   { to: '/calendar', label: tx('Calendar'), match: (p: string) => p.startsWith('/calendar') },
-  { to: '/planner', label: tx('Planner'), match: (p: string) => p.startsWith('/planner') },
-  { to: '/calculator', label: tx('Calculator'), match: (p: string) => p.startsWith('/calculator') },
+  { to: '/planner', label: tx('Planner'), match: (p: string) => p.startsWith('/planner'), studentOnly: true },
+  { to: '/calculator', label: tx('Calculator'), match: (p: string) => p.startsWith('/calculator'), studentOnly: true },
   { to: '/sessions', label: tx('Study Sessions'), match: (p: string) => p.startsWith('/sessions') },
-  { to: '/study-mode', label: tx('Study Mode'), match: (p: string) => p.startsWith('/study-mode') },
+  { to: '/study-mode', label: tx('Study Mode'), match: (p: string) => p.startsWith('/study-mode'), studentOnly: true },
   { to: '/settings', label: tx('Settings'), match: (p: string) => p.startsWith('/settings') },
 ];
 
@@ -83,6 +83,8 @@ export function Layout({ children }: { children: ReactNode }) {
 
   // Tab titles name the page ("Calendar · UniLink"), for history and many open tabs.
   const section = NAV.find((item) => item.match(pathname));
+  // Planning work, working out marks and study mode are for students, not whoever teaches them.
+  const nav = NAV.filter((item) => me.role === 'student' || !item.studentOnly);
   useEffect(() => {
     document.title = section ? `${t(section.label)} · UniLink` : 'UniLink';
   }, [section]);
@@ -96,7 +98,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </UnstyledButton>
 
           <Group gap={6} wrap="nowrap" component="nav" className="nav-tabs">
-            {NAV.map((item) => (
+            {nav.map((item) => (
               <Link key={item.to} to={item.to} className="nav-pill" data-active={item.match(pathname) || undefined}>
                 {t(item.label)}
               </Link>
@@ -104,7 +106,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </Group>
 
           <Group gap="sm" wrap="nowrap">
-            <StudyModePill />
+            {me.role === 'student' && <StudyModePill />}
             {/* Phones: the tabs don't fit, so they're also in a menu. */}
             <Menu position="bottom-end" width={220}>
               <Menu.Target>
@@ -113,7 +115,7 @@ export function Layout({ children }: { children: ReactNode }) {
                 </ActionIcon>
               </Menu.Target>
               <Menu.Dropdown>
-                {NAV.map((item) => (
+                {nav.map((item) => (
                   <Menu.Item key={item.to} component={Link} to={item.to} fw={item.match(pathname) ? 800 : undefined} c={item.match(pathname) ? 'periwinkle' : undefined}>
                     {t(item.label)}
                   </Menu.Item>

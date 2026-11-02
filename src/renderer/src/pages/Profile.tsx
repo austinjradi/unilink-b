@@ -179,7 +179,7 @@ export function ProfileForm() {
           </Group>
           <Group grow>
             <Select label={t('Faculty')} placeholder="—" clearable data={facultyOptions()} {...form.getInputProps('faculty')} />
-            <Select label={t('Expected graduation')} placeholder="—" clearable data={gradYearOptions()} {...form.getInputProps('gradYear')} />
+            {me.role === 'student' && <Select label={t('Expected graduation')} placeholder="—" clearable data={gradYearOptions()} {...form.getInputProps('gradYear')} />}
           </Group>
           <Group justify="flex-end">
             <Button type="submit" disabled={!form.isDirty()} loading={save.isPending}>

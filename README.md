@@ -40,6 +40,29 @@ The yellow features, with what couldn't be fully built:
 | ST1 | Study mode                           | Study Mode tab; pill in the top bar      | `shared/studyMode.ts`, `services/studyMode.ts` | **Can't block websites**; runs only while a UniLink tab is open; no system Do Not Disturb in a browser |
 | ST3 | To-do list                           | Home (first thing you see)               | `services/todos.ts`, `pages/Dashboard.tsx`    | None |
 
+## Professors
+
+Beyond the requirements board, a section can have a professor. Signing up as **Professor** takes a `@mcgill.ca`
+email (students have `@mail.mcgill.ca`), and **Teach** on a section puts their name on it. They can teach several
+sections of a course. The demo has **Daniel Ouellet**, a made-up professor teaching both COMP 251 sections.
+
+| A professor can | Where | How it works |
+| --- | --- | --- |
+| Run the grading scheme, course details and class times | Class page → Grading scheme, Overview | Sections are wiki-style until a professor teaches them; then only the professor can change these, and students see them read-only. Students are told when the scheme changes, once a day at most. If the last professor leaves, it's wiki-style again |
+| Post assignments with a handout | Class page → Assignments (new tab) | A class deadline with instructions and a file, on everyone's calendar. Everyone's notified, and again if the due date moves. A weight adds it to the scheme. **Plan it** brings the handout and its problems into the student's plan, which follows the assignment's date |
+| Moderate the discussion | Class page → Discussion | **Pin** to the top of the class board, **lock** a thread so only they can reply, **endorse** a reply, or **remove** a post or reply with an optional reason. The author is told. A removed post with replies stays up, blanked |
+| Make announcements | New post → Announcement | A note from a professor to the whole section notifies everyone |
+| Correct class deadlines | Calendar | They can edit or remove a class deadline a student added, not private ones |
+
+What stays private: **students' marks and private posts**. Professors don't see them unless a student picks them as
+a post's audience, and only they and classmates who've posted are visible, as for anyone (S1). Group chat links stay
+editable only by whoever added them, as S2.5 requires. Planner, Calculator, Study Mode, the course record and the
+degree plan are hidden for professors.
+
+**Limits:** nothing checks that someone is really a professor, since there's no mail server to verify a `@mcgill.ca`
+address and no McGill login, so a real deployment needs one of those first. A handout lives in the browser that
+uploaded it, like everything else here. Students can't hand work in; assignments go one way.
+
 ## UI design
 
 The interface follows the team's wireframes in `A2Team.pdf`:
@@ -89,8 +112,8 @@ board with answered and open questions, group chats classmates vouch for (and on
 study sessions: open, full with a waitlist, online, invite-only, and some already over. Everything lives in
 `db/demoContent.ts`; `db/demo.ts` turns it into rows, with dates relative to the first visit.
 
-Three classmates are listed on the sign-in screen with the password `unilink-demo1` (every demo classmate
-uses it). Signing in as one of them shows a student mid-term: five classes, a course record going back a year
+Three classmates and a professor are listed on the sign-in screen with the password `unilink-demo1` (every demo
+account uses it). Signing in as one of them shows a student mid-term: five classes, a course record going back a year
 and a degree program (A1–A2), marks on each section's scheme (A4), assignments broken into planned tasks
 (ST2), to-dos (ST3), private deadlines, and notifications about replies and accepted answers (G3).
 
@@ -226,8 +249,8 @@ both versions.
 | A3 | Term key dates and final exams? | Not included | **Built in** (`shared/keyDates.ts`): McGill's 2026–27 key dates (classes start and end, add/drop, withdrawal with and without refund, reading breaks, exam period) on everyone's calendar, deadlines among them on Home; **no classes on breaks and holidays** (weekly class times skip them on the calendar, in the .ics export and for study mode); a **sample final exam schedule** per course, with your own finals on your calendar and each class page |
 | A3 | "Imported from my syllabus in a later version" | Not built | **Paste the syllabus schedule**: lines with a date and something to hand in or write are found (English or French dates, times, weights) and reviewed before adding. Weighted ones join the section's grading scheme; the rest become class deadlines |
 | A3 | Whose class times and deadlines? | Personal: each student enters their own | **Shared with the section**: one person enters the lecture times or a class deadline and everyone sees it. Deadlines with no class stay private; each student checks deadlines off separately; only whoever added a deadline can edit it |
-| A5 | Whose course details? | Personal ("only you see these") | Professor, email, office hours and room are **shared, wiki-style** (anyone in the section edits; "edited by Priya 2 days ago"). Notes stay private |
-| A4/A5 | Whose grading scheme? | Personal, with your scores | The scheme is **shared by the section**; **marks are private**. A component can't be removed once a classmate has a mark on it, and the scheme can't add up to more than 100% |
+| A5 | Whose course details? | Personal ("only you see these") | Professor, email, office hours and room are **shared, wiki-style** (anyone in the section edits; "edited by Priya 2 days ago"), until a [professor](#professors) teaches the section. Notes stay private |
+| A4/A5 | Whose grading scheme? | Personal, with your scores | The scheme is **shared by the section**, or set by its [professor](#professors) if it has one; **marks are private**. A component can't be removed once a classmate has a mark on it (a professor can), and the scheme can't add up to more than 100% |
 | A4/A5 | Courses graded on two schemes ("the final replaces the midterm if higher")? | Not supported | The section can add a **second scheme**, with its own weight per component; your grade is **whichever is higher**, and "what you need" and the scenarios use the better scheme for each target |
 | A4 | Weights that don't add up to 100% | Grades are scaled up to the listed total | The missing weight counts as **work still to come** (not scaled), so "what you need" covers it too |
 | G4.1 | Password requirements? | 8+ characters with a letter and a number | **Passphrases:** 12+ characters, no character rules, but **not a common password** and **not your own name** from your email |
@@ -258,9 +281,10 @@ hidden links and failed sign-ins instead of invitations and individual reports; 
 | Free time per weekday, front-loaded plans | `shared/planner.ts`, `services/planner.ts` |
 | Tasks from the assignment file | `shared/assignment.ts`, `web/platform.ts` (`readText`) |
 | Plans that follow a class deadline | `services/planner.ts` (`followMovedDeadlines`), `services/calendar.ts` (`collect`) |
+| Professors: who can change what, assignments, moderation | `services/access.ts` (`canEditShared`, `requireTeacher`), `services/assignments.ts`, `services/board.ts` |
 
 The database changes are migrations `0004_version_b` (new tables and columns), `0005_version_b_cleanup`
-(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows`, `0010_sign_in_limits`, `0011_second_grading_scheme` and `0012_weekly_sessions`.
+(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows`, `0010_sign_in_limits`, `0011_second_grading_scheme`, `0012_weekly_sessions` and `0013_professors`.
 
 ## Not built yet
 

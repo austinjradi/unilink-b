@@ -46,7 +46,7 @@ import { parseSyllabus, type SyllabusItem } from '@shared/syllabus';
 import { chipStyle, Empty, KindBadge, kindColor, Loading, PageHeader } from '../components/ui';
 import { fmtDateTime, fmtTime, toDate } from '../lib/format';
 import { useAction } from '../lib/hooks';
-import { type Out, rpc } from '../lib/rpc';
+import { type Out, rpc, RpcError } from '../lib/rpc';
 import { t, term, tx } from '../lib/i18n';
 
 type Deadline = Out<typeof rpc.calendar.deadlines>[number];
@@ -720,8 +720,15 @@ export function SyllabusImport({ onDone, initialClassId = null }: { onDone: () =
       const failed: string[] = [];
       for (const item of picked) {
         try {
-          if (item.weight != null) await rpc.courses.addAssessment({ classId: classId!, name: item.title, weight: item.weight, dueAt: item.dueAt });
-          else await rpc.calendar.addDeadline({ classId, kind: item.kind, title: item.title, dueAt: item.dueAt, notes: '' });
+          const deadline = () => rpc.calendar.addDeadline({ classId, kind: item.kind, title: item.title, dueAt: item.dueAt, notes: '' });
+          if (item.weight == null) await deadline();
+          else {
+            // Where a professor runs the scheme, the date still goes in as a class deadline.
+            await rpc.courses.addAssessment({ classId: classId!, name: item.title, weight: item.weight, dueAt: item.dueAt }).catch((error) => {
+              if (error instanceof RpcError && error.code === 'FORBIDDEN') return deadline();
+              throw error;
+            });
+          }
         } catch {
           failed.push(item.title);
         }

@@ -1,6 +1,8 @@
 // G4: account rules shared by the sign-up form and the main process.
 
 export const MCGILL_EMAIL = /^[a-z0-9._%+-]+@(mail\.)?mcgill\.ca$/i;
+// Students have @mail.mcgill.ca addresses; professors and staff have @mcgill.ca ones.
+export const STAFF_EMAIL = /^[a-z0-9._%+-]+@mcgill\.ca$/i;
 
 // Version B uses passphrase rules (NIST-style): length matters, character classes don't,
 // and well-known or personal passwords are refused.

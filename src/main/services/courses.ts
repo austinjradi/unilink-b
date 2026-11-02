@@ -1,15 +1,18 @@
 import { and, asc, eq, isNotNull, isNull, max, ne, sql, sum } from 'drizzle-orm';
 import { z } from 'zod';
+import { ymd } from '@shared/dates';
 import { MCGILL_SCALE } from '@shared/grades';
 import type { DB } from '../db/client';
 import { assessments, assessmentScores, classDetails, classMeetings, courseInfo, users } from '../db/schema';
-import { AppError, idSchema, nonEmpty, procedure } from '../rpc/core';
-import { FORMER_STUDENT_EMAIL, notFound, requireMember } from './access';
+import { AppError, type AuthedContext, idSchema, nonEmpty, procedure } from '../rpc/core';
+import { canEditShared, classLabel, FORMER_STUDENT_EMAIL, notFound, professorsOf, requireMember, requireSharedEditor, studentsOf, teaches } from './access';
+import { m, notify } from './notifications';
 
 // A5 in version B: everything that's the same for the whole section is entered once and
 // shared, wiki-style: any member can edit the course details, the weekly class times (A3)
 // and the grading scheme, and the page says who changed them last. Your marks, your
-// target grade and your notes stay private.
+// target grade and your notes stay private. Once a professor teaches the section, those
+// shared parts are theirs to change (and marks stay private from them too).
 
 const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:mm');
 
@@ -57,6 +60,36 @@ function assertWeightFits(db: DB, classId: number, weight: number, altWeight: nu
       });
     }
   }
+}
+
+// When a professor changes the scheme, students hear about it, once a day at most.
+function tellSchemeChanged(ctx: AuthedContext, classId: number) {
+  if (!teaches(ctx.db, ctx.userId, classId)) return;
+  for (const student of studentsOf(ctx.db, classId)) {
+    notify(ctx.db, student.id, {
+      type: 'scheme-changed',
+      title: m('The grading scheme for {{class}} changed', { class: classLabel(ctx.db, classId) ?? '' }),
+      body: m('Check how it affects what you need.'),
+      link: `/classes/${classId}/grades`,
+      dedupeKey: `scheme:${classId}:${ymd(ctx.now())}`,
+    });
+  }
+}
+
+// Adds a component at the end of the section's scheme.
+export function addComponent(ctx: AuthedContext, classId: number, input: { name: string; weight: number; altWeight: number | null; dueAt: Date | null }) {
+  const fields = withAltWeight(ctx.db, classId, input);
+  assertWeightFits(ctx.db, classId, fields.weight, fields.altWeight);
+  const last = ctx.db
+    .select({ position: max(assessments.position) })
+    .from(assessments)
+    .where(eq(assessments.classId, classId))
+    .get();
+  ctx.db
+    .insert(assessments)
+    .values({ ...fields, classId, userId: ctx.userId, position: (last?.position ?? -1) + 1 })
+    .run();
+  tellSchemeChanged(ctx, classId);
 }
 
 // Whether the section's scheme has a second version ("whichever is higher").
@@ -121,12 +154,16 @@ export const coursesRouter = {
       targetGrade: own?.targetGrade ?? 'A',
       meetings,
       meetingsEditedBy: meetings.length ? editorOf(ctx.db, meetings[0].userId) : null,
+      // Who can change the shared parts: anyone in the section, or only its professor.
+      canEdit: canEditShared(ctx.db, ctx.userId, classId),
+      teaching: teaches(ctx.db, ctx.userId, classId),
+      managedBy: professorsOf(ctx.db, classId).map((p) => p.name).join(', ') || null,
     };
   }),
 
   // Shared with the section.
   saveDetails: procedure(z.object({ classId: idSchema, ...detailFields }), ({ classId, ...fields }, ctx) => {
-    requireMember(ctx.db, ctx.userId, classId);
+    requireSharedEditor(ctx.db, ctx.userId, classId);
     const edit = { ...fields, updatedById: ctx.userId, updatedAt: ctx.now() };
     ctx.db
       .insert(classDetails)
@@ -170,7 +207,7 @@ export const coursesRouter = {
         .max(14),
     }),
     ({ classId, meetings }, ctx) => {
-      requireMember(ctx.db, ctx.userId, classId);
+      requireSharedEditor(ctx.db, ctx.userId, classId);
       ctx.db.transaction((tx) => {
         tx.delete(classMeetings).where(eq(classMeetings.classId, classId)).run();
         if (meetings.length) {
@@ -188,32 +225,25 @@ export const coursesRouter = {
   }),
 
   addAssessment: procedure(z.object({ classId: idSchema, ...assessmentFields }), ({ classId, ...input }, ctx) => {
-    requireMember(ctx.db, ctx.userId, classId);
-    const fields = withAltWeight(ctx.db, classId, input);
-    assertWeightFits(ctx.db, classId, fields.weight, fields.altWeight);
-    const last = ctx.db
-      .select({ position: max(assessments.position) })
-      .from(assessments)
-      .where(eq(assessments.classId, classId))
-      .get();
-    ctx.db
-      .insert(assessments)
-      .values({ ...fields, classId, userId: ctx.userId, position: (last?.position ?? -1) + 1 })
-      .run();
+    requireSharedEditor(ctx.db, ctx.userId, classId);
+    addComponent(ctx, classId, input);
   }),
 
   // Anyone in the section can fix a name, weight or date.
   updateAssessment: procedure(z.object({ id: idSchema, ...assessmentFields }), ({ id, ...input }, ctx) => {
     const row = sharedAssessment(ctx.db, ctx.userId, id);
+    requireSharedEditor(ctx.db, ctx.userId, row.classId);
     const fields = withAltWeight(ctx.db, row.classId, input);
     assertWeightFits(ctx.db, row.classId, fields.weight, fields.altWeight, id);
     ctx.db.update(assessments).set(fields).where(eq(assessments.id, id)).run();
+    tellSchemeChanged(ctx, row.classId);
   }),
 
   // A second grading scheme for the section, "whichever is higher" (e.g. the final replacing
   // the midterm). It starts as a copy of the main weights; turning it off drops it.
   setSecondScheme: procedure(z.object({ classId: idSchema, on: z.boolean() }), ({ classId, on }, ctx) => {
-    requireMember(ctx.db, ctx.userId, classId);
+    requireSharedEditor(ctx.db, ctx.userId, classId);
+    tellSchemeChanged(ctx, classId);
     ctx.db
       .update(assessments)
       .set({ altWeight: on ? sql`${assessments.weight}` : null })
@@ -223,7 +253,8 @@ export const coursesRouter = {
 
   // Your mark on a component, or null to clear it.
   setScore: procedure(z.object({ id: idSchema, score: z.number().min(0).max(150).nullable() }), ({ id, score }, ctx) => {
-    sharedAssessment(ctx.db, ctx.userId, id);
+    const row = sharedAssessment(ctx.db, ctx.userId, id);
+    if (teaches(ctx.db, ctx.userId, row.classId)) throw new AppError("Marks are students' own, so professors don't enter them here.");
     const key = and(eq(assessmentScores.assessmentId, id), eq(assessmentScores.userId, ctx.userId));
     if (score == null) ctx.db.delete(assessmentScores).where(key).run();
     else
@@ -234,9 +265,16 @@ export const coursesRouter = {
         .run();
   }),
 
-  // Removing a component would erase classmates' marks, so it's only allowed until someone else has one.
+  // Removing a component would erase classmates' marks, so it's only allowed until someone
+  // else has one. A professor can still remove it: the scheme is theirs (the page warns them).
   removeAssessment: procedure(z.object({ id: idSchema }), ({ id }, ctx) => {
-    sharedAssessment(ctx.db, ctx.userId, id);
+    const row = sharedAssessment(ctx.db, ctx.userId, id);
+    requireSharedEditor(ctx.db, ctx.userId, row.classId);
+    if (teaches(ctx.db, ctx.userId, row.classId)) {
+      ctx.db.delete(assessments).where(eq(assessments.id, id)).run();
+      tellSchemeChanged(ctx, row.classId);
+      return;
+    }
     const othersMarked = ctx.db
       .select({ userId: assessmentScores.userId })
       .from(assessmentScores)

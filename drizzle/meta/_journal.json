@@ -92,6 +92,13 @@
       "when": 1793580869477,
       "tag": "0012_weekly_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1793596215604,
+      "tag": "0013_professors",
+      "breakpoints": true
     }
   ]
 }

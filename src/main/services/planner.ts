@@ -226,7 +226,7 @@ function checkSource(db: DB, userId: number, { deadlineId, assessmentId }: { dea
   }
 }
 
-async function storeAttachment(ctx: Context, source: string) {
+export async function storeAttachment(ctx: Context, source: string) {
   const info = await stat(source).catch(() => null);
   if (!info?.isFile()) throw new AppError('That file could not be read.');
   await mkdir(ctx.filesDir, { recursive: true });

@@ -1,4 +1,5 @@
 import { degreeRouter, recordRouter } from '../services/academics';
+import { assignmentsRouter } from '../services/assignments';
 import { authRouter, profileRouter } from '../services/auth';
 import { boardRouter } from '../services/board';
 import { calendarRouter } from '../services/calendar';
@@ -23,6 +24,7 @@ export const appRouter = {
   degree: degreeRouter, // A2
   calendar: calendarRouter, // A3, G2
   courses: coursesRouter, // A4, A5
+  assignments: assignmentsRouter, // posted by a section's professor
   notifications: notificationsRouter, // G3
   studyMode: studyModeRouter, // ST1
   planner: plannerRouter, // ST2
