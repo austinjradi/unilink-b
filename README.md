@@ -19,7 +19,7 @@ It implements the ten in-scope ("green") features from the UniLink requirements 
 
 | ID  | Feature                                 | Where in the app                                  | Code                                          |
 | --- | --------------------------------------- | ------------------------------------------------- | --------------------------------------------- |
-| S1  | Class and classmate discovery           | Courses → Find courses; class page → Overview     | `services/classes.ts`, `shared/courseQuery.ts` |
+| S1  | Class and classmate discovery           | Courses → Find courses (search, or paste your Minerva schedule); class page → Overview | `services/classes.ts`, `shared/courseQuery.ts` |
 | S2  | Group chat links                        | Class page → Group chats                          | `services/links.ts`, `class/GroupChats.tsx`   |
 | S3  | Study session creation and invitations  | Class page → Study sessions; Home                 | `services/studySessions.ts`                   |
 | S4  | Peer discussion board                   | Class page → Discussion                           | `services/board.ts`, `class/Discussion.tsx`   |

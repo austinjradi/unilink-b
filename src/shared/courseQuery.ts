@@ -21,3 +21,22 @@ export function parseCourseQuery(input: string): CourseQuery {
 }
 
 export const LEVELS = [100, 200, 300, 400, 500] as const;
+
+export interface ScheduleEntry {
+  subject: string;
+  number: string;
+  // null when the text gives no section.
+  section: string | null;
+}
+
+// Sections in a schedule pasted from Minerva: "COMP 251 001", "MATH-240-002", or just "ECSE 202".
+// Subjects are matched in capitals only, so "room 101" isn't a course. Each course counts once.
+export function parseSchedule(text: string): ScheduleEntry[] {
+  const found = new Map<string, ScheduleEntry>();
+  for (const m of text.matchAll(/\b([A-Z]{4})[ -]?(\d{3})\b(?:[ \t-]+(?:[Ss]ec(?:tion)?\.?[ \t]*)?(\d{3})\b)?/g)) {
+    const key = `${m[1]} ${m[2]}`;
+    const known = found.get(key);
+    if (!known || (!known.section && m[3])) found.set(key, { subject: m[1], number: m[2], section: m[3] ?? null });
+  }
+  return [...found.values()];
+}

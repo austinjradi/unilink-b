@@ -1,6 +1,6 @@
 import { and, asc, count, eq, inArray, isNull, like, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { parseCourseQuery } from '@shared/courseQuery';
+import { parseCourseQuery, parseSchedule } from '@shared/courseQuery';
 import { clashes, type MeetingTime } from '@shared/meetings';
 import { TERMS } from '@shared/dates';
 import type { DB } from '../db/client';
@@ -198,6 +198,24 @@ export const catalogueRouter = {
 };
 
 export const classesRouter = {
+  // The sections in a pasted schedule, to review before joining. With no section given it's
+  // the course's first one. `missing` is for what the catalogue doesn't have.
+  matchSchedule: procedure(z.object({ text: z.string().max(20_000), term: z.string() }), ({ text, term }, ctx) => {
+    const professor = isProfessor(ctx.db, ctx.userId);
+    return parseSchedule(text).map(({ subject, number, section }) => {
+      const label = `${subject} ${number}${section ? `-${section}` : ''}`;
+      const sections = classRows(ctx.db)
+        .where(and(eq(courses.subject, subject), eq(courses.number, number), eq(classes.term, term)))
+        .orderBy(classes.section)
+        .all();
+      const match = section ? sections.find((s) => s.section === section) : sections[0];
+      if (!match) return { label, classId: null, title: '', status: 'missing' as const, otherCode: null };
+      const other = professor ? null : sameCourseSection(ctx.db, ctx.userId, match.id).current;
+      const status = isMember(ctx.db, ctx.userId, match.id) ? ('joined' as const) : other ? ('other-section' as const) : ('new' as const);
+      return { label: match.code, classId: match.id, title: match.title, status, otherCode: other?.code ?? null };
+    });
+  }),
+
   // S1.4
   mine: procedure(z.void(), (_input, ctx) =>
     classRows(ctx.db)

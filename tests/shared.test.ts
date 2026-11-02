@@ -5,7 +5,7 @@ import { noClassesOn } from '@shared/keyDates';
 import { isHidden, parseChatLink } from '@shared/links';
 import { DEFAULT_WEEKLY_MINUTES, minutesOn, planTasks, type PlannableTask, weeklyMinutes } from '@shared/planner';
 import { passwordProblems } from '@shared/validation';
-import { parseCourseQuery } from '@shared/courseQuery';
+import { parseCourseQuery, parseSchedule } from '@shared/courseQuery';
 import { summarizeRecord, termOrder } from '@shared/academics';
 import { evaluateDegree, type Program } from '@shared/degree';
 import { type FocusWindow, studyModeStatus } from '@shared/studyMode';
@@ -498,5 +498,28 @@ describe('post formatting (S4)', () => {
     expect(parsePost('```\nnever closed')).toEqual([{ kind: 'text', text: '```\nnever closed' }]);
     expect(parsePost('javascript:alert(1) and ftp://a.b')).toEqual([{ kind: 'text', text: 'javascript:alert(1) and ftp://a.b' }]);
     expect(parsePost('')).toEqual([]);
+  });
+});
+
+describe('pasted schedules (S1)', () => {
+  it('reads sections however Minerva or a student writes them', () => {
+    const schedule = `Fall 2026 schedule
+COMP 251 001  Algorithms and Data Structures  Lec  3.0 credits
+MATH-240-002  Discrete Structures
+ECSE202 Sec. 003
+PHYS 142
+in room 101, CRN 12345, Leacock 132
+COMP 251 Tutorial`;
+    expect(parseSchedule(schedule)).toEqual([
+      { subject: 'COMP', number: '251', section: '001' },
+      { subject: 'MATH', number: '240', section: '002' },
+      { subject: 'ECSE', number: '202', section: '003' },
+      { subject: 'PHYS', number: '142', section: null },
+    ]);
+    // A year or a CRN after the code isn't a section.
+    expect(parseSchedule('COMP 251 2026\nMATH 240 12345')).toEqual([
+      { subject: 'COMP', number: '251', section: null },
+      { subject: 'MATH', number: '240', section: null },
+    ]);
   });
 });

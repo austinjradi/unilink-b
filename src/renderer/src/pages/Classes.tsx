@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Badge, Button, Card, Group, Select, SimpleGrid, Stack, Table, Tabs, Text, TextInput } from '@mantine/core';
+import { Badge, Button, Card, Checkbox, Group, Modal, Select, SimpleGrid, Stack, Table, Tabs, Text, Textarea, TextInput } from '@mantine/core';
 import { useDebouncedValue } from '@mantine/hooks';
-import { IconCalendarDue, IconCertificate, IconClock, IconListDetails, IconMessageQuestion, IconSchool, IconSearch, IconUsers } from '@tabler/icons-react';
+import { IconCalendarDue, IconCertificate, IconClipboardText, IconClock, IconListDetails, IconMessageQuestion, IconSchool, IconSearch, IconUsers } from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { Link, useNavigate, useParams } from 'react-router';
@@ -154,6 +154,7 @@ function FindCourses() {
   const [term, setTerm] = useState<string>(CURRENT_TERM);
   const [level, setLevel] = useState<string | null>(null);
   const [debounced] = useDebouncedValue(query, 200);
+  const [pasting, setPasting] = useState(false);
 
   const terms = useQuery({ queryKey: ['catalogue', 'terms'], queryFn: () => rpc.catalogue.terms() });
   const results = useQuery({
@@ -171,7 +172,17 @@ function FindCourses() {
   });
 
   return (
-    <SectionCard title={t('Find your courses')}>
+    <SectionCard
+      title={t('Find your courses')}
+      actions={
+        <Button size="compact-sm" variant="subtle" leftSection={<IconClipboardText size={14} />} onClick={() => setPasting(true)}>
+          {t('Paste my schedule')}
+        </Button>
+      }
+    >
+      <Modal opened={pasting} onClose={() => setPasting(false)} title={t('Add sections from your schedule')} size="lg">
+        {pasting && <SchedulePaste term={term} professor={professor} onDone={() => setPasting(false)} />}
+      </Modal>
       <Group mb="md" align="flex-end">
         <TextInput
           label={t('Course code or title')}
@@ -264,3 +275,101 @@ function FindCourses() {
   );
 }
 
+// S1 + G2: every section at once, from a schedule copied out of Minerva. Reviewed before joining.
+function SchedulePaste({ term: termName, professor, onDone }: { term: string; professor: boolean; onDone: () => void }) {
+  const [text, setText] = useState('');
+  const [debounced] = useDebouncedValue(text, 200);
+  const [unchecked, setUnchecked] = useState<Set<string>>(new Set());
+  const found = useQuery({
+    queryKey: ['classes', 'matchSchedule', debounced, termName],
+    queryFn: () => rpc.classes.matchSchedule({ text: debounced, term: termName }),
+    enabled: !!debounced.trim(),
+    placeholderData: keepPreviousData,
+  });
+  const rows = debounced.trim() ? (found.data ?? []) : [];
+  const picked = rows.filter((r) => r.status === 'new' && !unchecked.has(r.label));
+  const note = (r: (typeof rows)[number]) =>
+    r.status === 'missing'
+      ? t("Not in UniLink's course catalogue yet")
+      : r.status === 'joined'
+        ? t('Already in your courses')
+        : r.status === 'other-section'
+          ? t("You're in {{code}}", { code: r.otherCode ?? '' })
+          : r.title;
+
+  const join = useAction(
+    async () => {
+      const failed: string[] = [];
+      for (const r of picked) {
+        try {
+          await rpc.classes.join({ classId: r.classId! });
+        } catch {
+          failed.push(r.label);
+        }
+      }
+      return { added: picked.length - failed.length, failed };
+    },
+    {
+      success: (r) =>
+        [t('Added {{count}} sections to your courses', { count: r.added }), r.failed.length ? t('Not added: {{titles}}', { titles: r.failed.join(', ') }) : '']
+          .filter(Boolean)
+          .join(' '),
+      onSuccess: (r) => !r.failed.length && onDone(),
+    },
+  );
+
+  return (
+    <Stack>
+      <Text size="sm" c="dimmed">
+        {t('On Minerva, open your schedule for {{term}}, select it and paste it here. Codes like "COMP 251 001" are read, and you pick what to add.', { term: term(termName) })}
+      </Text>
+      <Textarea
+        label={t('Schedule')}
+        placeholder={'COMP 251 001  Algorithms and Data Structures\nMATH 240 002  Discrete Structures'}
+        autosize
+        minRows={5}
+        maxRows={12}
+        data-autofocus
+        value={text}
+        onChange={(e) => {
+          setText(e.currentTarget.value);
+          setUnchecked(new Set());
+        }}
+      />
+      {debounced.trim() && !found.isPending && (
+        <Text size="sm" fw={700}>
+          {rows.length ? t('Found {{count}} courses', { count: rows.length }) : t('No course codes found yet. Look for lines like "COMP 251 001".')}
+        </Text>
+      )}
+      {rows.map((r) => (
+        <Group key={r.label} gap="sm" wrap="nowrap">
+          <Checkbox
+            checked={r.status === 'new' && !unchecked.has(r.label)}
+            disabled={r.status !== 'new'}
+            aria-label={r.label}
+            onChange={(e) => {
+              const on = e.currentTarget.checked;
+              setUnchecked((u) => {
+                const next = new Set(u);
+                if (on) next.delete(r.label);
+                else next.add(r.label);
+                return next;
+              });
+            }}
+          />
+          <Text size="sm" fw={700} style={{ whiteSpace: 'nowrap' }}>
+            {r.label}
+          </Text>
+          <Text size="sm" c="dimmed" truncate>
+            {note(r)}
+          </Text>
+        </Group>
+      ))}
+      <Group justify="flex-end">
+        <Button onClick={() => join.mutate()} disabled={!picked.length} loading={join.isPending}>
+          {professor ? t('Teach {{count}} sections', { count: picked.length }) : t('Join {{count}} sections', { count: picked.length })}
+        </Button>
+      </Group>
+    </Stack>
+  );
+}

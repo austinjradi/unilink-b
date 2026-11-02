@@ -8,6 +8,7 @@ export const EN: Record<string, string> = {
   ...plural('(skipped {{count}} past or duplicate)', '(skipped {{count}} past or duplicate)'),
   ...plural('Add {{count}} courses', 'Add {{count}} course'),
   ...plural('Add {{count}} dates', 'Add {{count}} date'),
+  ...plural('Added {{count}} sections to your courses', 'Added {{count}} section to your courses'),
   ...plural('Added {{count}} to {{code}}', 'Added {{count}} to {{code}}'),
   ...plural('Added {{count}} courses to your record', 'Added {{count}} course to your record'),
   ...plural('Added {{count}} current classes', 'Added {{count}} current class'),
@@ -33,8 +34,10 @@ export const EN: Record<string, string> = {
   ...plural('Goat reactions: {{count}}', 'Goat reactions: {{count}}'),
   ...plural('Hidden after reports ({{count}})', 'Hidden after reports ({{count}})'),
   ...plural('Imported {{count}} deadlines', 'Imported {{count}} deadline'),
+  ...plural('Join {{count}} sections', 'Join {{count}} section'),
   ...plural('Later ({{count}})', 'Later ({{count}})'),
   ...plural('Planned {{count}} tasks before the deadline', 'Planned {{count}} task before the deadline'),
+  ...plural('Teach {{count}} sections', 'Teach {{count}} section'),
   ...plural(
     'Powers class search. UniLink ships with a built-in sample of {{count}} courses for {{terms}}.',
     'Powers class search. UniLink ships with a built-in sample of {{count}} course for {{terms}}.',

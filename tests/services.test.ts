@@ -281,6 +281,25 @@ describe('S1 classes', () => {
     expect((await api.classes.get({ classId: comp001 })).clashesWith).toEqual(['MATH 240-001']);
   });
 
+  it('matches a pasted schedule against the catalogue for review', async () => {
+    const { api } = await student('Maya');
+    const in251 = await comp251(api, '002');
+    await api.classes.join({ classId: in251 });
+    const [math] = await api.catalogue.search({ query: 'MATH 240', term: 'Fall 2026', level: null });
+    await api.classes.join({ classId: math.id });
+    const rows = await api.classes.matchSchedule({ term: 'Fall 2026', text: 'COMP 251 001\nMATH 240 001\nCOMP 202\nCOMP 202 009\nZZZZ 999' });
+    expect(rows.map((r) => [r.label, r.status, r.otherCode])).toEqual([
+      ['COMP 251-001', 'other-section', 'COMP 251-002'],
+      ['MATH 240-001', 'joined', null],
+      ['COMP 202-009', 'missing', null],
+      ['ZZZZ 999', 'missing', null],
+    ]);
+    const [fresh] = await api.classes.matchSchedule({ term: 'Fall 2026', text: 'COMP 202' });
+    expect(fresh).toMatchObject({ label: 'COMP 202-001', status: 'new', title: 'Foundations of Programming' });
+    await api.classes.join({ classId: fresh.classId! });
+    expect((await api.classes.mine()).map((c) => c.code)).toContain('COMP 202-001');
+  });
+
   it('keeps classmates anonymous until they post or reply, not when they join a session', async () => {
     const maya = await student('Maya', { pronouns: 'she/her' });
     const leo = await student('Leo');
