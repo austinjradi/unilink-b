@@ -26,7 +26,7 @@ import {
 import { useForm } from '@mantine/form';
 import { IconAlertTriangle, IconCertificate, IconCircleCheck, IconClipboardText, IconDownload, IconListDetails, IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { OTHER_GRADES, RECORD_GRADES, RECORD_STATUSES, type RecordStatus, summarizeRecord, termOptions, termOrder } from '@shared/academics';
+import { goalOutlook, OTHER_GRADES, RECORD_GRADES, RECORD_STATUSES, type RecordStatus, summarizeRecord, termOptions, termOrder } from '@shared/academics';
 import { CURRENT_TERM } from '@shared/dates';
 import { letterFor } from '@shared/grades';
 import { parseTranscript } from '@shared/transcript';
@@ -210,6 +210,65 @@ function TranscriptImport({ records, onDone }: { records: CourseRecord[]; onDone
   );
 }
 
+// A1: type the CGPA you're aiming for and see what the courses still to come have to average.
+function CgpaGoal({ summary }: { summary: ReturnType<typeof summarizeRecord> }) {
+  const saved = useQuery({ queryKey: ['record', 'goal'], queryFn: () => rpc.record.goal() });
+  if (!saved.data) return null;
+  return <CgpaGoalForm summary={summary} saved={saved.data.goal} />;
+}
+
+function CgpaGoalForm({ summary, saved }: { summary: ReturnType<typeof summarizeRecord>; saved: number | null }) {
+  const [goal, setGoal] = useState<number | string>(saved ?? '');
+  const remaining = summary.creditsInProgress + summary.creditsPlanned;
+  const [credits, setCredits] = useState<number | string>(remaining || 15);
+  const save = useAction((value: number | null) => rpc.record.setGoal({ goal: value }));
+  const target = typeof goal === 'number' && goal >= 0 && goal <= 4 ? goal : null;
+  const over = typeof credits === 'number' && credits > 0 ? credits : null;
+  const outlook = target != null && over != null ? goalOutlook(summary, target, over) : null;
+
+  return (
+    <SectionCard title={t('CGPA goal')}>
+      <Group align="flex-start" gap="lg">
+        <NumberInput
+          w={130}
+          label={t('Your goal')}
+          placeholder="3.70"
+          min={0}
+          max={4}
+          step={0.1}
+          decimalScale={2}
+          value={goal}
+          onChange={setGoal}
+          onBlur={() => target !== saved && save.mutate(target)}
+        />
+        <NumberInput w={130} label={t('Over the next')} suffix={` ${t('credits')}`} min={1} max={200} value={credits} onChange={setCredits} />
+        <Text size="sm" style={{ flex: '1 1 260px' }} mt={26} aria-live="polite">
+          {!outlook && t('Enter the CGPA you’re aiming for to see what your next courses have to average.')}
+          {outlook?.kind === 'safe' && t('You’re there, and the next {{count}} credits can’t take you below it.', { count: over! })}
+          {outlook?.kind === 'keep' &&
+            t('You’re there. Averaging {{average}} or better over the next {{count}} credits, about {{grade}}, keeps you there.', {
+              average: outlook.average.toFixed(2),
+              count: over!,
+              grade: outlook.grade,
+            })}
+          {outlook?.kind === 'reach' &&
+            t('You need a {{average}} average over the next {{count}} credits, about {{grade}}.', {
+              average: outlook.average.toFixed(2),
+              count: over!,
+              grade: outlook.grade,
+            })}
+          {outlook?.kind === 'out-of-reach' && (
+            <>
+              {t('Even straight A’s over the next {{count}} credits would only get you to {{best}}.', { count: over!, best: outlook.best.toFixed(2) })}
+              {outlook.creditsOfAs != null && ` ${t('Reaching {{goal}} would take about {{credits}} credits of A’s.', { goal: target!.toFixed(2), credits: outlook.creditsOfAs })}`}
+            </>
+          )}
+        </Text>
+      </Group>
+    </SectionCard>
+  );
+}
+
 function RecordTab({ onEdit }: { onEdit: (r: CourseRecord) => void }) {
   const records = useQuery({ queryKey: ['record'], queryFn: () => rpc.record.list() });
   const importClasses = useAction(() => rpc.record.importClasses(), {
@@ -229,6 +288,8 @@ function RecordTab({ onEdit }: { onEdit: (r: CourseRecord) => void }) {
         <Stat label={t('In progress')} value={String(summary.creditsInProgress)} hint={t('credits')} />
         <Stat label={t('Planned')} value={String(summary.creditsPlanned)} hint={t('credits')} />
       </SimpleGrid>
+
+      <CgpaGoal summary={summary} />
 
       <Group>
         <Button variant="light" leftSection={<IconDownload size={16} />} onClick={() => importClasses.mutate()}>

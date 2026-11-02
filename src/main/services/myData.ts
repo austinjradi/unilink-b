@@ -45,6 +45,7 @@ export function collectMyData(db: DB, userId: number) {
         gradYear: users.gradYear,
         locale: users.locale,
         degreeProgram: users.degreeProgramId,
+        cgpaGoal: users.cgpaGoal,
         goat: users.avatar,
         weeklyStudyMinutes: users.weeklyStudyMinutes,
         daysOff: users.daysOff,

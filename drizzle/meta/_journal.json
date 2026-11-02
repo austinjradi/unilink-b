@@ -134,6 +134,13 @@
       "when": 1793600569995,
       "tag": "0018_course_outline",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1793613376704,
+      "tag": "0019_cgpa_goal",
+      "breakpoints": true
     }
   ]
 }

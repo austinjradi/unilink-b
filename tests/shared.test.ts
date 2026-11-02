@@ -7,7 +7,7 @@ import { isHidden, parseChatLink } from '@shared/links';
 import { DEFAULT_WEEKLY_MINUTES, minutesOn, planTasks, type PlannableTask, weeklyMinutes } from '@shared/planner';
 import { passwordProblems } from '@shared/validation';
 import { parseCourseQuery, parseSchedule } from '@shared/courseQuery';
-import { summarizeRecord, termOrder } from '@shared/academics';
+import { goalOutlook, summarizeRecord, termOrder } from '@shared/academics';
 import { evaluateDegree, type Program } from '@shared/degree';
 import { type FocusWindow, studyModeStatus } from '@shared/studyMode';
 import { parseSyllabus } from '@shared/syllabus';
@@ -657,5 +657,30 @@ describe('Word documents', () => {
     expect(await docxText(new Uint8Array([1, 2, 3]))).toBeNull();
     expect(await docxText(new TextEncoder().encode('not a zip at all, just some long enough text to look at'))).toBeNull();
     expect(await docxText(zip('something/else.xml', document))).toBeNull();
+  });
+});
+
+describe('A1 CGPA goal', () => {
+  const record = { cgpaPoints: 90, cgpaCredits: 30 }; // 3.00 over 30 credits
+
+  it('says what the next credits have to average, and the lowest letter that gets there', () => {
+    expect(goalOutlook(record, 3.3, 30)).toEqual({ kind: 'reach', average: 3.6, grade: 'A-' });
+    expect(goalOutlook(record, 3.5, 30)).toEqual({ kind: 'reach', average: 4, grade: 'A' });
+    // Rounded up, so that getting exactly that is enough, but not up from floating-point noise.
+    expect(goalOutlook(record, 3.25, 40)).toEqual({ kind: 'reach', average: 3.44, grade: 'A-' });
+    expect(goalOutlook({ cgpaPoints: 99, cgpaCredits: 30 }, 3.3, 30)).toEqual({ kind: 'keep', average: 3.3, grade: 'B+' });
+    // Nothing graded yet.
+    expect(goalOutlook({ cgpaPoints: 0, cgpaCredits: 0 }, 3.7, 15)).toEqual({ kind: 'reach', average: 3.7, grade: 'A-' });
+  });
+
+  it('tells someone already there what keeps them there', () => {
+    expect(goalOutlook(record, 3, 30)).toEqual({ kind: 'keep', average: 3, grade: 'B' });
+    expect(goalOutlook(record, 2, 30)).toEqual({ kind: 'keep', average: 1, grade: 'D' });
+    expect(goalOutlook(record, 1, 10)).toEqual({ kind: 'safe' });
+  });
+
+  it('says so when straight As would not be enough', () => {
+    expect(goalOutlook(record, 3.9, 15)).toEqual({ kind: 'out-of-reach', best: 3.33, creditsOfAs: 270 });
+    expect(goalOutlook(record, 4, 15)).toEqual({ kind: 'out-of-reach', best: 3.33, creditsOfAs: null });
   });
 });

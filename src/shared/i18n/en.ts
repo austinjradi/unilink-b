@@ -5,6 +5,13 @@ export const EN: Record<string, string> = {
   ...plural('(from {{count}} of {{total}} classes with marks)', '(from {{count}} of {{total}} classes with marks)'),
   ...plural('+{{count}} more', '+{{count}} more'),
   ...plural('Your week ahead: {{count}} things due', 'Your week ahead: {{count}} thing due'),
+  ...plural('You’re there, and the next {{count}} credits can’t take you below it.', 'You’re there, and the next {{count}} credit can’t take you below it.'),
+  ...plural(
+    'You’re there. Averaging {{average}} or better over the next {{count}} credits, about {{grade}}, keeps you there.',
+    'You’re there. Getting {{average}} or better in the next {{count}} credit, about {{grade}}, keeps you there.',
+  ),
+  ...plural('You need a {{average}} average over the next {{count}} credits, about {{grade}}.', 'You need a {{average}} in the next {{count}} credit, about {{grade}}.'),
+  ...plural('Even straight A’s over the next {{count}} credits would only get you to {{best}}.', 'Even an A in the next {{count}} credit would only get you to {{best}}.'),
   ...plural('+{{count}} waiting', '+{{count}} waiting'),
   ...plural('(skipped {{count}} past or duplicate)', '(skipped {{count}} past or duplicate)'),
   ...plural('Add {{count}} courses', 'Add {{count}} course'),

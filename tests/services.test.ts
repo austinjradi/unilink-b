@@ -1662,7 +1662,7 @@ describe('G3 notifications', () => {
     await prof.classes.join({ classId });
     await prof.calendar.addDeadline({ classId, kind: 'exam', title: 'Quiz day', dueAt: new Date(2026, 11, 14, 9), notes: '' });
     sweepReminders({ ...ctx, userId: user.id });
-    expect(await titles({ api: prof })).toEqual([]);
+    expect((await prof.notifications.list()).items).toEqual([]);
   });
 });
 

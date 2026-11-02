@@ -90,6 +90,8 @@ The interface follows the team's wireframes in `A2Team.pdf`:
 - **Group chat links:** cards with Open/Report buttons.
 - **Study Sessions:** your upcoming sessions, plus a search page you can filter by class, format, free spots and date.
 - **Study Mode:** its own tab, with a pill in the top bar while it's on.
+- **Course record:** credits and CGPA, plus a **CGPA goal**: type the CGPA you're aiming for and see what your next credits
+  have to average, or how far straight A's would get you if it's out of reach (`goalOutlook` in `shared/academics.ts`).
 - **Settings:** sections down the side.
 
 The design uses rounded fonts (Nunito, with Fredoka for headings), bundled locally through Fontsource, and
@@ -305,7 +307,7 @@ the next seven days (nothing if nothing is due; it can be turned off for desktop
 | Professors: who can change what, assignments, moderation | `services/access.ts` (`canEditShared`, `requireTeacher`), `services/assignments.ts`, `services/board.ts` |
 
 The database changes are migrations `0004_version_b` (new tables and columns), `0005_version_b_cleanup`
-(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows`, `0010_sign_in_limits`, `0011_second_grading_scheme`, `0012_weekly_sessions`, `0013_professors`, `0014_board_images`, `0015_mute_replies`, `0016_days_off`, `0017_post_reports` and `0018_course_outline`.
+(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows`, `0010_sign_in_limits`, `0011_second_grading_scheme`, `0012_weekly_sessions`, `0013_professors`, `0014_board_images`, `0015_mute_replies`, `0016_days_off`, `0017_post_reports`, `0018_course_outline` and `0019_cgpa_goal`.
 
 ## Not built yet
 

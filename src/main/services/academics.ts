@@ -68,6 +68,14 @@ function myClasses(db: DB, userId: number) {
 }
 
 export const recordRouter = {
+  goal: procedure(z.void(), (_input, ctx) => ({
+    goal: ctx.db.select({ goal: users.cgpaGoal }).from(users).where(eq(users.id, ctx.userId)).get()?.goal ?? null,
+  })),
+
+  setGoal: procedure(z.object({ goal: z.number().min(0).max(4).nullable() }), ({ goal }, ctx) => {
+    ctx.db.update(users).set({ cgpaGoal: goal }).where(eq(users.id, ctx.userId)).run();
+  }),
+
   // In-progress courses that match a joined class carry the live A5 estimate.
   list: procedure(z.void(), (_input, ctx) => {
     const records = ctx.db
