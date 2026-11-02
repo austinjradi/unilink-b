@@ -285,6 +285,8 @@ both versions.
 The yellow features (A1, A2, G3, ST1, ST3) keep version A's decisions, adjusted where they touch the above:
 notifications cover waitlist spots, host hand-offs, session changes, replies in followed threads, accepted answers,
 hidden links and failed sign-ins instead of invitations and individual reports; study mode follows the section's shared class times.
+Students also get **one summary of the week ahead**, the first time they open the app after Sunday 16:00, listing what's due in
+the next seven days (nothing if nothing is due; it can be turned off for desktop and email like the rest).
 
 ### Where the decisions live
 

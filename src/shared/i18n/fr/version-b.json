@@ -479,6 +479,7 @@
   "Weight in scheme 2": "Pondération dans le barème 2",
   "Welcome to UniLink!": "Bienvenue sur UniLink !",
   "Welcome to UniLink! Start by adding the sections you teach.": "Bienvenue sur UniLink ! Commencez par ajouter les sections que vous enseignez.",
+  "What you have due in the week ahead, once a week": "Ce que vous avez à remettre la semaine à venir, une fois par semaine",
   "What you posted stays with the section. If no other professor teaches it, its students go back to editing the shared course info together.": "Ce que vous avez publié reste dans la section. Si aucun autre professeur ne l’enseigne, ses étudiants modifient de nouveau ensemble les renseignements partagés.",
   "What’s wrong with it?": "Quel est le problème ?",
   "When": "Quand",
@@ -537,6 +538,8 @@
   "Your professor keeps these up to date.": "Votre professeur tient ces renseignements à jour.",
   "Your students": "Vos étudiants",
   "Your target": "Votre objectif",
+  "Your week ahead: {{count}} things due_one": "Votre semaine à venir : {{count}} échéance",
+  "Your week ahead: {{count}} things due_other": "Votre semaine à venir : {{count}} échéances",
   "Your {{platform}} link in {{class}} was hidden": "Votre lien {{platform}} dans {{class}} a été masqué",
   "You’ll be notified of new replies": "Vous serez averti des nouvelles réponses",
   "a deleted post": "une publication supprimée",
@@ -599,5 +602,6 @@
   "{{name}} sets the grading scheme for this section. Your grades are private.": "{{name}} établit le barème de cette section. Vos notes restent privées.",
   "{{title}} is in {{count}} days_one": "{{title}} a lieu dans {{count}} jour",
   "{{title}} is in {{count}} days_other": "{{title}} a lieu dans {{count}} jours",
+  "{{title}}, {{when}}": "{{title}}, {{when}}",
   "“{{title}}”, due {{when}}": "« {{title}} », pour {{when}}"
 }

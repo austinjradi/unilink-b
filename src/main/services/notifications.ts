@@ -100,6 +100,55 @@ function soon(kind: 'due' | 'starts', title: string, date: Date, now: Date): Mes
   return kind === 'due' ? m('{{title}} is due {{when}}', params) : m('"{{title}}" starts {{when}}', params);
 }
 
+// G3: one summary a week, the first time they open the app after Sunday 16:00, when people plan
+// theirs. It covers the next seven days, and stays quiet when there's nothing due.
+const WEEK_STARTS_EARLY_BY = 8 * 3_600_000;
+
+function weekAhead(ctx: AuthedContext, locale: Locale) {
+  const { db, userId } = ctx;
+  const now = ctx.now();
+  const shifted = new Date(now.getTime() + WEEK_STARTS_EARLY_BY);
+  const dedupeKey = `week-ahead:${addDays(ymd(shifted), -((shifted.getDay() + 6) % 7))}`;
+  if (db.select({ id: notifications.id }).from(notifications).where(and(eq(notifications.userId, userId), eq(notifications.dedupeKey, dedupeKey))).get()) return;
+
+  const until = new Date(now.getTime() + 7 * 86_400_000);
+  const due = visibleDeadlines(db, userId, now, until)
+    .filter((d) => !d.done)
+    .map((d) => ({ title: d.title, classId: d.classId, at: d.dueAt }));
+  // A class's midterm is often both a deadline and a graded item; it only counts once.
+  const seen = new Set(due.map((d) => `${d.classId}|${d.title.toLowerCase()}`));
+  const classIds = db.select({ id: enrollments.classId }).from(enrollments).where(eq(enrollments.userId, userId)).all();
+  for (const a of classIds.flatMap((c) => gradedItems(db, userId, c.id))) {
+    if (a.score != null || !a.dueAt || a.dueAt <= now || a.dueAt > until || seen.has(`${a.classId}|${a.name.toLowerCase()}`)) continue;
+    due.push({ title: a.name, classId: a.classId, at: a.dueAt });
+  }
+  for (const c of db
+    .select({ id: classes.id, term: classes.term, subject: courses.subject, number: courses.number })
+    .from(enrollments)
+    .innerJoin(classes, eq(enrollments.classId, classes.id))
+    .innerJoin(courses, eq(classes.courseId, courses.id))
+    .where(eq(enrollments.userId, userId))
+    .all()) {
+    const exam = finalExamFor(`${c.subject} ${c.number}`, c.term);
+    const startsAt = exam && atTime(exam.date, exam.start);
+    if (exam && startsAt && startsAt > now && startsAt <= until) {
+      due.push({ title: translate(locale, '{{course}} final exam', { course: exam.course }), classId: c.id, at: startsAt });
+    }
+  }
+  if (!due.length) return;
+
+  const soonest = due.sort((a, b) => a.at.getTime() - b.at.getTime());
+  const listed = soonest.slice(0, 3).map((d) => render(locale, m('{{title}}, {{when}}', { title: d.title, when: { date: d.at.getTime() } })));
+  if (soonest.length > 3) listed.push(render(locale, m('+{{count}} more', { count: soonest.length - 3 })));
+  notify(db, userId, {
+    type: 'week-ahead',
+    title: m('Your week ahead: {{count}} things due', { count: soonest.length }),
+    body: raw(listed.join(' · ')),
+    link: '/calendar',
+    dedupeKey,
+  });
+}
+
 // Time-based reminders for the signed-in user; run every tick by the main process.
 export function sweepReminders(ctx: AuthedContext) {
   const { db, userId } = ctx;
@@ -147,6 +196,7 @@ export function sweepReminders(ctx: AuthedContext) {
   };
   // A3: final exams from the exam schedule, in the student's language.
   const locale = recipient(db, userId)?.locale ?? 'en';
+  if (!teaching) weekAhead(ctx, locale);
   for (const d of teaching ? [] : visibleDeadlines(db, userId, in24h, in3Days)) {
     if (d.kind !== 'exam' || d.done) continue;
     headsUp(raw(d.title), d.dueAt, raw(classLabel(db, d.classId) ?? ''), d.classId ? `/classes/${d.classId}` : '/calendar', `deadline:${d.id}`);

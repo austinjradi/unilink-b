@@ -101,7 +101,7 @@ const session = (fields: Partial<Parameters<RpcClient<AppRouter>['studySessions'
 
 const problems = (minutes: number) => ['Problem 1', 'Problem 2', 'Problem 3'].map((title) => ({ title, minutes }));
 
-const titles = async (s: { api: RpcClient<AppRouter> }) => (await s.api.notifications.list()).items.map((n) => n.title);
+const titles = async (s: { api: RpcClient<AppRouter> }) => (await s.api.notifications.list()).items.filter((n) => n.type !== 'week-ahead').map((n) => n.title);
 
 const expectCode = (promise: Promise<unknown>, code: string) => expect(promise).rejects.toMatchObject({ code });
 
@@ -1569,6 +1569,53 @@ describe('G3 notifications', () => {
     sweepReminders(authed);
     sweepReminders(authed);
     expect(await titles({ api })).toEqual(['Essay is due tomorrow at 08:00']);
+  });
+
+  it('sums up the week ahead once a week, from Sunday afternoon, and only when something is due', async () => {
+    const { classId, people } = await classmates('Maya');
+    const [maya] = people;
+    const authed = { ...maya.ctx, userId: maya.user.id };
+    const week = async () => (await maya.api.notifications.list()).items.filter((n) => n.type === 'week-ahead');
+    // Clock: Monday 5 October, 9:00, with nothing due yet.
+    sweepReminders(authed);
+    expect(await week()).toEqual([]);
+
+    await maya.api.calendar.addDeadline({ classId: null, kind: 'assignment', title: 'Essay', dueAt: new Date(2026, 9, 9, 8), notes: '' });
+    await maya.api.calendar.addDeadline({ classId, kind: 'exam', title: 'Midterm', dueAt: new Date(2026, 9, 7, 18), notes: '' });
+    await maya.api.courses.addAssessment({ classId, name: 'Midterm', weight: 30, dueAt: new Date(2026, 9, 7, 18) });
+    await maya.api.courses.addAssessment({ classId, name: 'Lab report', weight: 10, dueAt: new Date(2026, 9, 11, 18) });
+    await maya.api.courses.addAssessment({ classId, name: 'Too far off', weight: 10, dueAt: new Date(2026, 9, 20, 18) });
+    await maya.api.calendar.addDeadline({ classId: null, kind: 'other', title: 'Already handed in', dueAt: new Date(2026, 9, 6, 8), notes: '' });
+    const handedIn = (await maya.api.calendar.deadlines()).find((d) => d.title === 'Already handed in')!;
+    await maya.api.calendar.setDeadlineDone({ id: handedIn.id, done: true });
+
+    sweepReminders(authed);
+    sweepReminders(authed);
+    const [summary, ...others] = await week();
+    expect(others).toEqual([]);
+    expect(summary.title).toBe('Your week ahead: 3 things due');
+    expect(summary.body).toMatch(/^Midterm, .* · Essay, .* · Lab report, /);
+    expect(summary.link).toBe('/calendar');
+
+    // Later that week and Sunday morning are still this week; Sunday at 16:00 is the next one.
+    clock = new Date(2026, 9, 8, 9);
+    sweepReminders(authed);
+    clock = new Date(2026, 9, 11, 15, 59);
+    sweepReminders(authed);
+    expect(await week()).toHaveLength(1);
+    clock = new Date(2026, 9, 11, 16);
+    sweepReminders(authed);
+    expect(await week()).toHaveLength(2);
+    expect((await week())[0].title).toBe('Your week ahead: 1 thing due');
+
+    // More than three items are cut short (the graded item that was too far off counts by now).
+    await maya.api.calendar.addDeadline({ classId: null, kind: 'other', title: 'One', dueAt: new Date(2026, 9, 19, 8), notes: '' });
+    await maya.api.calendar.addDeadline({ classId: null, kind: 'other', title: 'Two', dueAt: new Date(2026, 9, 19, 9), notes: '' });
+    await maya.api.calendar.addDeadline({ classId: null, kind: 'other', title: 'Three', dueAt: new Date(2026, 9, 19, 10), notes: '' });
+    await maya.api.calendar.addDeadline({ classId: null, kind: 'other', title: 'Four', dueAt: new Date(2026, 9, 19, 11), notes: '' });
+    clock = new Date(2026, 9, 19, 7);
+    sweepReminders(authed);
+    expect((await week())[0].body).toMatch(/\+2 more$/);
   });
 
   it('reminds about a final exam the day before', async () => {
