@@ -1,0 +1,1 @@
+ALTER TABLE `course_info` ADD `mute_replies` integer DEFAULT false NOT NULL;

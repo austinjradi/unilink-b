@@ -783,6 +783,16 @@ describe('S4 following threads', () => {
     expect(await titles(leo)).toHaveLength(1);
     expect(await titles(ana)).toEqual(['Sam replied in "Is the midterm cumulative?"', 'Leo replied in "Is the midterm cumulative?"']);
 
+    // Muting a class silences its replies, but not what else happens in it.
+    await sam.api.courses.setMuteReplies({ classId, muted: true });
+    expect((await sam.api.courses.info({ classId })).muteReplies).toBe(true);
+    const before = (await titles(sam)).length;
+    await ana.api.board.reply({ postId, body: 'One more thing' });
+    expect(await titles(sam)).toHaveLength(before);
+    await sam.api.courses.setMuteReplies({ classId, muted: false });
+    await ana.api.board.reply({ postId, body: 'And another' });
+    expect(await titles(sam)).toHaveLength(before + 1);
+
     // Leaving the class stops them too.
     await ana.api.classes.leave({ classId });
     await maya.api.board.reply({ postId, body: 'Thanks all!' });

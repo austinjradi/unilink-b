@@ -185,6 +185,7 @@ export const coursesRouter = {
       detailsEditedAt: shared?.updatedAt ?? null,
       notes: own?.notes ?? '',
       targetGrade: own?.targetGrade ?? 'A',
+      muteReplies: own?.muteReplies ?? false,
       meetings,
       meetingsEditedBy: meetings.length ? editorOf(ctx.db, meetings[0].userId) : null,
       // Who can change the shared parts: anyone in the section, or only its professor.
@@ -212,6 +213,16 @@ export const coursesRouter = {
       .insert(courseInfo)
       .values({ userId: ctx.userId, classId, notes })
       .onConflictDoUpdate({ target: [courseInfo.userId, courseInfo.classId], set: { notes } })
+      .run();
+  }),
+
+  // G3: quiet a busy class's threads. Assignments, announcements and deadlines still come through.
+  setMuteReplies: procedure(z.object({ classId: idSchema, muted: z.boolean() }), ({ classId, muted }, ctx) => {
+    requireMember(ctx.db, ctx.userId, classId);
+    ctx.db
+      .insert(courseInfo)
+      .values({ userId: ctx.userId, classId, muteReplies: muted })
+      .onConflictDoUpdate({ target: [courseInfo.userId, courseInfo.classId], set: { muteReplies: muted } })
       .run();
   }),
 

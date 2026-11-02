@@ -32,6 +32,7 @@ import { useDebouncedValue } from '@mantine/hooks';
 import { modals } from '@mantine/modals';
 import {
   IconBell,
+  IconBellOff,
   IconBellRinging,
   IconCheck,
   IconCircleCheck,
@@ -432,6 +433,10 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
   const [composing, setComposing] = useState<PostDetail | 'new' | null>(null);
 
   const classes = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
+  const info = useQuery({ queryKey: ['courses', 'info', classId], queryFn: () => rpc.courses.info({ classId: classId! }), enabled: !!classId });
+  const setMuted = useAction((muted: boolean) => rpc.courses.setMuteReplies({ classId: classId!, muted }), {
+    success: (_r, muted) => (muted ? t('Replies from this class are muted. Assignments, announcements and deadlines still come through.') : t('Replies from this class are back on')),
+  });
   const allTopics = useQuery({ queryKey: ['board', 'topics', classId ?? null], queryFn: () => rpc.board.topics({ classId: classId ?? null }) });
   const feed = useQuery({
     queryKey: ['board', 'feed', classId ?? null, classIds, topics, since, debounced, unresolved, following, sort],
@@ -527,6 +532,20 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
           <Group justify="space-between" mb="md">
             <Title order={3}>{classId ? t('Discussion') : t('Class discussions')}</Title>
             <Group gap="sm">
+              {classId && info.data && (
+                <Tooltip label={info.data.muteReplies ? t('Turn reply notifications from this class back on') : t('Mute reply notifications from this class')}>
+                  <ActionIcon
+                    variant={info.data.muteReplies ? 'light' : 'subtle'}
+                    color={info.data.muteReplies ? 'orange' : 'gray'}
+                    size="lg"
+                    radius="xl"
+                    onClick={() => setMuted.mutate(!info.data.muteReplies)}
+                    aria-label={info.data.muteReplies ? t('Turn reply notifications from this class back on') : t('Mute reply notifications from this class')}
+                  >
+                    {info.data.muteReplies ? <IconBellOff size={18} /> : <IconBell size={18} />}
+                  </ActionIcon>
+                </Tooltip>
+              )}
               <Button hiddenFrom="lg" variant="default" leftSection={<IconFilter size={16} />} onClick={() => setFiltersOpen(true)}>
                 {activeFilters ? t('Filters ({{count}})', { count: activeFilters }) : t('Filters')}
               </Button>

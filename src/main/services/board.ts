@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { goatFor } from '@shared/goat';
 import { keywords, similarity } from '@shared/similar';
 import type { DB } from '../db/client';
-import { boardImages, boardVisits, classes, courses, enrollments, postAudience, postFollows, postReactions, posts, replies, replyReactions, users } from '../db/schema';
+import { boardImages, boardVisits, classes, courseInfo, courses, enrollments, postAudience, postFollows, postReactions, posts, replies, replyReactions, users } from '../db/schema';
 import { AppError, type AuthedContext, idSchema, nonEmpty, procedure } from '../rpc/core';
 import { classLabel, FORMER_STUDENT_EMAIL, notFound, requireMember, requireTeacher, sectionCode, studentsOf, teaches } from './access';
 import { visibleClassmatesByEmail } from './classes';
@@ -131,16 +131,19 @@ function follow(db: DB, postId: number, userId: number) {
 const followsSql = (userId: number) =>
   sql`(select count(*) from ${postFollows} where ${postFollows.postId} = ${posts.id} and ${postFollows.userId} = ${userId} and ${postFollows.following} = 1)`;
 
-// Who to tell about a new reply: followers still in the class who can still see the post.
+// Who to tell about a new reply: followers still in the class who can still see the post,
+// unless they muted replies in that class.
 function followersOf(db: DB, post: typeof posts.$inferSelect) {
   return db
     .select({ id: postFollows.userId })
     .from(postFollows)
     .innerJoin(enrollments, and(eq(enrollments.userId, postFollows.userId), eq(enrollments.classId, post.classId)))
+    .leftJoin(courseInfo, and(eq(courseInfo.userId, postFollows.userId), eq(courseInfo.classId, post.classId)))
     .where(
       and(
         eq(postFollows.postId, post.id),
         eq(postFollows.following, true),
+        or(isNull(courseInfo.muteReplies), eq(courseInfo.muteReplies, false)),
         post.visibility === 'class'
           ? undefined
           : or(

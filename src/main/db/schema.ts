@@ -308,6 +308,8 @@ export const courseInfo = sqliteTable(
     targetGrade: text('target_grade').notNull().default('A'),
     // ST1: whether this class's meetings switch study mode on.
     studyModeAuto: integer('study_mode_auto', { mode: 'boolean' }).notNull().default(true),
+    // G3: no notifications about replies in this class's threads.
+    muteReplies: integer('mute_replies', { mode: 'boolean' }).notNull().default(false),
   },
   (t) => [primaryKey({ columns: [t.userId, t.classId] })],
 );
