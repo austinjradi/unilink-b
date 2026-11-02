@@ -397,6 +397,11 @@ Final exam: during the exam period (40%)`;
     ]);
   });
 
+  it('leaves out sessions that only mention an exam', () => {
+    const lines = 'Review session for the final: Dec 3, no hand-in\nTutorial on the midterm, Oct 20\nMidterm exam Oct 22\nTutorial report due Oct 30';
+    expect(parseSyllabus(lines, 'Fall 2026').map((i) => i.title)).toEqual(['Midterm exam', 'Tutorial report']);
+  });
+
   it('puts January to May of a fall syllabus in the next year', () => {
     expect(parseSyllabus('Take-home exam due January 8', 'Fall 2026')[0].dueAt).toEqual(new Date(2027, 0, 8, 23, 59));
     expect(parseSyllabus('Lab 4 due Feb 30', 'Winter 2027')).toEqual([]);

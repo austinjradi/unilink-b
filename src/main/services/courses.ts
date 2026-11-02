@@ -1,3 +1,4 @@
+import { rm } from 'node:fs/promises';
 import { and, asc, eq, isNotNull, isNull, max, ne, sql, sum } from 'drizzle-orm';
 import { z } from 'zod';
 import { summarizeRecord } from '@shared/academics';
@@ -8,6 +9,7 @@ import { assessments, assessmentScores, classDetails, classes, classMeetings, co
 import { AppError, type AuthedContext, idSchema, nonEmpty, procedure } from '../rpc/core';
 import { canEditShared, classLabel, FORMER_STUDENT_EMAIL, notFound, professorsOf, requireMember, requireSharedEditor, requireTeacher, sectionCode, studentsOf, teaches } from './access';
 import { m, notify } from './notifications';
+import { storeAttachment } from './planner';
 
 // A5 in version B: everything that's the same for the whole section is entered once and
 // shared, wiki-style: any member can edit the course details, the weekly class times (A3)
@@ -181,6 +183,7 @@ export const coursesRouter = {
       professorEmail: shared?.professorEmail ?? '',
       officeHours: shared?.officeHours ?? '',
       location: shared?.location ?? '',
+      outlineName: shared?.outlineName ?? null,
       detailsEditedBy: shared?.updatedAt ? editorOf(ctx.db, shared.updatedById) : null,
       detailsEditedAt: shared?.updatedAt ?? null,
       notes: own?.notes ?? '',
@@ -204,6 +207,38 @@ export const coursesRouter = {
       .values({ classId, ...edit })
       .onConflictDoUpdate({ target: classDetails.classId, set: edit })
       .run();
+  }),
+
+  // A5: the course outline file, shared like the other details. A new one replaces the old.
+  attachOutline: procedure(z.object({ classId: idSchema, path: z.string() }), async ({ classId, path }, ctx) => {
+    requireSharedEditor(ctx.db, ctx.userId, classId);
+    const old = ctx.db.select({ path: classDetails.outlinePath }).from(classDetails).where(eq(classDetails.classId, classId)).get()?.path;
+    const stored = await storeAttachment(ctx, path);
+    if (old) await rm(old, { force: true });
+    const edit = { outlineName: stored.attachmentName, outlinePath: stored.attachmentPath, updatedById: ctx.userId, updatedAt: ctx.now() };
+    ctx.db.insert(classDetails).values({ classId, ...edit }).onConflictDoUpdate({ target: classDetails.classId, set: edit }).run();
+  }),
+
+  removeOutline: procedure(z.object({ classId: idSchema }), async ({ classId }, ctx) => {
+    requireSharedEditor(ctx.db, ctx.userId, classId);
+    const old = ctx.db.select({ path: classDetails.outlinePath }).from(classDetails).where(eq(classDetails.classId, classId)).get()?.path;
+    if (old) await rm(old, { force: true });
+    ctx.db.update(classDetails).set({ outlineName: null, outlinePath: null, updatedById: ctx.userId, updatedAt: ctx.now() }).where(eq(classDetails.classId, classId)).run();
+  }),
+
+  openOutline: procedure(z.object({ classId: idSchema }), async ({ classId }, ctx) => {
+    requireMember(ctx.db, ctx.userId, classId);
+    const path = ctx.db.select({ path: classDetails.outlinePath }).from(classDetails).where(eq(classDetails.classId, classId)).get()?.path;
+    if (!path) notFound('outline');
+    await ctx.platform.openPath(path);
+  }),
+
+  // A3: the outline's text, to look for dates in. null if it's not a kind UniLink can read.
+  outlineText: procedure(z.object({ classId: idSchema }), async ({ classId }, ctx) => {
+    requireMember(ctx.db, ctx.userId, classId);
+    const path = ctx.db.select({ path: classDetails.outlinePath }).from(classDetails).where(eq(classDetails.classId, classId)).get()?.path;
+    if (!path) notFound('outline');
+    return ctx.platform.readText(path).catch(() => null);
   }),
 
   // Private.

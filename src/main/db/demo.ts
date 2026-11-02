@@ -68,7 +68,21 @@ export const DEMO_PROFESSOR = { name: 'Daniel Ouellet', email: 'daniel.ouellet@m
 
 // Files live outside the database, so seeding can't store them; web/bridge.ts saves these.
 const HANDOUT_PATH = '/attachments/comp251-practice-set-5.txt';
+const OUTLINE_PATH = '/attachments/comp251-outline.txt';
 export const DEMO_HANDOUTS = [
+  {
+    path: OUTLINE_PATH,
+    text: `COMP 251: Algorithms and Data Structures. Course outline, Fall 2026
+
+Instructor: Prof. Daniel Ouellet. Office hours: Wednesdays 13:00 to 14:30.
+
+Schedule
+Quiz 5 (myCourses): Nov 24
+Practice set 6 due Dec 1 at 11:59 pm
+Review session for the final: Dec 3, no hand-in
+Reading week: no class Oct 9 to Oct 14
+`,
+  },
   {
     path: HANDOUT_PATH,
     text: `COMP 251 Practice set 5: shortest paths
@@ -109,9 +123,9 @@ export const demoEmail = (name: string) =>
 
 // Bumped when demo content is added; browsers with an older demo get the new part on next load.
 // 2: the classmates and sections in demoContent.ts. 3: their planned assignments follow the
-// section's graded items. 4: a professor teaching COMP 251.
+// section's graded items. 4: a professor teaching COMP 251. 5: their course outline.
 const SEED_KEY = 'demo_seed';
-const SEED_VERSION = '4';
+const SEED_VERSION = '5';
 const HOUR = 3_600_000;
 
 function hash(password: string) {
@@ -154,6 +168,10 @@ export function seedDemoData(db: DB) {
     seedSections(db, passwordHash);
   }
   seedProfessor(db, passwordHash);
+  db.update(classDetails)
+    .set({ outlineName: 'comp251-outline.txt', outlinePath: OUTLINE_PATH })
+    .where(and(eq(classDetails.classId, classId(db, 'COMP', '251', '001')), isNull(classDetails.outlinePath)))
+    .run();
   followSeededThreads(db);
   db.insert(appState)
     .values({ key: SEED_KEY, value: SEED_VERSION })

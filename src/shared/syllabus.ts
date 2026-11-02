@@ -81,6 +81,8 @@ const KINDS: [RegExp, SyllabusKind][] = [
   [/\b(assignment|homework|hw\d*|problem set|pset|project|projet|lab|labo|report|rapport|essay|paper|devoir|tp\d*|deliverable|milestone|presentation)\b/i, 'assignment'],
 ];
 
+const NOT_WORK = /\b(review session|séance de révision|tutorial|no class|pas de cours|no hand-in|office hours)\b/i;
+
 const WEIGHT = /\(?\b(\d{1,3}(?:[.,]\d+)?)\s*%\)?/;
 
 // The start and end year of a term like "Fall 2026" or "Winter 2027", for dates with no year.
@@ -106,6 +108,8 @@ export function parseSyllabus(text: string, term: string): SyllabusItem[] {
       }
     }
     if (!date) continue;
+    // A review session before the final isn't the final.
+    if (NOT_WORK.test(line) && !/\bdue\b|\bremise\b/i.test(line)) continue;
     const kind = KINDS.find(([re]) => re.test(line))?.[1] ?? 'other';
     // Lines with a date but nothing to hand in or write (holidays, readings) are skipped.
     if (kind === 'other' && !/\bdue\b|\bremise\b|\bdeadline\b/i.test(line)) continue;

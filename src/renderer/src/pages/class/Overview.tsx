@@ -3,7 +3,7 @@ import { ActionIcon, Box, Button, Grid, Group, Modal, Select, Stack, Text, Texta
 import { TimeInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { modals } from '@mantine/modals';
-import { IconFileImport, IconPlus, IconTrash, IconUsers } from '@tabler/icons-react';
+import { IconFileImport, IconPlus, IconTrash, IconUsers, IconPaperclip } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
 import dayjs from 'dayjs';
@@ -71,6 +71,12 @@ function CourseDetails({ classId, code, info }: { classId: number; code: string;
     },
   });
   const readOnly = !info.canEdit;
+  const openOutline = useAction(() => rpc.courses.openOutline({ classId }));
+  const attachOutline = useAction(async () => {
+    const file = await rpc.planner.chooseAttachment();
+    if (file) await rpc.courses.attachOutline({ classId, path: file.path });
+  });
+  const removeOutline = useAction(() => rpc.courses.removeOutline({ classId }));
   const save = useAction((v: typeof form.values) => rpc.courses.saveDetails({ classId, ...v }), {
     success: 'Course details saved for the whole section',
     onSuccess: (_d, v) => form.resetDirty(v),
@@ -88,6 +94,25 @@ function CourseDetails({ classId, code, info }: { classId: number; code: string;
             <TextInput label={t('Office hours')} placeholder={t('Tue 14:00–15:30, McConnell 110N')} readOnly={readOnly} {...form.getInputProps('officeHours')} />
             <TextInput label={t('Lecture location')} placeholder={t('Leacock 132')} readOnly={readOnly} {...form.getInputProps('location')} />
           </Group>
+          {(info.outlineName || !readOnly) && (
+            <Group gap="xs">
+              {info.outlineName && (
+                <Button size="xs" variant="light" leftSection={<IconPaperclip size={14} />} onClick={() => openOutline.mutate()} loading={openOutline.isPending}>
+                  {info.outlineName}
+                </Button>
+              )}
+              {!readOnly && (
+                <Button size="xs" variant="default" onClick={() => attachOutline.mutate()} loading={attachOutline.isPending}>
+                  {info.outlineName ? t('Replace the course outline') : t('Attach the course outline')}
+                </Button>
+              )}
+              {!readOnly && info.outlineName && (
+                <Button size="xs" variant="subtle" color="red" onClick={() => removeOutline.mutate()}>
+                  {t('Remove')}
+                </Button>
+              )}
+            </Group>
+          )}
           <Group justify="space-between">
             <Text size="xs" c="dimmed">
               {readOnly ? t('Your professor keeps these up to date.') : info.teaching ? t('Everyone in the section sees these.') : t('Anyone in the section can fill these in or fix them.')}

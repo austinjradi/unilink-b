@@ -852,6 +852,31 @@ describe('A3–A5 shared section info', () => {
     expect((await maya.api.courses.info({ classId })).meetingsEditedBy?.name).toBe('Leo');
   });
 
+  it('keeps a course outline with the section, and reads dates out of it', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const outsider = await student('Sam');
+    const file = join(tmpdir(), 'unilink-test-outline.txt');
+    await writeFile(file, 'Schedule\nAssignment 1 (10%) due Oct 20\n');
+
+    await maya.api.courses.attachOutline({ classId, path: file });
+    expect((await leo.api.courses.info({ classId })).outlineName).toBe('unilink-test-outline.txt');
+    expect(await leo.api.courses.outlineText({ classId })).toContain('Assignment 1 (10%) due Oct 20');
+    await expectCode(outsider.api.courses.outlineText({ classId }), 'FORBIDDEN');
+    await expectCode(outsider.api.courses.attachOutline({ classId, path: file }), 'FORBIDDEN');
+
+    // Picking a file directly: nothing chosen isn't an error, and an unreadable kind says so.
+    expect(await maya.api.calendar.readSyllabusFile()).toBeNull();
+    maya.ctx.platform.chooseFile = async () => file;
+    expect((await maya.api.calendar.readSyllabusFile())?.text).toContain('Assignment 1');
+    maya.ctx.platform.readText = async () => null;
+    await expectCode(maya.api.calendar.readSyllabusFile(), 'BAD_INPUT');
+
+    await leo.api.courses.removeOutline({ classId });
+    expect((await maya.api.courses.info({ classId })).outlineName).toBeNull();
+    await expectCode(maya.api.courses.outlineText({ classId }), 'NOT_FOUND');
+  });
+
   it('shares the grading scheme while keeping marks private', async () => {
     const { classId, people } = await classmates('Maya', 'Leo');
     const [maya, leo] = people;
@@ -1108,6 +1133,7 @@ describe('Professors', () => {
     await expectCode(maya.api.courses.saveDetails({ classId, professor: 'Someone', professorEmail: '', officeHours: '', location: '' }), 'FORBIDDEN');
     await expectCode(maya.api.courses.saveMeetings({ classId, meetings: [] }), 'FORBIDDEN');
     await expectCode(maya.api.courses.setSecondScheme({ classId, on: true }), 'FORBIDDEN');
+    await expectCode(maya.api.courses.removeOutline({ classId }), 'FORBIDDEN');
     expect(await maya.api.courses.info({ classId })).toMatchObject({ canEdit: false, teaching: false, managedBy: 'Ouellet' });
 
     await prof.api.courses.addAssessment(component);

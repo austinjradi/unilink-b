@@ -457,6 +457,15 @@ export const calendarRouter = {
     return { path: target, count: events.length };
   }),
 
+  // A3: the text of a syllabus file, to find its dates in. null if nothing was picked.
+  readSyllabusFile: procedure(z.void(), async (_input, ctx) => {
+    const path = await ctx.platform.chooseFile({ title: 'Choose your syllabus', filters: [{ name: 'Syllabus', extensions: ['pdf', 'txt', 'md'] }] });
+    if (!path) return null;
+    const text = await ctx.platform.readText(path).catch(() => null);
+    if (text == null) throw new AppError('UniLink can read PDF and text files. Copy the schedule out of this one and paste it instead.');
+    return { text };
+  }),
+
   // G2 ← myCourses: its calendar can be exported as .ics; upcoming events become deadlines.
   importIcs: procedure(z.object({ classId: idSchema.nullable() }), async ({ classId }, ctx) => {
     if (classId) requireMember(ctx.db, ctx.userId, classId);

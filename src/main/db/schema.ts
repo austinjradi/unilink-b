@@ -359,6 +359,9 @@ export const classDetails = sqliteTable('class_details', {
   professorEmail: text('professor_email').notNull().default(''),
   officeHours: text('office_hours').notNull().default(''),
   location: text('location').notNull().default(''),
+  // A5: the course outline, for the whole section to open.
+  outlineName: text('outline_name'),
+  outlinePath: text('outline_path'),
   updatedById: integer('updated_by_id').references(() => users.id, { onDelete: 'set null' }),
   updatedAt: timestamp('updated_at'),
 });

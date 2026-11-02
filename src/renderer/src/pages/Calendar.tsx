@@ -36,8 +36,7 @@ import {
   IconRefresh,
   IconSearch,
   IconTrash,
-  IconUpload,
-} from '@tabler/icons-react';
+  IconUpload, IconFileText } from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router';
@@ -739,6 +738,14 @@ export function SyllabusImport({ onDone, initialClassId = null }: { onDone: () =
   const scheme = useQuery({ queryKey: ['courses', 'assessments', classId], queryFn: () => rpc.courses.assessments({ classId: classId! }), enabled: classId != null });
   const deadlines = useQuery({ queryKey: ['calendar', 'deadlines'], queryFn: () => rpc.calendar.deadlines() });
   const cls = classes.data?.find((c) => c.id === classId);
+  const info = useQuery({ queryKey: ['courses', 'info', classId], queryFn: () => rpc.courses.info({ classId: classId! }), enabled: classId != null });
+  const fill = (read: string | null) => {
+    if (read == null) return;
+    setText(read);
+    setUnchecked(new Set());
+  };
+  const readFile = useAction(() => rpc.calendar.readSyllabusFile(), { onSuccess: (r) => fill(r?.text ?? null) });
+  const readOutline = useAction(() => rpc.courses.outlineText({ classId: classId! }), { onSuccess: fill });
 
   const found = cls ? parseSyllabus(text, cls.term) : [];
   const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -780,9 +787,19 @@ export function SyllabusImport({ onDone, initialClassId = null }: { onDone: () =
   return (
     <Stack>
       <Text size="sm" c="dimmed">
-        {t('Paste the schedule or the list of due dates from the course outline. Each line with a date and something to hand in or write becomes a date you can add.')}
+        {t('Read the course outline, or paste its schedule. Each line with a date and something to hand in or write becomes a date you can add.')}
       </Text>
       <ClassSelect value={classId} onChange={setClassId} />
+      <Group gap="xs">
+        {info.data?.outlineName && (
+          <Button size="xs" variant="light" leftSection={<IconFileText size={14} />} onClick={() => readOutline.mutate()} loading={readOutline.isPending}>
+            {t('Read {{name}}', { name: info.data.outlineName })}
+          </Button>
+        )}
+        <Button size="xs" variant="default" leftSection={<IconFileText size={14} />} onClick={() => readFile.mutate()} loading={readFile.isPending}>
+          {t('Choose a PDF or text file')}
+        </Button>
+      </Group>
       <Textarea
         label={t('Syllabus text')}
         placeholder={t('Assignment 1 (10%) due Sept 22 at 11:59 pm')}
