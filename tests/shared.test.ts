@@ -1,6 +1,6 @@
 import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { cgpaWith, finalIfRemainingAverages, letterFor, parseMark, summarize, termGpa } from '@shared/grades';
+import { bestFromName, cgpaWith, finalIfRemainingAverages, letterFor, markFromParts, parseMark, parseMarks, summarize, termGpa } from '@shared/grades';
 import { buildCalendar, parseCalendar } from '@shared/ics';
 import { noClassesOn } from '@shared/keyDates';
 import { isHidden, parseChatLink } from '@shared/links';
@@ -693,5 +693,56 @@ describe('ST2 free time around classes', () => {
       { weekday: 3, startTime: '08:30', endTime: '13:30' },
     ]);
     expect(minutes).toEqual([240, 75, 240, 60, 240, 240, 240]);
+  });
+});
+
+describe('A4 several marks in one component', () => {
+  it('reads them however they are typed', () => {
+    expect(parseMarks('8/10 9/10 75%')).toEqual({ marks: [80, 90, 75], unreadable: [] });
+    expect(parseMarks('8/10, 9/10; 70\n60')).toEqual({ marks: [80, 90, 70, 60], unreadable: [] });
+    expect(parseMarks('85,90,70')).toEqual({ marks: [85, 90, 70], unreadable: [] });
+    // One comma between digits is a French decimal.
+    expect(parseMarks('8,5/10 72,5')).toEqual({ marks: [85, 72.5], unreadable: [] });
+    expect(parseMarks('80 abc 7/0')).toEqual({ marks: [80], unreadable: ['abc', '7/0'] });
+    expect(parseMarks('   ')).toEqual({ marks: [], unreadable: [] });
+  });
+
+  it('reads "best 5 of 6" out of the name of a component', () => {
+    expect(bestFromName('Homework (best 5 of 6)')).toBe(5);
+    expect(bestFromName('Quizzes: best 8 out of 10')).toBe(8);
+    expect(bestFromName('Quiz (les 4 meilleurs sur 5)')).toBe(4);
+    expect(bestFromName('Best practices essay')).toBeNull();
+    expect(bestFromName('Midterm')).toBeNull();
+  });
+
+  it('averages them, counting only the best when the rest are dropped', () => {
+    expect(markFromParts([], null)).toBeNull();
+    expect(markFromParts([80, 90, 70], null)).toEqual({ score: 80, dropped: [] });
+    expect(markFromParts([80, 90, 70, 100, 40], 4)).toEqual({ score: 85, dropped: [40] });
+    expect(markFromParts([80, 90, 70], 2)).toEqual({ score: 85, dropped: [70] });
+    // Until there are more marks than that, they all count.
+    expect(markFromParts([80, 90], 4)).toEqual({ score: 85, dropped: [] });
+    expect(markFromParts([33, 34, 34], null)).toEqual({ score: 33.67, dropped: [] });
+  });
+});
+
+describe('ST3 weekly to-dos', () => {
+  // Monday 5 October 2026.
+  const parse = (text: string) => parseTaskDate(text, '2026-10-05');
+
+  it('reads "every friday", in English and French, from the next one on', () => {
+    expect(parse('Read the notes every friday')).toEqual({ title: 'Read the notes', dueDate: '2026-10-09', weekly: true });
+    expect(parse('Laundry each thurs')).toEqual({ title: 'Laundry', dueDate: '2026-10-08', weekly: true });
+    expect(parse('Lire les notes chaque vendredi')).toEqual({ title: 'Lire les notes', dueDate: '2026-10-09', weekly: true });
+    expect(parse('Lire les notes tous les vendredis')).toEqual({ title: 'Lire les notes', dueDate: '2026-10-09', weekly: true });
+    // On that very day, it starts today rather than next week.
+    expect(parse('Plan the week every monday')).toEqual({ title: 'Plan the week', dueDate: '2026-10-05', weekly: true });
+  });
+
+  it('leaves everything else as it was', () => {
+    expect(parse('every friday')).toEqual({ title: 'every friday', dueDate: null });
+    expect(parse('Every class counts')).toEqual({ title: 'Every class counts', dueDate: null });
+    expect(parse('Ask about every problem')).toEqual({ title: 'Ask about every problem', dueDate: null });
+    expect(parse('Read chapter 3 friday').weekly).toBeUndefined();
   });
 });

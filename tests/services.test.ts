@@ -666,6 +666,60 @@ describe('S4 discussion board', () => {
   });
 });
 
+describe('ST3 weekly to-dos', () => {
+  it('comes back the next week when checked off, and goes away if the check is taken back', async () => {
+    const { api } = await student('Maya');
+    // Clock: Monday 5 October 2026.
+    await api.todos.add({ title: 'Read notes', dueDate: '2026-10-09', classId: null, weekly: true });
+    const later = async () => (await api.todos.today()).later.map((t) => [t.title, t.due, t.weekly]);
+    expect(await later()).toEqual([['Read notes', '2026-10-09', true]]);
+    const [{ id }] = (await api.todos.today()).later;
+
+    await api.todos.setDone({ id, done: true });
+    await api.todos.setDone({ id, done: true });
+    expect(await later()).toEqual([['Read notes', '2026-10-16', true]]);
+
+    await api.todos.setDone({ id, done: false });
+    expect(await later()).toEqual([['Read notes', '2026-10-09', true]]);
+
+    // Weeks that went by are skipped: checked off a month late, the next is the one still to come.
+    clock = new Date(2026, 10, 2, 9);
+    await api.todos.setDone({ id, done: true });
+    expect((await later())[0]).toEqual(['Read notes', '2026-11-06', true]);
+
+    // Deleting it is how it stops; an undated one can't repeat.
+    const [next] = (await api.todos.today()).later;
+    await api.todos.remove({ id: next.id });
+    expect(await later()).toEqual([]);
+    await api.todos.add({ title: 'Someday', dueDate: null, classId: null, weekly: true });
+    const undated = (await api.todos.today()).today.find((t) => t.title === 'Someday')!;
+    expect(undated.weekly).toBe(false);
+    await api.todos.setDone({ id: undated.id, done: true });
+    expect((await api.todos.today()).later).toEqual([]);
+  });
+});
+
+describe('A4 several marks in one component', () => {
+  it('turns them into the mark, privately, until a single mark replaces them', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    await maya.api.courses.addAssessment({ classId, name: 'Quizzes', weight: 20, dueAt: null });
+    const [{ id }] = await maya.api.courses.assessments({ classId });
+
+    await maya.api.courses.setScoreParts({ id, marks: [80, 90, 70, 100, 40], best: 4 });
+    expect((await maya.api.courses.assessments({ classId }))[0]).toMatchObject({ score: 85, parts: { marks: [80, 90, 70, 100, 40], best: 4 } });
+    // It's an ordinary mark to everything else, and nobody else sees any of it.
+    expect((await leo.api.courses.assessments({ classId }))[0]).toMatchObject({ score: null, parts: null });
+
+    await maya.api.courses.setScore({ id, score: 88 });
+    expect((await maya.api.courses.assessments({ classId }))[0]).toMatchObject({ score: 88, parts: null });
+
+    await maya.api.courses.setScoreParts({ id, marks: [50], best: null });
+    await maya.api.courses.setScoreParts({ id, marks: [], best: null });
+    expect((await maya.api.courses.assessments({ classId }))[0]).toMatchObject({ score: null, parts: null });
+  });
+});
+
 describe('S3 finding a time', () => {
   const times = [new Date(2026, 9, 7, 18), new Date(2026, 9, 8, 18), new Date(2026, 9, 9, 18)];
 
@@ -681,6 +735,9 @@ describe('S3 finding a time', () => {
     expect(poll.options.map((o) => o.endsAt)).toEqual(times.map((time) => new Date(time.getTime() + 2 * 3_600_000)));
     expect((await maya.api.timePolls.list({ classId }))[0].mine).toBe(true);
     await expectCode(elsewhere.api.timePolls.list({ classId }), 'FORBIDDEN');
+    // Across all your sections, only the ones you're in.
+    expect((await leo.api.timePolls.list({ classId: null })).map((p) => [p.title, p.classLabel])).toEqual([['Midterm review', 'COMP 251-001']]);
+    expect(await elsewhere.api.timePolls.list({ classId: null })).toEqual([]);
     await expectCode(elsewhere.api.timePolls.vote({ optionId: poll.options[0].id, on: true }), 'FORBIDDEN');
 
     // Voting twice counts once, can be taken back, and never says who.

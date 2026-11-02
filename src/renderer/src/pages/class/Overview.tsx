@@ -232,6 +232,7 @@ function ComingUp({ classId, exam }: { classId: number; exam: ReturnType<typeof 
   const [importing, setImporting] = useState(false);
   const due = useQuery({ queryKey: ['calendar', 'upcoming', 60], queryFn: () => rpc.calendar.upcoming({ days: 60 }) });
   const sessions = useQuery({ queryKey: ['studySessions', classId], queryFn: () => rpc.studySessions.list({ classId }) });
+  const polls = useQuery({ queryKey: ['timePolls', classId], queryFn: () => rpc.timePolls.list({ classId }) });
   if (due.isPending || sessions.isPending) return null;
   const items = [
     ...(due.data ?? [])
@@ -282,6 +283,20 @@ function ComingUp({ classId, exam }: { classId: number; exam: ReturnType<typeof 
           {t('Nothing due and no study sessions planned yet.')}
         </Text>
       )}
+      {/* S3: a time still being worked out has no date to sort by. */}
+      {polls.data?.map((poll) => (
+        <UnstyledButton key={poll.id} className="clickable" px={6} py={4} mt={6} style={{ borderRadius: 8 }} onClick={() => navigate(`/classes/${classId}/sessions`)}>
+          <Group gap="sm" wrap="nowrap">
+            <Box w={9} h={9} style={{ flex: 'none', borderRadius: 9, background: `var(--mantine-color-${kindColor('session')}-4)` }} />
+            <Text size="sm" fw={700} style={{ flex: 1, minWidth: 0 }} truncate>
+              {t('When works for “{{title}}”?', { title: poll.title })}
+            </Text>
+            <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+              {poll.options.some((o) => o.voted) ? t('Answered') : t('Answer')}
+            </Text>
+          </Group>
+        </UnstyledButton>
+      ))}
       {/* A3: from the exam schedule (Calendar → Key dates). */}
       {exam && (
         <UnstyledButton className="clickable" px={6} py={4} mt={6} style={{ borderRadius: 8 }} onClick={() => navigate('/calendar')}>

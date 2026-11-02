@@ -20,14 +20,16 @@ function optionOf(db: DB, optionId: number) {
 }
 
 export const timePollsRouter = {
-  // Open polls with a time still to come. Votes from people who've left the section don't count.
-  list: procedure(z.object({ classId: idSchema }), ({ classId }, ctx) => {
-    requireMember(ctx.db, ctx.userId, classId);
+  // Open polls with a time still to come, in one section or all of yours. Votes from people who've
+  // left the section don't count.
+  list: procedure(z.object({ classId: idSchema.nullable() }), ({ classId }, ctx) => {
+    if (classId != null) requireMember(ctx.db, ctx.userId, classId);
+    const mine = ctx.db.select({ id: enrollments.classId }).from(enrollments).where(eq(enrollments.userId, ctx.userId));
     const polls = ctx.db
       .select({ poll: timePolls, hostName: users.name })
       .from(timePolls)
       .innerJoin(users, eq(timePolls.hostId, users.id))
-      .where(and(eq(timePolls.classId, classId), isNull(timePolls.closedAt)))
+      .where(and(classId != null ? eq(timePolls.classId, classId) : inArray(timePolls.classId, mine), isNull(timePolls.closedAt)))
       .orderBy(asc(timePolls.createdAt))
       .all();
     return polls.flatMap(({ poll, hostName }) => {
@@ -41,12 +43,14 @@ export const timePollsRouter = {
       const votes = ctx.db
         .select({ optionId: timePollVotes.optionId, userId: timePollVotes.userId })
         .from(timePollVotes)
-        .innerJoin(enrollments, and(eq(enrollments.userId, timePollVotes.userId), eq(enrollments.classId, classId)))
+        .innerJoin(enrollments, and(eq(enrollments.userId, timePollVotes.userId), eq(enrollments.classId, poll.classId)))
         .where(inArray(timePollVotes.optionId, options.map((o) => o.id)))
         .all();
       return [
         {
           id: poll.id,
+          classId: poll.classId,
+          classLabel: classLabel(ctx.db, poll.classId),
           title: poll.title,
           hostName,
           mine: poll.hostId === ctx.userId,

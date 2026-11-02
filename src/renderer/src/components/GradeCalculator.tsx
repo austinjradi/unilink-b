@@ -13,16 +13,18 @@ import {
   Switch,
   Table,
   Text,
+  Textarea,
   TextInput,
   Title,
+  Tooltip,
 } from '@mantine/core';
 import { DateTimePicker } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconCopy, IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
+import { IconCopy, IconListNumbers, IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { finalIfRemainingAverages, hasSecondScheme, letterFor, MCGILL_SCALE, minimumFor, parseMark, summarize } from '@shared/grades';
+import { bestFromName, finalIfRemainingAverages, hasSecondScheme, letterFor, markFromParts, MCGILL_SCALE, minimumFor, parseMark, parseMarks, summarize } from '@shared/grades';
 import { toDate } from '../lib/format';
 import { t } from '../lib/i18n';
 import { useAction } from '../lib/hooks';
@@ -42,6 +44,7 @@ export function GradeCalculator({ classId }: { classId: number }) {
   const items = useQuery({ queryKey: ['courses', 'assessments', classId], queryFn: () => rpc.courses.assessments({ classId }) });
   const info = useQuery({ queryKey: ['courses', 'info', classId], queryFn: () => rpc.courses.info({ classId }) });
   const [editing, setEditing] = useState<Assessment | 'new' | null>(null);
+  const [severalId, setSeveralId] = useState<number | null>(null);
   const remove = useAction((id: number) => rpc.courses.removeAssessment({ id }));
   const setScore = useAction((a: { id: number; score: number | null }) => rpc.courses.setScore(a));
   const setTarget = useAction((targetGrade: string) => rpc.courses.setTarget({ classId, targetGrade }));
@@ -158,6 +161,13 @@ export function GradeCalculator({ classId }: { classId: number }) {
                         w={120}
                         placeholder="—"
                         inputMode="text"
+                        rightSection={
+                          <Tooltip label={t('Several marks, like weekly quizzes')}>
+                            <ActionIcon variant="subtle" color="gray" size="sm" radius="xl" onClick={() => setSeveralId(a.id)} aria-label={t('Enter several marks for {{name}}', { name: a.name })}>
+                              <IconListNumbers size={14} />
+                            </ActionIcon>
+                          </Tooltip>
+                        }
                         defaultValue={a.score ?? ''}
                         aria-label={t('Your grade for {{name}}, as a percentage or a fraction like 44/50', { name: a.name })}
                         onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
@@ -169,6 +179,13 @@ export function GradeCalculator({ classId }: { classId: number }) {
                           } else if (score !== a.score) setScore.mutate({ id: a.id, score });
                         }}
                       />
+                      {a.parts && (
+                        <Text size="xs" c="dimmed" mt={2}>
+                          {a.parts.best != null && a.parts.best < a.parts.marks.length
+                            ? t('best {{best}} of {{count}} marks', { best: a.parts.best, count: a.parts.marks.length })
+                            : t('from {{count}} marks', { count: a.parts.marks.length })}
+                        </Text>
+                      )}
                     </Table.Td>
                     )}
                     {!teaching && (
@@ -308,6 +325,9 @@ export function GradeCalculator({ classId }: { classId: number }) {
           />
         )}
       </Modal>
+      <Modal opened={severalId != null} onClose={() => setSeveralId(null)} title={t('Marks for {{name}}', { name: list.find((a) => a.id === severalId)?.name ?? '' })}>
+        {severalId != null && list.some((a) => a.id === severalId) && <SeveralMarks assessment={list.find((a) => a.id === severalId)!} onDone={() => setSeveralId(null)} />}
+      </Modal>
     </Stack>
   );
 }
@@ -415,5 +435,56 @@ function ComponentForm({ classId, existing, two, teaching, onDone }: { classId: 
         </Group>
       </Stack>
     </form>
+  );
+}
+
+// A4: a component made of many small marks. They stay private like any other mark.
+function SeveralMarks({ assessment: a, onDone }: { assessment: Assessment; onDone: () => void }) {
+  const [text, setText] = useState(a.parts?.marks.join(' ') ?? '');
+  const [best, setBest] = useState<number | string>(a.parts?.best ?? bestFromName(a.name) ?? '');
+  const { marks, unreadable } = parseMarks(text);
+  const count = typeof best === 'number' && best >= 1 ? best : null;
+  const result = markFromParts(marks, count);
+  const save = useAction(() => rpc.courses.setScoreParts({ id: a.id, marks, best: count }), { onSuccess: onDone });
+  return (
+    <Stack>
+      <Textarea
+        label={t('Your marks')}
+        description={t('Percentages or fractions, with spaces between them.')}
+        placeholder="8/10 9/10 7.5/10"
+        autosize
+        minRows={2}
+        data-autofocus
+        value={text}
+        onChange={(e) => setText(e.currentTarget.value)}
+        error={unreadable.length ? t('Can’t read: {{marks}}', { marks: unreadable.join(', ') }) : undefined}
+      />
+      <NumberInput
+        label={t('Only the best ones count')}
+        description={t('Leave it empty if they all count. "Best 4 of 5 quizzes" is 4.')}
+        placeholder="—"
+        min={1}
+        max={60}
+        allowDecimal={false}
+        w={280}
+        value={best}
+        onChange={setBest}
+      />
+      <Text size="sm" aria-live="polite">
+        {result ? (
+          <>
+            {t('This counts as')} <b>{result.score}%</b>
+            {result.dropped.length > 0 && ` · ${t('not counted: {{marks}}', { marks: result.dropped.join(', ') })}`}
+          </>
+        ) : (
+          t('No marks yet.')
+        )}
+      </Text>
+      <Group justify="flex-end">
+        <Button onClick={() => save.mutate()} disabled={unreadable.length > 0} loading={save.isPending}>
+          {t('Save')}
+        </Button>
+      </Group>
+    </Stack>
   );
 }

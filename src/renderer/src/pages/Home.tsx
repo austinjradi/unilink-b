@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ActionIcon, Anchor, Badge, Button, Card, Checkbox, Collapse, Group, RingProgress, Stack, Text, TextInput, Tooltip } from '@mantine/core';
-import { IconChevronDown, IconChevronRight, IconListCheck, IconPlus, IconTrash } from '@tabler/icons-react';
+import { IconChevronDown, IconChevronRight, IconListCheck, IconPlus, IconRepeat, IconTrash } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { parseTaskDate } from '@shared/taskDate';
@@ -83,7 +83,7 @@ function TodayTasks() {
   const [showLater, setShowLater] = useState(false);
   // A date typed at the end ("Read chapter 3 friday") becomes the due date.
   const parsed = parseTaskDate(title, today);
-  const add = useAction(() => rpc.todos.add({ title: parsed.title, dueDate: parsed.dueDate, classId: null }), { onSuccess: () => setTitle('') });
+  const add = useAction(() => rpc.todos.add({ title: parsed.title, dueDate: parsed.dueDate, classId: null, weekly: !!parsed.weekly }), { onSuccess: () => setTitle('') });
 
   const items = data.data?.today ?? [];
   const done = items.filter((i) => i.done).length;
@@ -136,7 +136,9 @@ function TodayTasks() {
             />
             {parsed.dueDate && (
               <Text size="xs" c="dimmed" mt={4} pl={6}>
-                {t('“{{title}}”, due {{when}}', { title: parsed.title, when: dayLabel(parsed.dueDate, today) })}
+                {parsed.weekly
+                  ? t('“{{title}}”, every week, starting {{when}}', { title: parsed.title, when: dayLabel(parsed.dueDate, today) })
+                  : t('“{{title}}”, due {{when}}', { title: parsed.title, when: dayLabel(parsed.dueDate, today) })}
               </Text>
             )}
           </form>
@@ -196,6 +198,11 @@ function TaskRow({ item, today }: { item: TodayItem; today: string }) {
               {item.kind === 'task' ? t('missed') : t('due {{day}}', { day: dayLabel(item.due!, today).toLowerCase() })}
             </Badge>
           )}
+          {item.weekly && (
+            <Badge size="xs" variant="light" color="grape" leftSection={<IconRepeat size={10} />}>
+              {t('every week')}
+            </Badge>
+          )}
           {!item.overdue && item.kind === 'todo' && item.due && item.due !== today && (
             <Badge size="xs" variant="default">
               {dayLabel(item.due, today)}
@@ -205,7 +212,7 @@ function TaskRow({ item, today }: { item: TodayItem; today: string }) {
       </div>
       {item.kind === 'task' && !item.done && <FocusButton taskId={item.id} title={item.title} />}
       {item.kind === 'todo' && (
-        <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => remove.mutate()} aria-label={t('Delete task')}>
+        <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => remove.mutate()} aria-label={item.weekly ? t('Delete task and stop it repeating') : t('Delete task')}>
           <IconTrash size={13} />
         </ActionIcon>
       )}

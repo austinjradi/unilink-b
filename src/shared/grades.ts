@@ -150,6 +150,42 @@ export function cgpaWith(past: { gpa: number | null; credits: number }, term: { 
   return round2((past.gpa * past.credits + term.gpa * term.credits) / (past.credits + term.credits));
 }
 
+// A component made of several marks, like weekly quizzes: what they come to, counting only the
+// `best` highest when the syllabus drops the rest. Until there are more marks than that, all count.
+export function markFromParts(marks: number[], best: number | null): { score: number; dropped: number[] } | null {
+  if (!marks.length) return null;
+  const sorted = [...marks].sort((a, b) => b - a);
+  const counted = best != null && best < sorted.length ? sorted.slice(0, best) : sorted;
+  return {
+    score: round2(counted.reduce((sum, mark) => sum + mark, 0) / counted.length),
+    dropped: sorted.slice(counted.length),
+  };
+}
+
+// What a component's name says about it, like "Homework (best 5 of 6)".
+export function bestFromName(name: string): number | null {
+  const found = name.match(/\bbest\s+(\d{1,2})\s+(?:of|out of)\s+\d|\b(\d{1,2})\s+meilleure?s?\s+(?:sur|de)\s+\d/i);
+  return found ? Number(found[1] ?? found[2]) : null;
+}
+
+// Several marks as a student would type them: "8/10 9/10 7.5/10", with spaces, semicolons, line
+// breaks or commas between them. A comma inside one mark stays a decimal comma ("8,5").
+export function parseMarks(text: string): { marks: number[]; unreadable: string[] } {
+  const tokens = text
+    .split(/[\s;]+/)
+    .map((token) => token.replace(/,+$/, ''))
+    .filter(Boolean)
+    .flatMap((token) => ((token.match(/,/g)?.length ?? 0) > 1 ? token.split(',').filter(Boolean) : [token]));
+  const marks: number[] = [];
+  const unreadable: string[] = [];
+  for (const token of tokens) {
+    const mark = parseMark(token);
+    if (mark == null) unreadable.push(token);
+    else marks.push(mark);
+  }
+  return { marks, unreadable };
+}
+
 // A mark as a student would type it: "88", "88%" or "44/50". null for an empty box (no mark
 // yet), undefined for something that can't be read as a mark.
 export function parseMark(text: string): number | null | undefined {

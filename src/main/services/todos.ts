@@ -1,6 +1,6 @@
 import { and, asc, eq, gte, isNull, lte, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { parseYmd, ymd } from '@shared/dates';
+import { addDays, parseYmd, ymd } from '@shared/dates';
 import type { DB } from '../db/client';
 import { plannerAssignments, plannerTasks, todos } from '../db/schema';
 import { idSchema, nonEmpty, procedure } from '../rpc/core';
@@ -40,6 +40,7 @@ export interface TodayItem {
   done: boolean;
   // For planned work: how far along the whole assignment is, e.g. 2 of 5 done.
   progress: { done: number; total: number } | null;
+  weekly: boolean;
 }
 
 export const todosRouter = {
@@ -87,6 +88,7 @@ export const todosRouter = {
         overdue: !task.doneAt && task.scheduledFor < today,
         done: !!task.doneAt,
         progress: progress.get(task.assignmentId) ?? null,
+        weekly: false,
       }));
 
     const mine = ctx.db
@@ -106,6 +108,7 @@ export const todosRouter = {
           overdue: !t.doneAt && t.dueDate != null && t.dueDate < today,
           done: !!t.doneAt,
           progress: null,
+          weekly: t.repeatsWeekly,
         }),
       );
 
@@ -116,11 +119,12 @@ export const todosRouter = {
     };
   }),
 
-  add: procedure(z.object(todoFields), (fields, ctx) => {
+  add: procedure(z.object({ ...todoFields, weekly: z.boolean().default(false) }), ({ weekly, ...fields }, ctx) => {
     if (fields.classId) requireMember(ctx.db, ctx.userId, fields.classId);
+    // A to-do with no date has no next week to come back on.
     ctx.db
       .insert(todos)
-      .values({ ...fields, userId: ctx.userId })
+      .values({ ...fields, userId: ctx.userId, repeatsWeekly: weekly && fields.dueDate != null })
       .run();
   }),
 
@@ -130,13 +134,29 @@ export const todosRouter = {
     ctx.db.update(todos).set(fields).where(eq(todos.id, id)).run();
   }),
 
+  // Checking off a weekly to-do adds the next one, skipping any weeks already gone by; taking the
+  // check back takes that next one away again.
   setDone: procedure(z.object({ id: idSchema, done: z.boolean() }), ({ id, done }, ctx) => {
-    ownTodo(ctx.db, ctx.userId, id);
+    const todo = ownTodo(ctx.db, ctx.userId, id);
     ctx.db
       .update(todos)
       .set({ doneAt: done ? ctx.now() : null })
       .where(eq(todos.id, id))
       .run();
+    if (!todo.repeatsWeekly || !todo.dueDate) return;
+    const next = () => ctx.db.select().from(todos).where(and(eq(todos.previousId, id), eq(todos.userId, ctx.userId))).get();
+    if (!done) {
+      const following = next();
+      if (following && !following.doneAt) ctx.db.delete(todos).where(eq(todos.id, following.id)).run();
+    } else if (!next()) {
+      const today = ymd(ctx.now());
+      let dueDate = addDays(todo.dueDate, 7);
+      while (dueDate <= today) dueDate = addDays(dueDate, 7);
+      ctx.db
+        .insert(todos)
+        .values({ userId: ctx.userId, title: todo.title, classId: todo.classId, dueDate, repeatsWeekly: true, previousId: id })
+        .run();
+    }
   }),
 
   remove: procedure(z.object({ id: idSchema }), ({ id }, ctx) => {

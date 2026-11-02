@@ -70,7 +70,7 @@ export function collectMyData(db: DB, userId: number) {
       .where(eq(courseRecords.userId, userId))
       .all(),
     marks: db
-      .select({ classId: assessments.classId, assessment: assessments.name, weight: assessments.weight, score: assessmentScores.score })
+      .select({ classId: assessments.classId, assessment: assessments.name, weight: assessments.weight, parts: assessmentScores.parts, score: assessmentScores.score })
       .from(assessmentScores)
       .innerJoin(assessments, eq(assessmentScores.assessmentId, assessments.id))
       .where(eq(assessmentScores.userId, userId))

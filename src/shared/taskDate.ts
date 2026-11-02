@@ -27,9 +27,19 @@ const WEEKDAY = new RegExp(String.raw`${LEAD}\s+([a-zé]+)\.?(?:\s+(?:prochain|p
 const MONTH_DAY = new RegExp(String.raw`${LEAD}\s+${MONTH}\s+(\d{1,2})(?:st|nd|rd|th)?$`, 'i');
 const DAY_MONTH = new RegExp(String.raw`${LEAD}\s+(\d{1,2})(?:st|nd|rd|th|er)?\s+(?:of\s+|de\s+)?${MONTH}$`, 'i');
 const ISO = new RegExp(String.raw`${LEAD}\s+(\d{4}-\d{2}-\d{2})$`, 'i');
+const EVERY = /(?:^|\s+)(?:every|each|chaque|tous les|toutes les)\s+([a-zé]+)\.?$/i;
 
-export function parseTaskDate(text: string, today: string): { title: string; dueDate: string | null } {
+export function parseTaskDate(text: string, today: string): { title: string; dueDate: string | null; weekly?: true } {
   const input = text.trim();
+  // "Read the notes every friday": the next one, today if it's that day, and then each week.
+  const every = input.match(EVERY);
+  if (every) {
+    const word = every[1].toLowerCase();
+    const weekday = WEEKDAYS.find(([re]) => re.test(word) || re.test(word.replace(/s$/, '')))?.[1];
+    const title = input.slice(0, every.index).trim();
+    // With nothing before it, there's no to-do to repeat: it's just what they typed.
+    if (weekday != null) return title ? { title, dueDate: addDays(today, (weekday - parseYmd(today).getDay() + 7) % 7), weekly: true } : { title: input, dueDate: null };
+  }
   const found = (match: RegExpMatchArray, dueDate: string | null) => {
     const title = input.slice(0, match.index).trim();
     return title && dueDate ? { title, dueDate } : null;

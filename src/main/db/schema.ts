@@ -377,6 +377,8 @@ export const assessmentScores = sqliteTable(
       .references(() => assessments.id, { onDelete: 'cascade' }),
     userId: userRef(),
     score: real('score').notNull(),
+    // A component made of several marks, like weekly quizzes: `score` is what they come to.
+    parts: text('parts', { mode: 'json' }).$type<{ marks: number[]; best: number | null }>(),
   },
   (t) => [primaryKey({ columns: [t.assessmentId, t.userId] })],
 );
@@ -447,6 +449,9 @@ export const todos = sqliteTable(
     dueDate: text('due_date'), // "YYYY-MM-DD", or null for "anytime"
     classId: integer('class_id').references(() => classes.id, { onDelete: 'set null' }),
     doneAt: timestamp('done_at'),
+    // Checking it off adds the next week's. previousId says which one that came from, for undoing.
+    repeatsWeekly: integer('repeats_weekly', { mode: 'boolean' }).notNull().default(false),
+    previousId: integer('previous_id'),
     createdAt: createdAt(),
   },
   (t) => [index('todos_user_idx').on(t.userId)],

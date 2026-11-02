@@ -6,6 +6,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { Link, useParams } from 'react-router';
 import { JoinByCode, SessionForm, SessionInvite, SessionList, SessionsCard } from '../components/Sessions';
+import { TimePolls } from '../components/TimePolls';
 import { Empty, Loading, PageHeader } from '../components/ui';
 import { rpc } from '../lib/rpc';
 import { t } from '../lib/i18n';
@@ -41,6 +42,7 @@ export function SessionsPage() {
           </>
         }
       />
+      <TimePolls classId={null} />
       <SessionsCard>
         {mine.isPending ? (
           <Loading />

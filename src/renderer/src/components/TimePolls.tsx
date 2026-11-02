@@ -10,28 +10,30 @@ import { useAction } from '../lib/hooks';
 import { t } from '../lib/i18n';
 import { type Out, rpc } from '../lib/rpc';
 import { SessionForm } from './Sessions';
+import { Tag } from './ui';
 
 type Poll = Out<typeof rpc.timePolls.list>[number];
-type Picked = { optionId: number; title: string; startsAt: Date; endsAt: Date };
+type Picked = { optionId: number; classId: number; title: string; startsAt: Date; endsAt: Date };
 
 // S3: offer a few times before setting up a session, and let the section say which work.
-export function TimePolls({ classId }: { classId: number }) {
+// With no classId, the open questions in all of a student's sections.
+export function TimePolls({ classId }: { classId: number | null }) {
   const polls = useQuery({ queryKey: ['timePolls', classId], queryFn: () => rpc.timePolls.list({ classId }) });
   const [picked, setPicked] = useState<Picked | null>(null);
   if (!polls.data?.length) return null;
   return (
     <Stack gap="sm" mb="md">
       {polls.data.map((poll) => (
-        <PollCard key={poll.id} poll={poll} onPick={setPicked} />
+        <PollCard key={poll.id} poll={poll} showClass={classId == null} onPick={setPicked} />
       ))}
       <Modal opened={picked != null} onClose={() => setPicked(null)} title={t('Set up the study session')} size="lg">
-        {picked && <SessionForm classId={classId} existing={null} fromPoll={picked} onDone={() => setPicked(null)} />}
+        {picked && <SessionForm classId={picked.classId} existing={null} fromPoll={picked} onDone={() => setPicked(null)} />}
       </Modal>
     </Stack>
   );
 }
 
-function PollCard({ poll, onPick }: { poll: Poll; onPick: (picked: Picked) => void }) {
+function PollCard({ poll, showClass, onPick }: { poll: Poll; showClass: boolean; onPick: (picked: Picked) => void }) {
   const vote = useAction((v: { optionId: number; on: boolean }) => rpc.timePolls.vote(v));
   const remove = useAction(() => rpc.timePolls.remove({ pollId: poll.id }));
   const most = Math.max(...poll.options.map((o) => o.votes));
@@ -39,6 +41,11 @@ function PollCard({ poll, onPick }: { poll: Poll; onPick: (picked: Picked) => vo
     <Card padding="lg">
       <Group justify="space-between" align="flex-start" wrap="nowrap" mb="sm">
         <div style={{ minWidth: 0 }}>
+          {showClass && poll.classLabel && (
+            <Group mb={6}>
+              <Tag>{poll.classLabel}</Tag>
+            </Group>
+          )}
           <Title order={4}>{poll.title}</Title>
           <Text size="sm" c="dimmed">
             {poll.mine ? t('You asked when works. Pick a time once people have answered.') : t('{{name}} asks: which times work for you?', { name: poll.hostName })}
@@ -65,7 +72,7 @@ function PollCard({ poll, onPick }: { poll: Poll; onPick: (picked: Picked) => vo
                 {t('{{count}} can make it', { count: o.votes })}
               </Text>
               {poll.mine && (
-                <Button size="compact-xs" variant="light" onClick={() => onPick({ optionId: o.id, title: poll.title, startsAt: o.startsAt, endsAt: o.endsAt })}>
+                <Button size="compact-xs" variant="light" onClick={() => onPick({ optionId: o.id, classId: poll.classId, title: poll.title, startsAt: o.startsAt, endsAt: o.endsAt })}>
                   {t('Pick this time')}
                 </Button>
               )}

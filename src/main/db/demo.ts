@@ -1,6 +1,7 @@
 import { and, asc, count, eq, inArray, isNull, like, lt, sql } from 'drizzle-orm';
 import { addDays, atTime, CURRENT_TERM, TERMS, ymd } from '@shared/dates';
 import { GOAT_OPTIONS, type GoatConfig, type GoatPart } from '@shared/goat';
+import { markFromParts } from '@shared/grades';
 import { type Message, render } from '@shared/i18n';
 import { parseChatLink } from '@shared/links';
 import { PRONOUNS } from '@shared/validation';
@@ -130,7 +131,7 @@ export const demoEmail = (name: string) =>
 // section's graded items. 4: a professor teaching COMP 251. 5: their course outline. 6: a thread
 // with code in it and a reported post waiting for them, to show those off.
 const SEED_KEY = 'demo_seed';
-const SEED_VERSION = '8';
+const SEED_VERSION = '9';
 const HOUR = 3_600_000;
 
 function hash(password: string) {
@@ -181,6 +182,7 @@ export function seedDemoData(db: DB) {
     .run();
   seedShowcase(db);
   seedTimePoll(db);
+  seedSeveralMarks(db);
   followSeededThreads(db);
   db.insert(appState)
     .values({ key: SEED_KEY, value: SEED_VERSION })
@@ -518,6 +520,23 @@ function seedProfessor(db: DB, passwordHash: string) {
 
 // What a visitor wouldn't otherwise run into: a question with a code block and a link, and one
 // that's been reported, so the professor has something to moderate.
+// A4: Alex's homework in COMP 302, entered as several marks with the lowest dropped, once.
+function seedSeveralMarks(db: DB) {
+  const alex = db.select({ id: users.id }).from(users).where(eq(users.email, CORE_EMAILS.alex)).get()?.id;
+  const homework = db
+    .select({ id: assessments.id })
+    .from(assessments)
+    .where(and(eq(assessments.classId, classId(db, 'COMP', '302', '001')), like(assessments.name, 'Homework%')))
+    .get();
+  if (!alex || !homework) return;
+  const marks = [90, 70, 85, 100, 60, 95];
+  const best = 5;
+  db.insert(assessmentScores)
+    .values({ assessmentId: homework.id, userId: alex, score: markFromParts(marks, best)!.score, parts: { marks, best } })
+    .onConflictDoNothing()
+    .run();
+}
+
 // S3: Priya asks COMP 251 when works, so the "find a time" poll shows up with answers on it.
 function seedTimePoll(db: DB) {
   if (db.select({ id: timePolls.id }).from(timePolls).get()) return;

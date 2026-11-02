@@ -1,0 +1,1 @@
+ALTER TABLE `assessment_scores` ADD `parts` text;

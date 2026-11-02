@@ -82,7 +82,8 @@ The interface follows the team's wireframes in `A2Team.pdf`:
   profile card; the feed sorts by newest or most 🐐, and posts since your last visit to a class are marked New
   (counted on its course card).
 - **Grade Calculator:** a "You need at least X%" bubble and a scenarios table, and below them every class this term with a
-  projected term GPA and CGPA on McGill's scale.
+  projected term GPA and CGPA on McGill's scale. A component made of many small marks takes them all at once ("8/10 9/10 7/10"),
+  counting only the best ones if the syllabus drops the rest.
 - **Calendar & Planner:** Month, Week, Semester and Key dates views, with a chip per class to show or hide it. Pick any day to list everything on it; on phones
   the month shows a coloured dot per event. The Google Calendar export can include your planned tasks, as all-day events.
 - **Courses:** each class card shows the next lecture, the next thing due and unanswered questions; a class's
@@ -310,7 +311,7 @@ the next seven days (nothing if nothing is due; it can be turned off for desktop
 | Professors: who can change what, assignments, moderation | `services/access.ts` (`canEditShared`, `requireTeacher`), `services/assignments.ts`, `services/board.ts` |
 
 The database changes are migrations `0004_version_b` (new tables and columns), `0005_version_b_cleanup`
-(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows`, `0010_sign_in_limits`, `0011_second_grading_scheme`, `0012_weekly_sessions`, `0013_professors`, `0014_board_images`, `0015_mute_replies`, `0016_days_off`, `0017_post_reports`, `0018_course_outline`, `0019_cgpa_goal`, `0020_focus_on_task` and `0021_time_polls`.
+(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows`, `0010_sign_in_limits`, `0011_second_grading_scheme`, `0012_weekly_sessions`, `0013_professors`, `0014_board_images`, `0015_mute_replies`, `0016_days_off`, `0017_post_reports`, `0018_course_outline`, `0019_cgpa_goal`, `0020_focus_on_task`, `0021_time_polls`, `0022_several_marks` and `0023_weekly_todos`.
 
 ## Not built yet
 

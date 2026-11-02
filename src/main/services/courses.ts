@@ -3,7 +3,7 @@ import { and, asc, eq, isNotNull, isNull, max, ne, sql, sum } from 'drizzle-orm'
 import { z } from 'zod';
 import { summarizeRecord } from '@shared/academics';
 import { CURRENT_TERM, ymd } from '@shared/dates';
-import { MCGILL_SCALE, summarize } from '@shared/grades';
+import { markFromParts, MCGILL_SCALE, summarize } from '@shared/grades';
 import type { DB } from '../db/client';
 import { assessments, assessmentScores, classDetails, classes, classMeetings, courseInfo, courseRecords, courses, enrollments, users } from '../db/schema';
 import { AppError, type AuthedContext, idSchema, nonEmpty, procedure } from '../rpc/core';
@@ -123,6 +123,7 @@ export function gradedItems(db: DB, userId: number, classId: number) {
       position: assessments.position,
       addedById: assessments.userId,
       score: assessmentScores.score,
+      parts: assessmentScores.parts,
     })
     .from(assessments)
     .leftJoin(assessmentScores, and(eq(assessmentScores.assessmentId, assessments.id), eq(assessmentScores.userId, userId)))
@@ -357,9 +358,29 @@ export const coursesRouter = {
       ctx.db
         .insert(assessmentScores)
         .values({ assessmentId: id, userId: ctx.userId, score })
-        .onConflictDoUpdate({ target: [assessmentScores.assessmentId, assessmentScores.userId], set: { score } })
+        .onConflictDoUpdate({ target: [assessmentScores.assessmentId, assessmentScores.userId], set: { score, parts: null } })
         .run();
   }),
+
+  // A component made of several marks. Typing a single mark over it later replaces them.
+  setScoreParts: procedure(
+    z.object({ id: idSchema, marks: z.array(z.number().min(0).max(150)).max(60), best: z.number().int().min(1).max(60).nullable() }),
+    ({ id, marks, best }, ctx) => {
+      const row = sharedAssessment(ctx.db, ctx.userId, id);
+      if (teaches(ctx.db, ctx.userId, row.classId)) throw new AppError("Marks are students' own, so professors don't enter them here.");
+      const result = markFromParts(marks, best);
+      if (!result) {
+        ctx.db.delete(assessmentScores).where(and(eq(assessmentScores.assessmentId, id), eq(assessmentScores.userId, ctx.userId))).run();
+        return;
+      }
+      const values = { score: result.score, parts: { marks, best } };
+      ctx.db
+        .insert(assessmentScores)
+        .values({ assessmentId: id, userId: ctx.userId, ...values })
+        .onConflictDoUpdate({ target: [assessmentScores.assessmentId, assessmentScores.userId], set: values })
+        .run();
+    },
+  ),
 
   // Removing a component would erase classmates' marks, so it's only allowed until someone
   // else has one. A professor can still remove it: the scheme is theirs (the page warns them).
