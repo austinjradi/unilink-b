@@ -139,8 +139,13 @@ configuration: GitHub Pages, Netlify, Vercel, Cloudflare Pages, or any web serve
 - **Netlify / Vercel / Cloudflare Pages:** build command `npm run build`, output directory `dist`.
 - **Anywhere else:** run `npm run build` and upload the contents of `dist/`.
 
-The site needs HTTPS (or `localhost`) only for system notifications; everything else also works over plain
-HTTP, e.g. from a phone on the same network with `npm run dev -- --host`.
+The site needs HTTPS (or `localhost`) for system notifications, and to work offline and install to a home screen;
+everything else also works over plain HTTP, e.g. from a phone on the same network with `npm run dev -- --host`.
+
+**Offline:** since everything a visitor saves is already in their browser, the built site keeps working with no
+connection after one visit, and can be installed like an app (`public/manifest.webmanifest`). The service worker
+(`src/web/sw.js`, its file list filled in by `vite.config.ts`) always tries the network for the page itself, so a
+new deploy takes over on the next load. A tab left open across a deploy reloads itself if it needs a file that's gone.
 
 ## Stack
 
