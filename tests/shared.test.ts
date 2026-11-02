@@ -1,3 +1,4 @@
+import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { cgpaWith, finalIfRemainingAverages, letterFor, summarize, termGpa } from '@shared/grades';
 import { buildCalendar, parseCalendar } from '@shared/ics';
@@ -13,6 +14,7 @@ import { parseSyllabus } from '@shared/syllabus';
 import { findParts, minutesForParts } from '@shared/assignment';
 import { clashes, groupMeetings } from '@shared/meetings';
 import { BACKUP_APP, readBackup, writeBackup } from '@shared/backup';
+import { docxText, docxXmlToText } from '@shared/docx';
 import { parsePost } from '@shared/postText';
 import { parseTaskDate } from '@shared/taskDate';
 import { keywords, similarity } from '@shared/similar';
@@ -596,5 +598,47 @@ describe('dates typed in a to-do (ST3)', () => {
     for (const text of ['Renew library books', "Ask about Monday's class", 'Friday', 'Read chapter 3', 'Pay fees feb 31', 'Meet at 5 pm', 'Buy a mar bar', 'Call Sam', 'Swim in the sun', 'Get wed', 'Vue sur la mer', 'Text Dim', 'Mon']) {
       expect(read(text)).toEqual({ title: text, dueDate: null });
     }
+  });
+});
+
+describe('Word documents', () => {
+  // A minimal zip with one file in it, as a .docx is.
+  function zip(name: string, content: string, compressed = true) {
+    const data = compressed ? deflateRawSync(Buffer.from(content)) : Buffer.from(content);
+    const nameBytes = Buffer.from(name);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(compressed ? 8 : 0, 8);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt16LE(nameBytes.length, 26);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(compressed ? 8 : 0, 10);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt16LE(nameBytes.length, 28);
+    const end = Buffer.alloc(22);
+    end.writeUInt32LE(0x06054b50, 0);
+    end.writeUInt16LE(1, 10);
+    end.writeUInt32LE(30 + nameBytes.length + data.length, 16);
+    return new Uint8Array(Buffer.concat([local, nameBytes, data, central, nameBytes, end]));
+  }
+  const document = '<w:document><w:body><w:p><w:r><w:t>Question 1: Sorting &amp; searching (20 points)</w:t></w:r></w:p><w:p><w:r><w:t>Question 2</w:t><w:tab/><w:t>Graphs</w:t></w:r></w:p></w:body></w:document>';
+
+  it('reads the paragraphs out of a .docx, compressed or not', async () => {
+    const text = 'Question 1: Sorting & searching (20 points)\nQuestion 2\tGraphs\n';
+    expect(await docxText(zip('word/document.xml', document))).toBe(text);
+    expect(await docxText(zip('word/document.xml', document, false))).toBe(text);
+    // So the planner can find its problems, like in a PDF.
+    expect(findParts(text).map((p) => p.title)).toEqual(['Question 1: Sorting & searching', 'Question 2: Graphs']);
+  });
+
+  it('turns Word markup into plain text', () => {
+    expect(docxXmlToText('<w:p><w:t>a &lt; b &#233; &#xe9; &nope;</w:t><w:br/><w:t>c</w:t></w:p>')).toBe('a < b é é &nope;\nc\n');
+  });
+
+  it('says so when it is not a readable document', async () => {
+    expect(await docxText(new Uint8Array([1, 2, 3]))).toBeNull();
+    expect(await docxText(new TextEncoder().encode('not a zip at all, just some long enough text to look at'))).toBeNull();
+    expect(await docxText(zip('something/else.xml', document))).toBeNull();
   });
 });

@@ -326,7 +326,7 @@ export const plannerRouter = {
   }),
 
   // The problems in a file the student just picked, to offer as tasks. null when it isn't a
-  // kind of file UniLink can read (PDFs and plain text are).
+  // kind of file UniLink can read (PDFs, Word documents and plain text are).
   readParts: procedure(z.object({ path: z.string() }), async ({ path }, ctx) => {
     const text = await ctx.platform.readText(path).catch(() => null);
     return text == null ? null : findParts(text);

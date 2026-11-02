@@ -459,10 +459,10 @@ export const calendarRouter = {
 
   // A3: the text of a syllabus file, to find its dates in. null if nothing was picked.
   readSyllabusFile: procedure(z.void(), async (_input, ctx) => {
-    const path = await ctx.platform.chooseFile({ title: 'Choose your syllabus', filters: [{ name: 'Syllabus', extensions: ['pdf', 'txt', 'md'] }] });
+    const path = await ctx.platform.chooseFile({ title: 'Choose your syllabus', filters: [{ name: 'Syllabus', extensions: ['pdf', 'docx', 'txt', 'md'] }] });
     if (!path) return null;
     const text = await ctx.platform.readText(path).catch(() => null);
-    if (text == null) throw new AppError('UniLink can read PDF and text files. Copy the schedule out of this one and paste it instead.');
+    if (text == null) throw new AppError('UniLink can read PDF, Word and text files. Copy the schedule out of this one and paste it instead.');
     return { text };
   }),
 

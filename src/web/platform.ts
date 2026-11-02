@@ -1,5 +1,6 @@
 import { notifications } from '@mantine/notifications';
 import type { Platform } from '../main/rpc/core';
+import { docxText } from '../shared/docx';
 import { addPickedFile, download, readBlob } from './node/fs';
 import { basename } from './node/path';
 
@@ -84,6 +85,7 @@ export const platform: Platform = {
   async readText(path) {
     const blob = await readBlob(path);
     if (blob.type === 'application/pdf' || /\.pdf$/i.test(path)) return pdfText(blob);
+    if (/\.docx$/i.test(path)) return docxText(new Uint8Array(await blob.arrayBuffer()));
     return blob.type.startsWith('text/') || TEXT_FILE.test(path) ? blob.text() : null;
   },
 

@@ -202,7 +202,7 @@ function AssignmentForm({ classId, existing, onDone }: { classId: number; existi
           )}
         </Group>
         <Text size="xs" c="dimmed">
-          {t('Students can read the numbered problems in a PDF or text handout when they plan it.')}
+          {t('Students can read the numbered problems in a PDF, Word or text handout when they plan it.')}
         </Text>
         <Group justify="flex-end">
           <Button type="submit" loading={save.isPending}>

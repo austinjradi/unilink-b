@@ -31,7 +31,7 @@ export interface Platform {
   chooseFile(options: { title: string; filters?: FileFilter[] }): Promise<string | null>;
   chooseSaveLocation(options: { title: string; defaultPath: string; filters?: FileFilter[] }): Promise<string | null>;
   openPath(path: string): Promise<void>;
-  // ST2: the text of a picked document (PDF or plain text), or null for kinds it can't read.
+  // ST2: the text of a picked document (PDF, Word or plain text), or null for kinds it can't read.
   readText(path: string): Promise<string | null>;
   // S4: a URL the page can show a stored file at.
   fileUrl(path: string): Promise<string>;

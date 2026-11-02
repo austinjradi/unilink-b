@@ -500,7 +500,7 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
           )}
           {read.data === null && (
             <Text size="xs" c="dimmed" mt={6}>
-              {t('UniLink can find the problems in PDF and text files. Split this one below.')}
+              {t('UniLink can find the problems in PDF, Word and text files. Split this one below.')}
             </Text>
           )}
           {found && found.length > 0 && (

@@ -797,7 +797,7 @@ export function SyllabusImport({ onDone, initialClassId = null }: { onDone: () =
           </Button>
         )}
         <Button size="xs" variant="default" leftSection={<IconFileText size={14} />} onClick={() => readFile.mutate()} loading={readFile.isPending}>
-          {t('Choose a PDF or text file')}
+          {t('Choose a PDF, Word or text file')}
         </Button>
       </Group>
       <Textarea
