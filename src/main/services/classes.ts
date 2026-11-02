@@ -248,7 +248,8 @@ export const classesRouter = {
       throw new AppError("You're already in {{code}}. Switch sections instead.", 'CONFLICT', { code: current.code });
     }
     ctx.db.insert(enrollments).values({ userId: ctx.userId, classId }).run();
-    if (professor) {
+    // A co-teacher joining doesn't take the name off the course details.
+    if (professor && professorsOf(ctx.db, classId).length === 1) {
       const me = ctx.db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, ctx.userId)).get()!;
       const edit = { professor: `Prof. ${me.name}`, professorEmail: me.email, updatedById: ctx.userId, updatedAt: ctx.now() };
       ctx.db.insert(classDetails).values({ classId, ...edit }).onConflictDoUpdate({ target: classDetails.classId, set: edit }).run();

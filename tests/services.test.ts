@@ -1081,6 +1081,16 @@ describe('Professors', () => {
     expect(await prof.courses.info({ classId: first })).toMatchObject({ professor: 'Prof. Ouellet', professorEmail: 'ouellet@mcgill.ca', teaching: true, canEdit: true });
   });
 
+  it('lets a co-teacher join without replacing the first professor on the details', async () => {
+    const { classId } = await taught();
+    const second = await professor('Khoury');
+    await second.api.classes.join({ classId });
+    expect(await second.api.courses.info({ classId })).toMatchObject({ professor: 'Prof. Ouellet', teaching: true, canEdit: true, managedBy: 'Ouellet, Khoury' });
+    // Either can leave: the other still runs the section.
+    await second.api.classes.leave({ classId });
+    expect((await second.api.classes.get({ classId })).professors.map((p) => p.name)).toEqual(['Ouellet']);
+  });
+
   it('is public to the section, and can be picked as a post audience', async () => {
     const { classId, prof, maya } = await taught();
     expect((await maya.api.classes.classmates({ classId })).map((c) => [c.name, c.role])).toEqual([['Ouellet', 'professor']]);

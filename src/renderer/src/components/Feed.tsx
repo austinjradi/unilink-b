@@ -915,7 +915,7 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
           <Text size="sm">{p.canModerate ? t("You locked this thread, so students can't reply. You still can.") : t('The professor locked this thread.')}</Text>
         </Group>
       )}
-      {(!p.lockedAt || p.canModerate) && <ReplyBox postId={postId} isQuestion={isQuestion} />}
+      {(!p.lockedAt || p.canModerate) && <ReplyBox key={postId} postId={postId} isQuestion={isQuestion} />}
       {p.replies.map((r) => (
         <ReplyItem key={r.id} reply={r} postId={postId} canAccept={p.mine && isQuestion && !p.deletedAt} canModerate={p.canModerate} />
       ))}
