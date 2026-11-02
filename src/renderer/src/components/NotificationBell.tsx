@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { ActionIcon, Anchor, Box, Button, Group, Indicator, Popover, ScrollArea, Stack, Text, UnstyledButton } from '@mantine/core';
+import { ActionIcon, Anchor, Box, Button, Group, Indicator, Popover, ScrollArea, SegmentedControl, Stack, Text, UnstyledButton } from '@mantine/core';
 import { IconBell } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
-import { fromNow } from '../lib/format';
+import { ymd } from '@shared/dates';
+import { dayLabel, fromNow } from '../lib/format';
 import { t, tm } from '../lib/i18n';
 import { useAction } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
@@ -16,6 +17,11 @@ export function NotificationBell() {
   const markRead = useAction((id: number) => rpc.notifications.markRead({ id }));
   const markAll = useAction(() => rpc.notifications.markAllRead());
   const unread = list.data?.unread ?? 0;
+  const [onlyUnread, setOnlyUnread] = useState(false);
+  const items = (list.data?.items ?? []).filter((n) => !onlyUnread || !n.readAt);
+  // Newest first, under a heading for each day.
+  const today = ymd(new Date());
+  const days = [...new Set(items.map((n) => ymd(n.createdAt)))];
 
   return (
     <Popover opened={opened} onChange={setOpened} position="bottom-end" width="min(380px, calc(100vw - 16px))" shadow="md">
@@ -33,10 +39,29 @@ export function NotificationBell() {
             {t('Mark all read')}
           </Button>
         </Group>
+        {(list.data?.items.length ?? 0) > 0 && (
+          <SegmentedControl
+            size="xs"
+            fullWidth
+            mx="md"
+            mt="xs"
+            value={onlyUnread ? 'unread' : 'all'}
+            onChange={(v) => setOnlyUnread(v === 'unread')}
+            data={[
+              { value: 'all', label: t('All') },
+              { value: 'unread', label: t('Unread ({{count}})', { count: unread }) },
+            ]}
+            aria-label={t('Which notifications to show')}
+          />
+        )}
         <ScrollArea.Autosize mah={440}>
-          {list.data?.items.length ? (
+          {items.length ? (
             <Stack gap={0}>
-              {list.data.items.map((n) => (
+              {days.flatMap((day) => [
+                <Text key={day} size="xs" fw={800} c="dimmed" tt="uppercase" px="md" pt="sm" pb={2}>
+                  {dayLabel(day, today)}
+                </Text>,
+                ...items.filter((n) => ymd(n.createdAt) === day).map((n) => (
                 <UnstyledButton
                   key={n.id}
                   className="clickable"
@@ -65,7 +90,8 @@ export function NotificationBell() {
                     </div>
                   </Group>
                 </UnstyledButton>
-              ))}
+                )),
+              ])}
             </Stack>
           ) : (
             <Text c="dimmed" size="sm" ta="center" py="xl">
