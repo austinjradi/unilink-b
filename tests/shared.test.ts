@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { finalIfRemainingAverages, letterFor, summarize } from '@shared/grades';
 import { buildCalendar, parseCalendar } from '@shared/ics';
+import { noClassesOn } from '@shared/keyDates';
 import { isHidden, parseChatLink } from '@shared/links';
 import { DEFAULT_WEEKLY_MINUTES, minutesOn, planTasks, type PlannableTask, weeklyMinutes } from '@shared/planner';
 import { passwordProblems } from '@shared/validation';
@@ -190,6 +191,19 @@ describe('iCalendar (G2)', () => {
     const ics = buildCalendar([{ uid: 'break@unilink', title: 'Fall reading break', start: new Date(2026, 9, 9), end: new Date(2026, 9, 14), allDay: true }], 'America/Toronto');
     expect(ics).toContain('DTSTART;VALUE=DATE:20261009');
     expect(ics).toContain('DTEND;VALUE=DATE:20261015');
+  });
+
+  it('leaves breaks out of weekly class times', () => {
+    const start = new Date(2026, 8, 2, 10, 5);
+    const ics = buildCalendar(
+      [{ uid: 'c@unilink', title: 'COMP 251-001', start, end: new Date(2026, 8, 2, 11, 25), weekly: { until: new Date(2026, 11, 4, 23, 59), except: [new Date(2026, 9, 14, 10, 5)] } }],
+      'America/Toronto',
+    );
+    expect(ics).toContain('RRULE:FREQ=WEEKLY;UNTIL=');
+    expect(ics).toContain('EXDATE;TZID=America/Toronto:20261014T100500');
+    expect(noClassesOn('2026-10-12')?.title).toBe('Fall reading break');
+    expect(noClassesOn('2026-09-07')?.title).toBe('Labour Day, no classes');
+    expect(noClassesOn('2026-09-08')).toBeNull();
   });
 
   it('round-trips events, escaping and folding long lines', () => {

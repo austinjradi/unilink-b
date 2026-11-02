@@ -8,7 +8,8 @@ export interface IcsEvent {
   description?: string;
   location?: string;
   // Weekly recurrence for class times.
-  weekly?: { until: Date };
+  // Repeats every week until `until`, except on the `except` dates (each at the start time).
+  weekly?: { until: Date; except?: Date[] };
   // Whole days (key dates like a reading break): from start's day to end's day, inclusive.
   allDay?: boolean;
 }
@@ -67,6 +68,7 @@ export function buildCalendar(events: IcsEvent[], timeZone: string): string {
     if (e.description) lines.push(`DESCRIPTION:${escapeText(e.description)}`);
     if (e.location) lines.push(`LOCATION:${escapeText(e.location)}`);
     if (e.weekly) lines.push(`RRULE:FREQ=WEEKLY;UNTIL=${utcStamp(e.weekly.until)}`);
+    if (e.weekly?.except?.length) lines.push(`EXDATE;TZID=${timeZone}:${e.weekly.except.map(localStamp).join(',')}`);
     lines.push('END:VEVENT');
   }
   lines.push('END:VCALENDAR');

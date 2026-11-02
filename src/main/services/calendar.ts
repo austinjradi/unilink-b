@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { addDays, atTime, eachDay, parseYmd, termRange, ymd } from '@shared/dates';
 import { translate } from '@shared/i18n';
 import { buildCalendar, type IcsEvent, parseCalendar } from '@shared/ics';
-import { finalExamFor, KEY_DATES } from '@shared/keyDates';
+import { finalExamFor, KEY_DATES, noClassesOn } from '@shared/keyDates';
 import type { DB } from '../db/client';
 import {
   classes,
@@ -114,12 +114,12 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
   const labelOf = (id: number | null) => (id == null ? null : (label.get(id) ?? null));
   const events: CalendarEvent[] = [];
 
-  // Weekly class times, only within the class's term.
+  // Weekly class times, only within the class's term and not on breaks or holidays.
   const days = eachDay(ymd(from), ymd(new Date(to.getTime() - 1)));
   for (const { meeting: m, term } of myMeetings(db, userId)) {
     const range = termRange(term);
     for (const day of days) {
-      if (parseYmd(day).getDay() !== m.weekday || day < range.start || day > range.end) continue;
+      if (parseYmd(day).getDay() !== m.weekday || day < range.start || day > range.end || noClassesOn(day)) continue;
       events.push({
         key: `class-${m.id}-${day}`,
         kind: 'class',
@@ -414,13 +414,17 @@ export const calendarRouter = {
       const range = termRange(term);
       let first = range.start;
       while (parseYmd(first).getDay() !== m.weekday) first = addDays(first, 1);
+      // The weeks that fall on a break or holiday are left out.
+      const skipped = eachDay(first, range.end)
+        .filter((day) => parseYmd(day).getDay() === m.weekday && noClassesOn(day))
+        .map((day) => atTime(day, m.startTime));
       events.push({
         uid: `class-${m.id}@unilink`,
         title: label.get(m.classId) ?? 'Class',
         start: atTime(first, m.startTime),
         end: atTime(first, m.endTime),
         location: m.location,
-        weekly: { until: atTime(range.end, '23:59') },
+        weekly: { until: atTime(range.end, '23:59'), except: skipped },
       });
     }
 

@@ -91,5 +91,6 @@ export const KIND_COLORS: Record<string, string> = {
   final: 'red',
   key: 'yellow',
   break: 'yellow',
+  holiday: 'yellow',
   milestone: 'yellow',
 };

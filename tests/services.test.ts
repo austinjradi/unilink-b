@@ -695,6 +695,11 @@ describe('A3–A5 shared section info', () => {
     const own = <T extends { kind: string; detail: string }>(events: T[]) => events.filter((e) => e.kind !== 'key' && e.detail !== 'key');
     expect(own(await leo.api.calendar.range(week)).map((e) => `${e.kind}:${e.title}`)).toEqual(['class:COMP 251-001', 'class:COMP 251-001']);
     expect(own(await sam.api.calendar.range(week))).toEqual([]);
+    // No class on the reading break (Oct 9–14) or Labour Day.
+    const classDays = async (from: string, to: string) =>
+      (await leo.api.calendar.range({ from, to })).filter((e) => e.kind === 'class').map((e) => e.start.getDate());
+    expect(await classDays('2026-10-12', '2026-10-18')).toEqual([]);
+    expect(await classDays('2026-09-07', '2026-09-13')).toEqual([9]);
     const info = await leo.api.courses.info({ classId });
     expect(info).toMatchObject({ professor: 'Prof. Alberini', notes: '', detailsEditedBy: { name: 'Maya', former: false }, meetingsEditedBy: { name: 'Maya', former: false } });
 

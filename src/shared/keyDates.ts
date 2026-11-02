@@ -6,7 +6,8 @@
 // approximate. The exam schedule is a SAMPLE: McGill publishes the real one per course
 // during the term (mcgill.ca/exams).
 
-export type KeyDateType = 'deadline' | 'milestone' | 'break';
+// Breaks and holidays have no classes; weekly class times skip them.
+export type KeyDateType = 'deadline' | 'milestone' | 'break' | 'holiday';
 
 export interface KeyDate {
   term: string;
@@ -20,6 +21,7 @@ export interface KeyDate {
 
 export const KEY_DATES: KeyDate[] = [
   { term: 'Fall 2026', type: 'milestone', title: 'Classes start', date: '2026-08-31' },
+  { term: 'Fall 2026', type: 'holiday', title: 'Labour Day, no classes', date: '2026-09-07' },
   { term: 'Fall 2026', type: 'deadline', title: 'Course add/drop deadline', date: '2026-09-15' },
   { term: 'Fall 2026', type: 'deadline', title: 'Last day to withdraw with a refund', date: '2026-09-22' },
   { term: 'Fall 2026', type: 'break', title: 'Fall reading break', date: '2026-10-09', end: '2026-10-14' },
@@ -32,11 +34,17 @@ export const KEY_DATES: KeyDate[] = [
   { term: 'Winter 2027', type: 'deadline', title: 'Last day to withdraw with a refund', date: '2027-01-26', approximate: true },
   { term: 'Winter 2027', type: 'break', title: 'Winter reading break', date: '2027-03-01', end: '2027-03-05' },
   { term: 'Winter 2027', type: 'deadline', title: 'Last day to withdraw (W, no refund)', date: '2027-03-09', approximate: true },
+  { term: 'Winter 2027', type: 'holiday', title: 'Good Friday, no classes', date: '2027-03-26' },
+  { term: 'Winter 2027', type: 'holiday', title: 'Easter Monday, no classes', date: '2027-03-29' },
   { term: 'Winter 2027', type: 'milestone', title: 'Last day of classes', date: '2027-04-14' },
   { term: 'Winter 2027', type: 'break', title: 'Final exams', date: '2027-04-16', end: '2027-04-30' },
 ];
 
 export const keyDatesFor = (term: string) => KEY_DATES.filter((d) => d.term === term);
+
+// The break or holiday that cancels classes on `day` ("YYYY-MM-DD"), if any.
+export const noClassesOn = (day: string) =>
+  KEY_DATES.find((d) => (d.type === 'break' || d.type === 'holiday') && d.date <= day && day <= (d.end ?? d.date)) ?? null;
 
 // First and last day of classes, when the key dates have them.
 export function teachingPeriod(term: string): { start: string; end: string } | null {

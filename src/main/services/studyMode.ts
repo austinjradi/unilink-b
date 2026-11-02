@@ -1,6 +1,7 @@
 import { and, eq, gte, isNull, lt } from 'drizzle-orm';
 import { z } from 'zod';
 import { addDays, atTime, parseYmd, termRange, ymd } from '@shared/dates';
+import { noClassesOn } from '@shared/keyDates';
 import { type FocusWindow, studyModeStatus } from '@shared/studyMode';
 import type { DB } from '../db/client';
 import {
@@ -61,7 +62,7 @@ function focusWindows(db: DB, userId: number, now: Date): FocusWindow[] {
       if (auto === false) continue;
       const range = termRange(term);
       for (const day of days) {
-        if (parseYmd(day).getDay() !== m.weekday || day < range.start || day > range.end) continue;
+        if (parseYmd(day).getDay() !== m.weekday || day < range.start || day > range.end || noClassesOn(day)) continue;
         windows.push({ start: atTime(day, m.startTime), end: atTime(day, m.endTime), reason: 'class', label: code });
       }
     }
