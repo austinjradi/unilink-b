@@ -392,8 +392,9 @@ export const calendarRouter = {
     const now = ctx.now();
     const horizon = new Date(now.getTime() + 365 * 86_400_000);
     const locale = ctx.db.select({ locale: users.locale }).from(users).where(eq(users.id, ctx.userId)).get()?.locale ?? 'en';
+    // Key dates that span days go out once each, as all-day events (below).
     const events: IcsEvent[] = collect(ctx.db, ctx.userId, now, horizon)
-      .filter((e) => e.kind !== 'class' && e.kind !== 'task')
+      .filter((e) => e.kind !== 'class' && e.kind !== 'task' && e.kind !== 'key')
       .map((e) => ({
         uid: `${e.key}@unilink`,
         title: e.kind === 'deadline' ? translate(locale, 'Due: {{title}}', { title: e.title }) : e.title,
@@ -402,6 +403,11 @@ export const calendarRouter = {
         location: e.location,
         description: e.classLabel ?? undefined,
       }));
+
+    for (const k of KEY_DATES) {
+      if (k.type === 'deadline' || (k.end ?? k.date) < ymd(now)) continue;
+      events.push({ uid: `key-${k.term}-${k.date}@unilink`, title: translate(locale, k.title), start: parseYmd(k.date), end: parseYmd(k.end ?? k.date), allDay: true });
+    }
 
     const label = labels(ctx.db);
     for (const { meeting: m, term } of myMeetings(ctx.db, ctx.userId)) {

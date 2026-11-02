@@ -9,6 +9,8 @@ export interface IcsEvent {
   location?: string;
   // Weekly recurrence for class times.
   weekly?: { until: Date };
+  // Whole days (key dates like a reading break): from start's day to end's day, inclusive.
+  allDay?: boolean;
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -16,6 +18,9 @@ const pad = (n: number) => String(n).padStart(2, '0');
 function localStamp(d: Date): string {
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
 }
+
+const dateStamp = (d: Date) => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+const nextDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
 
 function utcStamp(d: Date): string {
   return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
@@ -54,8 +59,9 @@ export function buildCalendar(events: IcsEvent[], timeZone: string): string {
       'BEGIN:VEVENT',
       `UID:${e.uid}`,
       `DTSTAMP:${now}`,
-      `DTSTART;TZID=${timeZone}:${localStamp(e.start)}`,
-      `DTEND;TZID=${timeZone}:${localStamp(e.end)}`,
+      ...(e.allDay
+        ? [`DTSTART;VALUE=DATE:${dateStamp(e.start)}`, `DTEND;VALUE=DATE:${dateStamp(nextDay(e.end))}`]
+        : [`DTSTART;TZID=${timeZone}:${localStamp(e.start)}`, `DTEND;TZID=${timeZone}:${localStamp(e.end)}`]),
       `SUMMARY:${escapeText(e.title)}`,
     );
     if (e.description) lines.push(`DESCRIPTION:${escapeText(e.description)}`);

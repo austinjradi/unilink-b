@@ -163,6 +163,12 @@ describe('accounts (G4)', () => {
 });
 
 describe('iCalendar (G2)', () => {
+  it('writes whole-day events as dates, ending the day after', () => {
+    const ics = buildCalendar([{ uid: 'break@unilink', title: 'Fall reading break', start: new Date(2026, 9, 9), end: new Date(2026, 9, 14), allDay: true }], 'America/Toronto');
+    expect(ics).toContain('DTSTART;VALUE=DATE:20261009');
+    expect(ics).toContain('DTEND;VALUE=DATE:20261015');
+  });
+
   it('round-trips events, escaping and folding long lines', () => {
     const start = new Date(2026, 9, 14, 23, 59);
     const title = 'Due: COMP 251 Assignment 2, part (a); see myCourses for the full instructions and rubric';
