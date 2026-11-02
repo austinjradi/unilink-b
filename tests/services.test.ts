@@ -1187,6 +1187,13 @@ describe('Professors', () => {
     expect((await titles(leo)).some((title) => title.startsWith('"Assignment 3" is now due'))).toBe(true);
     expect((await maya.api.planner.list())[0].dueAt).toEqual(later);
 
+    // A new handout replaces the old one, and students hear about that too.
+    const updated = join(tmpdir(), 'unilink-test-a3-v2.txt');
+    await writeFile(updated, 'Question 1 (10 points), corrected\n');
+    await prof.api.assignments.update({ id, title: 'Assignment 3', dueAt: later, notes: 'Show your work.', attachmentPath: updated });
+    expect(await titles(leo)).toContain('New handout for "Assignment 3"');
+    expect((await leo.api.assignments.list({ classId }))[0].attachmentName).toBe('unilink-test-a3-v2.txt');
+
     await expectCode(maya.api.assignments.remove({ id }), 'FORBIDDEN');
     await prof.api.assignments.remove({ id });
     expect(await leo.api.assignments.list({ classId })).toEqual([]);

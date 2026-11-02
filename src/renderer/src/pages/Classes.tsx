@@ -75,6 +75,12 @@ function MyCourses() {
     queryKey: ['board', 'feed', 'open'],
     queryFn: () => rpc.board.feed({ classIds: null, topics: [], since: null, search: '', unresolved: true }),
   });
+  // For a professor: what students have reported, waiting to be looked at.
+  const reported = useQuery({
+    queryKey: ['board', 'feed', 'reported'],
+    queryFn: () => rpc.board.feed({ classIds: null, topics: [], since: null, search: '', reported: true }),
+    enabled: professor,
+  });
   if (mine.isPending) return <Loading />;
   if (!mine.data?.length) {
     return (
@@ -95,6 +101,7 @@ function MyCourses() {
         const next = due.data?.find((e) => e.classId === c.id);
         const questions = open.data?.filter((p) => p.classId === c.id).length ?? 0;
         const newPosts = fresh.data?.find((n) => n.classId === c.id)?.count ?? 0;
+        const reports = reported.data?.filter((p) => p.classId === c.id).length ?? 0;
         return (
           <Card key={c.id} component={Link} to={`/classes/${c.id}`} className="clickable" padding="lg">
             <Group justify="space-between" mb="xs">
@@ -136,6 +143,11 @@ function MyCourses() {
                 {newPosts > 0 && (
                   <Badge size="sm" variant="light">
                     {t('{{count}} new posts', { count: newPosts })}
+                  </Badge>
+                )}
+                {reports > 0 && (
+                  <Badge size="sm" variant="light" color="red">
+                    {t('{{count}} reported threads', { count: reports })}
                   </Badge>
                 )}
               </Group>

@@ -89,7 +89,7 @@ export const assignmentsRouter = {
     },
   ),
 
-  // A new file replaces the old handout; moving the due date tells the students (plans that
+  // A new file replaces the old handout. Both that and moving the due date tell the students (plans that
   // follow the assignment move by themselves, see services/planner.ts).
   update: procedure(z.object({ id: idSchema, ...fields, attachmentPath: z.string().nullable() }), async ({ id, attachmentPath, ...input }, ctx) => {
     const row = posted(ctx, id);
@@ -97,6 +97,15 @@ export const assignmentsRouter = {
     const attachment = attachmentPath ? await storeAttachment(ctx, attachmentPath) : {};
     if (attachmentPath && row.attachmentPath) await rm(row.attachmentPath, { force: true });
     ctx.db.update(deadlines).set({ ...input, ...attachment }).where(eq(deadlines.id, id)).run();
+    // A new handout matters as much as a new date: someone may have started on the old one.
+    if (attachmentPath) {
+      tellStudents(ctx, row.classId, {
+        type: 'assignment-posted',
+        title: m('New handout for "{{title}}"', { title: input.title }),
+        body: raw(classLabel(ctx.db, row.classId) ?? ''),
+        link: `/classes/${row.classId}/assignments`,
+      });
+    }
     if (input.dueAt.getTime() !== row.dueAt.getTime()) {
       tellStudents(ctx, row.classId, {
         type: 'assignment-posted',

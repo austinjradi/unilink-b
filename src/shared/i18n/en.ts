@@ -79,6 +79,7 @@ export const EN: Record<string, string> = {
   ...plural('{{count}} failed sign-in attempts since you last signed in', '{{count}} failed sign-in attempt since you last signed in'),
   ...plural('Unread ({{count}})', 'Unread ({{count}})'),
   ...plural('{{count}} pts', '{{count}} pt'),
+  ...plural('{{count}} reported threads', '{{count}} reported thread'),
   ...plural('{{count}} reports', '{{count}} report'),
   ...plural('{{count}} unanswered questions', '{{count}} unanswered question'),
   ...plural('{{count}} went', '{{count}} went'),

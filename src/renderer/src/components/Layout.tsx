@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect } from 'react';
 import { ActionIcon, AppShell, Box, Group, Menu, Text, Tooltip, UnstyledButton } from '@mantine/core';
-import { IconChevronDown, IconFocus2, IconLogout, IconMenu2, IconSettings, IconUser, IconX } from '@tabler/icons-react';
+import { IconChevronDown, IconCloudOff, IconFocus2, IconLogout, IconMenu2, IconSettings, IconUser, IconX } from '@tabler/icons-react';
+import { useNetwork } from '@mantine/hooks';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { goatFor } from '@shared/goat';
@@ -77,6 +78,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const signOut = useAction(() => rpc.auth.signOut());
+  const network = useNetwork();
 
   // Clicking a desktop notification opens what it's about.
   useEffect(() => window.unilink.onNavigate((link) => navigate(link)), [navigate]);
@@ -109,6 +111,16 @@ export function Layout({ children }: { children: ReactNode }) {
           </Group>
 
           <Group gap="sm" wrap="nowrap">
+            {!network.online && (
+              <Tooltip label={t('Everything you do is still saved in this browser. Group chats and online sessions need a connection.')}>
+                <Group gap={6} wrap="nowrap" px="sm" py={4} style={{ borderRadius: 999, background: 'var(--mantine-color-gray-light)' }}>
+                  <IconCloudOff size={16} />
+                  <Text size="xs" fw={800} visibleFrom="xs">
+                    {t('Offline')}
+                  </Text>
+                </Group>
+              </Tooltip>
+            )}
             {me.role === 'student' && <StudyModePill />}
             {/* Phones: the tabs don't fit, so they're also in a menu. */}
             <Menu position="bottom-end" width={220}>
