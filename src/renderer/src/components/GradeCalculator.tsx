@@ -5,6 +5,7 @@ import {
   Card,
   Grid,
   Group,
+  Menu,
   Modal,
   NumberInput,
   Select,
@@ -18,7 +19,7 @@ import {
 import { DateTimePicker } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { modals } from '@mantine/modals';
-import { IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
+import { IconCopy, IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { finalIfRemainingAverages, hasSecondScheme, letterFor, MCGILL_SCALE, minimumFor, summarize } from '@shared/grades';
 import { toDate } from '../lib/format';
@@ -43,6 +44,10 @@ export function GradeCalculator({ classId }: { classId: number }) {
   const remove = useAction((id: number) => rpc.courses.removeAssessment({ id }));
   const setScore = useAction((a: { id: number; score: number | null }) => rpc.courses.setScore(a));
   const setTarget = useAction((targetGrade: string) => rpc.courses.setTarget({ classId, targetGrade }));
+  const mine = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
+  const copyTo = useAction((c: { id: number; code: string }) => rpc.courses.copyScheme({ fromClassId: classId, toClassId: c.id }), {
+    success: (_r, c) => t('Scheme copied to {{class}}', { class: c.code }),
+  });
   const setSecondScheme = useAction((on: boolean) => rpc.courses.setSecondScheme({ classId, on }), {
     success: (_r, on) => (on ? t('Second scheme added. Adjust its weights in the table.') : t('Second scheme removed')),
   });
@@ -77,6 +82,24 @@ export function GradeCalculator({ classId }: { classId: number }) {
           <Title order={2}>{teaching ? t('Grading scheme') : t('Current grades')}</Title>
           {canEdit && (
           <Group gap="md">
+            {teaching && list.length > 0 && (mine.data?.length ?? 0) > 1 && (
+              <Menu position="bottom-end">
+                <Menu.Target>
+                  <Button variant="subtle" leftSection={<IconCopy size={16} />}>
+                    {t('Copy to a section')}
+                  </Button>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  {mine.data!
+                    .filter((c) => c.id !== classId)
+                    .map((c) => (
+                      <Menu.Item key={c.id} onClick={() => copyTo.mutate(c)}>
+                        {c.code}
+                      </Menu.Item>
+                    ))}
+                </Menu.Dropdown>
+              </Menu>
+            )}
             {list.length > 0 && (
               <Switch
                 label={t('Second scheme, whichever is higher')}

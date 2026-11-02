@@ -14,6 +14,7 @@ import {
   Group,
   Image,
   Modal,
+  MultiSelect,
   Popover,
   SegmentedControl,
   Select,
@@ -909,6 +910,8 @@ function PostForm({
 }) {
   const professor = useMe().role === 'professor';
   const draft = useImageDraft();
+  // A professor's announcement can go to their other sections too, each its own thread.
+  const [also, setAlso] = useState<string[]>([]);
   const myClasses = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
   const form = useForm({
     initialValues: {
@@ -946,7 +949,12 @@ function PostForm({
         await rpc.board.update({ postId: existing.id, kind: v.kind, topic: v.topic, title: v.title, body: v.body });
         return { id: existing.id };
       }
-      return rpc.board.create({ ...v, classId: Number(v.classId), images: draft.images.map((image) => image.path) });
+      const images = draft.images.map((image) => image.path);
+      const created = await rpc.board.create({ ...v, classId: Number(v.classId), images });
+      if (v.kind === 'note' && v.visibility === 'class') {
+        for (const id of also) await rpc.board.create({ ...v, classId: Number(id), images });
+      }
+      return created;
     },
     { success: existing ? 'Post updated' : 'Posted', onSuccess: (r) => onDone(r.id) },
   );
@@ -1029,6 +1037,16 @@ function PostForm({
               ]}
               {...form.getInputProps('visibility')}
             />
+            {professor && form.values.kind === 'note' && form.values.visibility === 'class' && (myClasses.data?.length ?? 0) > 1 && (
+              <MultiSelect
+                label={t('Also post to')}
+                placeholder={t('Optional')}
+                data={(myClasses.data ?? []).filter((c) => String(c.id) !== form.values.classId).map((c) => ({ value: String(c.id), label: c.code }))}
+                value={also}
+                onChange={setAlso}
+                clearable
+              />
+            )}
             {form.values.visibility === 'selected' && (
               <TagsInput
                 label={t('Who can see it')}

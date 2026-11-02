@@ -1128,6 +1128,32 @@ describe('Professors', () => {
     expect(await leo.api.assignments.list({ classId })).toEqual([]);
   });
 
+  it('copies a grading scheme to another section it teaches, if that one has none', async () => {
+    const { classId, prof, maya } = await taught();
+    const other = await comp251(prof.api, '002');
+    await prof.api.classes.join({ classId: other });
+    const leo = await student('Sam');
+    await leo.api.classes.join({ classId: other });
+
+    await expectCode(prof.api.courses.copyScheme({ fromClassId: classId, toClassId: other }), 'BAD_INPUT'); // nothing to copy yet
+    await prof.api.courses.addAssessment({ classId, name: 'Midterm', weight: 30, altWeight: null, dueAt: new Date(2026, 9, 20) });
+    await prof.api.courses.addAssessment({ classId, name: 'Final', weight: 70, dueAt: null });
+    await expectCode(maya.api.courses.copyScheme({ fromClassId: classId, toClassId: other }), 'FORBIDDEN');
+
+    await prof.api.courses.copyScheme({ fromClassId: classId, toClassId: other });
+    expect((await leo.api.courses.assessments({ classId: other })).map((a) => [a.name, a.weight, a.dueAt])).toEqual([
+      ['Midterm', 30, new Date(2026, 9, 20)],
+      ['Final', 70, null],
+    ]);
+    expect(await titles(leo)).toContain('The grading scheme for COMP 251-002 changed');
+    // Doing it again would erase marks, so it's refused.
+    await expectCode(prof.api.courses.copyScheme({ fromClassId: classId, toClassId: other }), 'CONFLICT');
+
+    // It needs to be a section they teach.
+    const stranger = await professor('Khoury');
+    await expectCode(stranger.api.courses.copyScheme({ fromClassId: classId, toClassId: other }), 'FORBIDDEN');
+  });
+
   it('corrects class deadlines students added, but not private ones', async () => {
     const { classId, prof, maya } = await taught();
     const deadline = { kind: 'assignment' as const, title: 'A wrong date', dueAt: new Date(2026, 9, 20, 23, 59), notes: '' };

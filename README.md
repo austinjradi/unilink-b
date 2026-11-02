@@ -53,6 +53,7 @@ sections of a course. The demo has **Daniel Ouellet**, a made-up professor teach
 | Moderate the discussion | Class page → Discussion | **Pin** to the top of the class board, **lock** a thread so only they can reply, **endorse** a reply, or **remove** a post or reply with an optional reason. The author is told. A removed post with replies stays up, blanked |
 | Make announcements | New post → Announcement | A note from a professor to the whole section notifies everyone |
 | Correct class deadlines | Calendar | They can edit or remove a class deadline a student added, not private ones |
+| Teach several sections at once | Assignments, New post, Grading scheme | An assignment or announcement can **also post to** their other sections, and a scheme can be **copied to a section** that has none (never over one with marks) |
 
 What stays private: **students' marks**, which professors never see, and **private posts**, which they see only if a
 student picks them as the audience. There's no class list for them either: students appear once they post or reply,

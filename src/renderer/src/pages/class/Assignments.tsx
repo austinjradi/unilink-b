@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActionIcon, Button, Card, Checkbox, Group, Modal, NumberInput, Stack, Text, Textarea, TextInput, Title, Tooltip } from '@mantine/core';
+import { ActionIcon, Button, Card, Checkbox, Group, Modal, MultiSelect, NumberInput, Stack, Text, Textarea, TextInput, Title, Tooltip } from '@mantine/core';
 import { DateTimePicker } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { modals } from '@mantine/modals';
@@ -121,6 +121,10 @@ function AssignmentCard({ assignment: a, teaching, onEdit }: { assignment: Assig
 
 function AssignmentForm({ classId, existing, onDone }: { classId: number; existing: Assignment | null; onDone: () => void }) {
   const [file, setFile] = useState<{ path: string; name: string } | null>(null);
+  // A professor's other sections, to post the same assignment to.
+  const [also, setAlso] = useState<string[]>([]);
+  const mine = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
+  const others = (mine.data ?? []).filter((c) => c.id !== classId);
   const form = useForm({
     initialValues: {
       title: existing?.title ?? '',
@@ -137,10 +141,26 @@ function AssignmentForm({ classId, existing, onDone }: { classId: number; existi
   const save = useAction(
     async (v: typeof form.values) => {
       const fields = { title: v.title, dueAt: toDate(v.dueAt)!, notes: v.notes, attachmentPath: file?.path ?? null };
-      if (existing) await rpc.assignments.update({ id: existing.id, ...fields });
-      else await rpc.assignments.post({ classId, ...fields, weight: v.weight === '' ? null : Number(v.weight) });
+      if (existing) {
+        await rpc.assignments.update({ id: existing.id, ...fields });
+        return [];
+      }
+      const weight = v.weight === '' ? null : Number(v.weight);
+      await rpc.assignments.post({ classId, ...fields, weight });
+      // One section not taking it (no room left in its scheme, say) doesn't undo the others.
+      const failed: string[] = [];
+      for (const id of also) {
+        await rpc.assignments.post({ classId: Number(id), ...fields, weight }).catch(() => failed.push(others.find((c) => String(c.id) === id)?.code ?? id));
+      }
+      return failed;
     },
-    { success: existing ? t('Assignment saved. Students are told if the due date moved.') : t('Posted. Everyone in the section has been notified.'), onSuccess: onDone },
+    {
+      success: (failed) =>
+        existing
+          ? t('Assignment saved. Students are told if the due date moved.')
+          : [t('Posted. Everyone in the section has been notified.'), failed.length ? t('Not added: {{titles}}', { titles: failed.join(', ') }) : ''].filter(Boolean).join(' '),
+      onSuccess: onDone,
+    },
   );
 
   const fileName = file?.name ?? existing?.attachmentName;
@@ -148,7 +168,7 @@ function AssignmentForm({ classId, existing, onDone }: { classId: number; existi
     <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
       <Stack>
         <TextInput label={t('Assignment')} placeholder={t('Problem set 3')} data-autofocus {...form.getInputProps('title')} />
-        <Group grow align="flex-start">
+        <Group grow align="flex-end">
           <DateTimePicker label={t('Due')} valueFormat="ddd D MMM YYYY, HH:mm" {...form.getInputProps('dueAt')} />
           {!existing && (
             <NumberInput
@@ -163,6 +183,9 @@ function AssignmentForm({ classId, existing, onDone }: { classId: number; existi
           )}
         </Group>
         <Textarea label={t('Instructions')} autosize minRows={3} {...form.getInputProps('notes')} />
+        {!existing && others.length > 0 && (
+          <MultiSelect label={t('Also post to')} placeholder={t('Optional')} data={others.map((c) => ({ value: String(c.id), label: c.code }))} value={also} onChange={setAlso} clearable />
+        )}
         <Group gap="xs">
           <Button variant="default" size="xs" leftSection={<IconPaperclip size={14} />} onClick={() => choose.mutate()}>
             {fileName ? t('Change file') : t('Attach the assignment file')}

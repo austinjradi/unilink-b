@@ -6,7 +6,7 @@ import { MCGILL_SCALE, summarize } from '@shared/grades';
 import type { DB } from '../db/client';
 import { assessments, assessmentScores, classDetails, classes, classMeetings, courseInfo, courseRecords, courses, enrollments, users } from '../db/schema';
 import { AppError, type AuthedContext, idSchema, nonEmpty, procedure } from '../rpc/core';
-import { canEditShared, classLabel, FORMER_STUDENT_EMAIL, notFound, professorsOf, requireMember, requireSharedEditor, sectionCode, studentsOf, teaches } from './access';
+import { canEditShared, classLabel, FORMER_STUDENT_EMAIL, notFound, professorsOf, requireMember, requireSharedEditor, requireTeacher, sectionCode, studentsOf, teaches } from './access';
 import { m, notify } from './notifications';
 
 // A5 in version B: everything that's the same for the whole section is entered once and
@@ -270,6 +270,23 @@ export const coursesRouter = {
     assertWeightFits(ctx.db, row.classId, fields.weight, fields.altWeight, id);
     ctx.db.update(assessments).set(fields).where(eq(assessments.id, id)).run();
     tellSchemeChanged(ctx, row.classId);
+  }),
+
+  // For a professor teaching several sections: the same scheme in another one. A section with
+  // a scheme keeps it, since replacing it would erase students' marks.
+  copyScheme: procedure(z.object({ fromClassId: idSchema, toClassId: idSchema }), ({ fromClassId, toClassId }, ctx) => {
+    requireTeacher(ctx.db, ctx.userId, fromClassId);
+    requireTeacher(ctx.db, ctx.userId, toClassId);
+    if (ctx.db.select({ id: assessments.id }).from(assessments).where(eq(assessments.classId, toClassId)).get()) {
+      throw new AppError('{{class}} already has a grading scheme.', 'CONFLICT', { class: classLabel(ctx.db, toClassId) ?? '' });
+    }
+    const components = ctx.db.select().from(assessments).where(eq(assessments.classId, fromClassId)).orderBy(asc(assessments.position)).all();
+    if (!components.length) throw new AppError('Add a grading scheme here first.');
+    ctx.db
+      .insert(assessments)
+      .values(components.map(({ name, weight, altWeight, dueAt, position }) => ({ name, weight, altWeight, dueAt, position, classId: toClassId, userId: ctx.userId })))
+      .run();
+    tellSchemeChanged(ctx, toClassId);
   }),
 
   // A second grading scheme for the section, "whichever is higher" (e.g. the final replacing
