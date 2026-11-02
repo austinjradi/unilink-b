@@ -211,7 +211,7 @@ both versions.
 | S2.2 | Duplicates | Same URL in the same class, after light normalization | Same **chat** (invite code), under any of its URLs (`discord.gg/x` = `discord.com/invite/x`, tracking parameters ignored), across **every section of the course**. The error says who shared it and where |
 | S2.4 | How are flagged links handled? | Reports are shown on the link; at 3 it's marked likely broken; changing the URL clears them | Classmates vote **"it works" or report** (with a reason). A link is **hidden** once 2+ report it and reports outnumber "works"; the owner is notified then and can **mark it fixed** without changing the URL |
 | S3 | Who can see a session? | Everyone in the class | **Open** to the section, or **invite-only** (hidden from anyone without the code) |
-| S3.4 | How do you invite if members are hidden? | By McGill email (must be in the class) | With a 6-character **invite code** the host shares anywhere (group chat, DM). Codes can be regenerated. No email invites |
+| S3.4 | How do you invite if members are hidden? | By McGill email (must be in the class) | With a 6-character **invite code** the host shares anywhere (group chat, DM), or a ready-made **invite message with a link** that opens the session with a Join button. Codes can be regenerated. No email invites |
 | S3 | Size limit | Optional; full sessions refuse new people | **Required** (2–30, default 6); once full, people join a **waitlist** and move up automatically |
 | S3 | Where | A place or call link, in one text field | **In person** (a place) or **online** (a meeting link, shown only to people going) |
 | S3 | Who's going | Everyone sees names and emails of people going | **Only people going** see who else is; others see a count and the host's first name |

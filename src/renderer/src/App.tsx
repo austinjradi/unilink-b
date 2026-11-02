@@ -25,6 +25,7 @@ const CoursesPage = page(() => import('./pages/Classes'), 'CoursesPage');
 const PlannerPage = page(() => import('./pages/Planner'), 'PlannerPage');
 const SessionsPage = page(() => import('./pages/Sessions'), 'SessionsPage');
 const SessionSearchPage = page(() => import('./pages/Sessions'), 'SessionSearchPage');
+const SessionInvitePage = page(() => import('./pages/Sessions'), 'SessionInvitePage');
 const SettingsPage = page(() => import('./pages/Settings'), 'SettingsPage');
 const StudyModePage = page(() => import('./pages/StudyMode'), 'StudyModePage');
 
@@ -86,6 +87,7 @@ function Root() {
             <Route path="/calculator" element={<CalculatorPage />} />
             <Route path="/sessions" element={<SessionsPage />} />
             <Route path="/sessions/search" element={<SessionSearchPage />} />
+            <Route path="/sessions/join/:code" element={<SessionInvitePage />} />
             <Route path="/study-mode" element={<StudyModePage />} />
             <Route path="/settings/:tab?" element={<SettingsPage />} />
             {/* Older routes, still used by links in existing notifications. */}

@@ -26,13 +26,13 @@ import { useForm } from '@mantine/form';
 import { modals } from '@mantine/modals';
 import { IconCalendarPlus, IconClock, IconKey, IconLock, IconMapPin, IconMessageDots, IconVideo } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import dayjs from 'dayjs';
-import { toDate } from '../lib/format';
+import { fmtDateTime, toDate } from '../lib/format';
 import { useAction } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
 import { GoatAvatar } from './Goat';
-import { Tag } from './ui';
+import { Empty, Loading, Tag } from './ui';
 import { t, tx } from '../lib/i18n';
 import { toStoredTopic } from './Feed';
 
@@ -113,6 +113,17 @@ export function SessionRow({ session: s, onDetails }: { session: Session; onDeta
   );
 }
 
+// The link opens UniLink on the session's invite page (SessionInvite below).
+const inviteLink = (code: string) => `${window.location.href.split('#')[0]}#/sessions/join/${code}`;
+
+const inviteMessage = (s: Session) =>
+  t('Join my study session "{{title}}" for {{class}} ({{when}}): {{link}}', {
+    title: s.title,
+    class: s.classLabel,
+    when: fmtDateTime(s.startsAt),
+    link: inviteLink(s.inviteCode!),
+  });
+
 function InviteCode({ session: s }: { session: Session }) {
   const newCode = useAction(() => rpc.studySessions.newCode({ sessionId: s.id }), { success: 'New code made. The old one no longer works.' });
   if (!s.inviteCode) return null;
@@ -141,6 +152,15 @@ function InviteCode({ session: s }: { session: Session }) {
               </Button>
             )}
           </CopyButton>
+          <Tooltip label={t('A message with a link that opens this session, for a group chat')}>
+            <CopyButton value={inviteMessage(s)}>
+              {({ copied, copy }) => (
+                <Button size="xs" variant="light" onClick={copy}>
+                  {copied ? t('Copied') : t('Copy invite')}
+                </Button>
+              )}
+            </CopyButton>
+          </Tooltip>
           <Button size="xs" variant="subtle" color="gray" onClick={() => newCode.mutate()}>
             {t('New code')}
           </Button>
@@ -459,6 +479,93 @@ export function SessionsCard({ children }: { children: React.ReactNode }) {
   return (
     <Card padding="lg" style={{ background: 'var(--ul-soft)' }}>
       {children}
+    </Card>
+  );
+}
+
+// S3.4: what an invite link opens. The session as anyone in the section would see it, and
+// a way in: join it, or join its class first.
+export function SessionInvite({ code }: { code: string }) {
+  const navigate = useNavigate();
+  const invite = useQuery({ queryKey: ['studySessions', 'invite', code], queryFn: () => rpc.studySessions.byCode({ code }) });
+  const join = useAction(() => rpc.studySessions.joinByCode({ code }), {
+    success: (r) => (r.status === 'going' ? t('You\'re going to "{{title}}"!', { title: r.title }) : joinedMessage(r)),
+    onSuccess: (r) => navigate(`/classes/${r.classId}/sessions`),
+  });
+
+  if (invite.isPending) return <Loading />;
+  if (!invite.data) return <Empty>{invite.error?.message}</Empty>;
+  const s = invite.data;
+  const open = (
+    <Button component={Link} to={`/classes/${s.classId}/sessions`} variant="light">
+      {t('Open')}
+    </Button>
+  );
+
+  return (
+    <Card padding="xl" maw={620}>
+      <Stack>
+        <Group gap={6}>
+          <Tag>{s.classLabel}</Tag>
+          {s.tag && <Tag color="periwinkle">{t(s.tag)}</Tag>}
+          {s.visibility === 'invite' && <Tag color="grape">{t('Invite only')}</Tag>}
+          {s.cancelledAt && <Tag color="red">{t('Cancelled')}</Tag>}
+        </Group>
+        <Title order={2}>{s.title}</Title>
+        <Group gap="lg" c="dimmed">
+          <Group gap={6}>
+            <IconClock size={16} />
+            <Text>{when(s)}</Text>
+          </Group>
+          <Group gap={6}>
+            {s.format === 'online' ? <IconVideo size={16} /> : <IconMapPin size={16} />}
+            <Text>{place(s)}</Text>
+          </Group>
+        </Group>
+        {s.description && <Text style={{ whiteSpace: 'pre-wrap' }}>{s.description}</Text>}
+        <Text size="sm" c="dimmed">
+          {[
+            s.hostFirstName ? t('Hosted by {{name}}.', { name: s.hostFirstName }) : null,
+            t('{{count}} of {{capacity}} going', { count: s.goingCount, capacity: s.capacity ?? s.goingCount }),
+            s.waitlistCount ? t('{{count}} on the waitlist', { count: s.waitlistCount }) : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </Text>
+        <Divider />
+        {s.cancelledAt ? (
+          <Text c="red">{t('This session was cancelled.')}</Text>
+        ) : s.endsAt < new Date() ? (
+          <Text c="dimmed">{t('This session is over.')}</Text>
+        ) : s.myStatus === 'going' ? (
+          <Group justify="space-between">
+            <Text fw={800} c="teal">
+              {s.isHost ? t('Hosting') : t("You're going!")}
+            </Text>
+            {open}
+          </Group>
+        ) : s.myStatus === 'waitlisted' ? (
+          <Group justify="space-between">
+            <Text fw={800} c="orange">
+              {t('Waitlist #{{position}}', { position: s.myWaitlistPosition ?? 1 })}
+            </Text>
+            {open}
+          </Group>
+        ) : !s.inClass ? (
+          <Group justify="space-between">
+            <Text size="sm">{t('This session is for {{class}}. Join that class first.', { class: s.classLabel })}</Text>
+            <Button component={Link} to={`/classes/${s.classId}`} variant="light">
+              {t('Go to {{code}}', { code: s.classLabel })}
+            </Button>
+          </Group>
+        ) : (
+          <Group justify="flex-end">
+            <Button onClick={() => join.mutate()} loading={join.isPending} variant={s.isFull ? 'default' : 'filled'}>
+              {s.isFull ? t('Join waitlist') : t('Join')}
+            </Button>
+          </Group>
+        )}
+      </Stack>
     </Card>
   );
 }

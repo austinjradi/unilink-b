@@ -77,6 +77,16 @@ function membership(db: DB, sessionId: number, userId: number) {
     .get();
 }
 
+function sessionByCode(db: DB, code: string) {
+  const session = db
+    .select()
+    .from(studySessions)
+    .where(and(eq(studySessions.inviteCode, code.replace(/[\s-]/g, '')), ne(studySessions.inviteCode, '')))
+    .get();
+  if (!session) throw new AppError('No study session has that code. Check it with the host.', 'NOT_FOUND');
+  return session;
+}
+
 // Invite-only sessions are visible to the people in them, and to nobody else in the class.
 function canSee(db: DB, userId: number, session: SessionRow) {
   return session.visibility === 'class' || !!membership(db, session.id, userId);
@@ -406,13 +416,16 @@ export const studySessionsRouter = {
   }),
 
   // S3.4: the invite code works for open and invite-only sessions alike.
+  // What an invite link shows before joining: the session (as anyone in the section would
+  // see it), and whether you're in its class yet.
+  byCode: procedure(z.object({ code: z.string().trim().toUpperCase() }), ({ code }, ctx) => {
+    const session = sessionByCode(ctx.db, code);
+    const [described] = describe(ctx.db, ctx.userId, [session]);
+    return { ...described, inClass: isMember(ctx.db, ctx.userId, session.classId) };
+  }),
+
   joinByCode: procedure(z.object({ code: z.string().trim().toUpperCase().min(1, 'Enter the invite code') }), ({ code }, ctx) => {
-    const session = ctx.db
-      .select()
-      .from(studySessions)
-      .where(and(eq(studySessions.inviteCode, code.replace(/[\s-]/g, '')), ne(studySessions.inviteCode, '')))
-      .get();
-    if (!session) throw new AppError('No study session has that code. Check it with the host.', 'NOT_FOUND');
+    const session = sessionByCode(ctx.db, code);
     if (!isMember(ctx.db, ctx.userId, session.classId)) {
       throw new AppError('This session is for {{class}}. Join that class first.', 'FORBIDDEN', {
         class: classLabel(ctx.db, session.classId) ?? '',

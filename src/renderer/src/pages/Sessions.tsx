@@ -3,8 +3,8 @@ import { Button, Modal, Text, TextInput } from '@mantine/core';
 import { useDebouncedValue } from '@mantine/hooks';
 import { IconPlus, IconSearch, IconUsersGroup } from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router';
-import { JoinByCode, SessionForm, SessionList, SessionsCard } from '../components/Sessions';
+import { Link, useParams } from 'react-router';
+import { JoinByCode, SessionForm, SessionInvite, SessionList, SessionsCard } from '../components/Sessions';
 import { Empty, Loading, PageHeader } from '../components/ui';
 import { rpc } from '../lib/rpc';
 import { t } from '../lib/i18n';
@@ -101,6 +101,17 @@ export function SessionSearchPage() {
           }
         />
       )}
+    </>
+  );
+}
+
+// Where a shared invite link lands (#/sessions/join/CODE).
+export function SessionInvitePage() {
+  const { code = '' } = useParams();
+  return (
+    <>
+      <PageHeader crumbs={[{ label: t('Study Sessions'), to: '/sessions' }, { label: t('Invitation') }]} title={t("You're invited")} />
+      <SessionInvite code={code} />
     </>
   );
 }

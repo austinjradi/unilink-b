@@ -430,6 +430,12 @@ describe('S3 study sessions', () => {
     await expectCode(leo.api.studySessions.joinByCode({ code: 'ZZZZZZ' }), 'NOT_FOUND');
     await expectCode(sam.api.studySessions.joinByCode({ code: inviteCode }), 'FORBIDDEN');
 
+    // The invite link's preview shows the session, without the code, the people or the meeting link.
+    const preview = await sam.api.studySessions.byCode({ code: inviteCode });
+    expect(preview).toMatchObject({ id: sessionId, title: 'Midterm review', inClass: false, myStatus: null, inviteCode: null, going: [], goingCount: 1 });
+    expect((await leo.api.studySessions.byCode({ code: inviteCode })).inClass).toBe(true);
+    await expectCode(leo.api.studySessions.byCode({ code: 'ZZZZZZ' }), 'NOT_FOUND');
+
     expect(await leo.api.studySessions.joinByCode({ code: ` ${inviteCode.toLowerCase()} ` })).toMatchObject({ status: 'going', classId });
     expect((await leo.api.studySessions.list({ classId })).map((s) => s.id)).toEqual([sessionId]);
 
