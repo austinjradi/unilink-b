@@ -9,6 +9,7 @@ import { summarizeRecord, termOrder } from '@shared/academics';
 import { evaluateDegree, type Program } from '@shared/degree';
 import { type FocusWindow, studyModeStatus } from '@shared/studyMode';
 import { parseSyllabus } from '@shared/syllabus';
+import { parseTranscript } from '@shared/transcript';
 
 describe('grades (A4)', () => {
   it('maps percentages onto the McGill scale', () => {
@@ -220,6 +221,31 @@ describe('course record (A1)', () => {
       'Fall 2026',
       'Winter 2027',
     ]);
+  });
+});
+
+describe('transcript import (A1)', () => {
+  it('reads courses, credits and grades under each term heading', () => {
+    const transcript = `McGill University unofficial transcript
+Fall 2025
+COMP 202  001  Foundations of Programming   3.000  A   B+
+MATH 133  Linear Algebra and Geometry  A-  3.00
+Term GPA 3.85   Cumulative GPA 3.85
+Winter 2026
+COMP 206 Software Systems: Programming in C 3 B+ B
+PSYC 100 Introduction to Psychology 3.00 W
+MATH 222 Calculus 3 3 B+ B
+Hiver 2027
+COMP 251 Algorithms and Data Structures`;
+    expect(parseTranscript(transcript).map((c) => [c.code, c.title, c.credits, c.grade, c.term])).toEqual([
+      ['COMP 202', 'Foundations of Programming', 3, 'A', 'Fall 2025'],
+      ['MATH 133', 'Linear Algebra and Geometry', 3, 'A-', 'Fall 2025'],
+      ['COMP 206', 'Software Systems: Programming in C', 3, 'B+', 'Winter 2026'],
+      ['PSYC 100', 'Introduction to Psychology', 3, 'W', 'Winter 2026'],
+      ['MATH 222', 'Calculus 3', 3, 'B+', 'Winter 2026'],
+      ['COMP 251', 'Algorithms and Data Structures', 3, null, 'Winter 2027'],
+    ]);
+    expect(parseTranscript(transcript).at(-1)!.creditsGuessed).toBe(true);
   });
 });
 

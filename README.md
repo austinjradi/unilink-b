@@ -34,7 +34,7 @@ The yellow features, with what couldn't be fully built:
 
 | ID  | Feature                              | Where in the app                         | Code                                          | Limits |
 | --- | ------------------------------------ | ---------------------------------------- | --------------------------------------------- | ------ |
-| A1  | Course, credit and grade tracking    | Academics → Course record                | `shared/academics.ts`, `services/academics.ts` | None |
+| A1  | Course, credit and grade tracking    | Courses → Course record (add by hand, from your classes, or by pasting a transcript) | `shared/academics.ts`, `shared/transcript.ts`, `services/academics.ts` | None |
 | A2  | Degree requirements and planning     | Academics → Degree plan                  | `shared/degree.ts`, `db/programs.ts`          | **Sample programs only**: no McGill program data source exists yet |
 | G3  | Notifications / email                | Bell in the sidebar; Profile → Notifications | `services/notifications.ts`              | **Email isn't delivered**: no mail server, so emails wait in an outbox |
 | ST1 | Study mode                           | Study Mode tab; pill in the top bar      | `shared/studyMode.ts`, `services/studyMode.ts` | **Can't block websites**; runs only while a UniLink tab is open; no system Do Not Disturb in a browser |

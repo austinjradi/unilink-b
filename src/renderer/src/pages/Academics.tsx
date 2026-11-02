@@ -5,6 +5,7 @@ import {
   Badge,
   Button,
   Card,
+  Checkbox,
   Group,
   Modal,
   NumberInput,
@@ -17,16 +18,18 @@ import {
   Table,
 
   Text,
+  Textarea,
   TextInput,
   Title,
   Tooltip,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { IconAlertTriangle, IconCertificate, IconCircleCheck, IconDownload, IconListDetails, IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCertificate, IconCircleCheck, IconClipboardText, IconDownload, IconListDetails, IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { OTHER_GRADES, RECORD_GRADES, RECORD_STATUSES, type RecordStatus, summarizeRecord, termOptions } from '@shared/academics';
+import { OTHER_GRADES, RECORD_GRADES, RECORD_STATUSES, type RecordStatus, summarizeRecord, termOptions, termOrder } from '@shared/academics';
 import { CURRENT_TERM } from '@shared/dates';
 import { letterFor } from '@shared/grades';
+import { parseTranscript } from '@shared/transcript';
 import { Empty, Loading, SectionCard } from '../components/ui';
 import { useAction } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
@@ -105,12 +108,115 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
   );
 }
 
+// A1: paste the unofficial transcript from Minerva (or any list of courses under term
+// headings), check what was found, and add it to the record.
+function TranscriptImport({ records, onDone }: { records: CourseRecord[]; onDone: () => void }) {
+  const [text, setText] = useState('');
+  const [unchecked, setUnchecked] = useState<Set<number>>(new Set());
+  const found = parseTranscript(text);
+  const already = (code: string, termName: string) => records.some((r) => r.code === code && r.term === termName);
+  const statusOf = (termName: string, grade: string | null): RecordStatus =>
+    grade || termOrder(termName) < termOrder(CURRENT_TERM) ? 'completed' : termOrder(termName) === termOrder(CURRENT_TERM) ? 'in-progress' : 'planned';
+  const picked = found.filter((c, n) => !unchecked.has(n) && !already(c.code, c.term));
+
+  const add = useAction(
+    async () => {
+      const failed: string[] = [];
+      for (const c of picked) {
+        try {
+          await rpc.record.add({ code: c.code, title: c.title, credits: c.credits, term: c.term, status: statusOf(c.term, c.grade), grade: c.grade });
+        } catch {
+          failed.push(c.code);
+        }
+      }
+      return { added: picked.length - failed.length, failed };
+    },
+    {
+      success: (r) =>
+        [t('Added {{count}} courses to your record', { count: r.added }), r.failed.length ? t('Not added: {{titles}}', { titles: r.failed.join(', ') }) : '']
+          .filter(Boolean)
+          .join(' '),
+      onSuccess: (r) => !r.failed.length && onDone(),
+    },
+  );
+
+  return (
+    <Stack>
+      <Text size="sm" c="dimmed">
+        {t('On Minerva, open your unofficial transcript, select the terms and courses, and paste them here. Each course line under a term heading like "Fall 2025" is read; you pick what to add.')}
+      </Text>
+      <Textarea
+        label={t('Transcript')}
+        placeholder={'Fall 2025\nCOMP 202  Foundations of Programming  3  A  B+'}
+        autosize
+        minRows={5}
+        maxRows={12}
+        value={text}
+        onChange={(e) => {
+          setText(e.currentTarget.value);
+          setUnchecked(new Set());
+        }}
+      />
+      {text.trim() && (
+        <Text size="sm" fw={700}>
+          {found.length ? t('Found {{count}} courses', { count: found.length }) : t('No courses found yet. Put a term like "Fall 2025" above its courses.')}
+        </Text>
+      )}
+      {found.map((c, n) => {
+        const there = already(c.code, c.term);
+        return (
+          <Group key={n} gap="sm" wrap="nowrap">
+            <Checkbox
+              checked={!there && !unchecked.has(n)}
+              disabled={there}
+              onChange={(e) =>
+                setUnchecked((u) => {
+                  const next = new Set(u);
+                  if (e.currentTarget.checked) next.delete(n);
+                  else next.add(n);
+                  return next;
+                })
+              }
+              aria-label={c.code}
+            />
+            <Text size="sm" fw={700} w={90} style={{ flex: 'none' }}>
+              {c.code}
+            </Text>
+            <Text size="sm" style={{ flex: 1, minWidth: 0 }} truncate>
+              {c.title}
+            </Text>
+            <Text size="sm" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+              {term(c.term)} · {t('{{credits}} cr', { credits: c.credits })}
+              {c.creditsGuessed && '?'}
+            </Text>
+            {there ? (
+              <Badge size="sm" variant="light" color="gray">
+                {t('Already added')}
+              </Badge>
+            ) : (
+              <Badge size="sm" variant="light" color={c.grade ? 'teal' : 'gray'}>
+                {c.grade ?? t(STATUS_LABEL[statusOf(c.term, null)])}
+              </Badge>
+            )}
+          </Group>
+        );
+      })}
+      <Group justify="flex-end">
+        <Button onClick={() => add.mutate()} disabled={!picked.length} loading={add.isPending}>
+          {t('Add {{count}} courses', { count: picked.length })}
+        </Button>
+      </Group>
+    </Stack>
+  );
+}
+
 function RecordTab({ onEdit }: { onEdit: (r: CourseRecord) => void }) {
   const records = useQuery({ queryKey: ['record'], queryFn: () => rpc.record.list() });
   const importClasses = useAction(() => rpc.record.importClasses(), {
     success: (r) => (r.added ? t('Added {{count}} current classes', { count: r.added }) : t('Your current classes are already here')),
   });
   const remove = useAction((id: number) => rpc.record.remove({ id }));
+  const [pasting, setPasting] = useState(false);
 
   if (records.isPending || !records.data) return <Loading />;
   const summary = summarizeRecord(records.data);
@@ -131,7 +237,13 @@ function RecordTab({ onEdit }: { onEdit: (r: CourseRecord) => void }) {
         <Text size="sm" c="dimmed">
           {t("Adds the classes you've joined on UniLink as in-progress courses.")}
         </Text>
+        <Button variant="default" leftSection={<IconClipboardText size={16} />} onClick={() => setPasting(true)}>
+          {t('Paste a transcript')}
+        </Button>
       </Group>
+      <Modal opened={pasting} onClose={() => setPasting(false)} title={t('Add courses from a transcript')} size="xl">
+        {pasting && <TranscriptImport records={records.data} onDone={() => setPasting(false)} />}
+      </Modal>
 
       {summary.terms.length === 0 ? (
         <Card withBorder>
