@@ -38,7 +38,7 @@ The yellow features, with what couldn't be fully built:
 | A2  | Degree requirements and planning     | Academics → Degree plan                  | `shared/degree.ts`, `db/programs.ts`          | **Sample programs only**: no McGill program data source exists yet |
 | G3  | Notifications / email                | Bell in the sidebar; Profile → Notifications | `services/notifications.ts`              | **Email isn't delivered**: no mail server, so emails wait in an outbox |
 | ST1 | Study mode                           | Study Mode tab; pill in the top bar      | `shared/studyMode.ts`, `services/studyMode.ts` | **Can't block websites**; runs only while a UniLink tab is open; no system Do Not Disturb in a browser |
-| ST3 | To-do list                           | Home (first thing you see)               | `services/todos.ts`, `pages/Dashboard.tsx`    | None |
+| ST3 | To-do list                           | Home (first thing you see); a date typed at the end ("read chapter 3 friday") becomes the due date | `services/todos.ts`, `pages/Home.tsx`, `shared/taskDate.ts` | None |
 
 ## Professors
 

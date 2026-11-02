@@ -3,6 +3,7 @@ import { ActionIcon, Anchor, Badge, Button, Card, Checkbox, Collapse, Group, Rin
 import { IconChevronDown, IconChevronRight, IconListCheck, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
+import { parseTaskDate } from '@shared/taskDate';
 import { Link } from 'react-router';
 import { ymd } from '@shared/dates';
 import { Feed } from '../components/Feed';
@@ -79,7 +80,9 @@ function TodayTasks() {
   const data = useQuery({ queryKey: ['todos', 'today'], queryFn: () => rpc.todos.today() });
   const [title, setTitle] = useState('');
   const [showLater, setShowLater] = useState(false);
-  const add = useAction(() => rpc.todos.add({ title, dueDate: null, classId: null }), { onSuccess: () => setTitle('') });
+  // A date typed at the end ("Read chapter 3 friday") becomes the due date.
+  const parsed = parseTaskDate(title, today);
+  const add = useAction(() => rpc.todos.add({ title: parsed.title, dueDate: parsed.dueDate, classId: null }), { onSuccess: () => setTitle('') });
 
   const items = data.data?.today ?? [];
   const done = items.filter((i) => i.done).length;
@@ -120,7 +123,7 @@ function TodayTasks() {
             <TextInput
               size="xs"
               radius="xl"
-              placeholder={t('Add a task…')}
+              placeholder={t('Add a task… try "read chapter 3 friday"')}
               aria-label={t('Add a task…')}
               value={title}
               onChange={(e) => setTitle(e.currentTarget.value)}
@@ -130,6 +133,11 @@ function TodayTasks() {
                 </ActionIcon>
               }
             />
+            {parsed.dueDate && (
+              <Text size="xs" c="dimmed" mt={4} pl={6}>
+                {t('“{{title}}”, due {{when}}', { title: parsed.title, when: dayLabel(parsed.dueDate, today) })}
+              </Text>
+            )}
           </form>
           {!!data.data?.later.length && (
             <>

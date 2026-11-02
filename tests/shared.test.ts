@@ -14,6 +14,7 @@ import { findParts, minutesForParts } from '@shared/assignment';
 import { clashes, groupMeetings } from '@shared/meetings';
 import { BACKUP_APP, readBackup, writeBackup } from '@shared/backup';
 import { parsePost } from '@shared/postText';
+import { parseTaskDate } from '@shared/taskDate';
 import { keywords, similarity } from '@shared/similar';
 import { parseTranscript } from '@shared/transcript';
 
@@ -559,5 +560,36 @@ describe('backups', () => {
     expect(readBackup(withFile({ path: '/attachments/x.txt' }))?.files[0].type).toBe('text/plain');
     expect(readBackup(withFile({ path: '/attachments/x.svg', type: 'image/svg+xml' }))?.files[0].type).toBe('application/octet-stream');
     expect(readBackup(withFile({ path: '/attachments/x.html', type: 'text/html' }))?.files[0].type).toBe('application/octet-stream');
+  });
+});
+
+describe('dates typed in a to-do (ST3)', () => {
+  const today = '2026-11-02'; // a Monday
+  const read = (text: string) => parseTaskDate(text, today);
+
+  it('reads days, in English and French', () => {
+    expect(read('Email the TA tomorrow')).toEqual({ title: 'Email the TA', dueDate: '2026-11-03' });
+    expect(read('Print notes today')).toEqual({ title: 'Print notes', dueDate: today });
+    expect(read('Read chapter 3 friday')).toEqual({ title: 'Read chapter 3', dueDate: '2026-11-06' });
+    expect(read('Read chapter 3 by fri')).toEqual({ title: 'Read chapter 3', dueDate: '2026-11-06' });
+    expect(read('Lire le chapitre 3 demain')).toEqual({ title: 'Lire le chapitre 3', dueDate: '2026-11-03' });
+    expect(read('Payer les frais vendredi')).toEqual({ title: 'Payer les frais', dueDate: '2026-11-06' });
+    // On a Monday, "monday" means next week.
+    expect(read('Call home monday')).toEqual({ title: 'Call home', dueDate: '2026-11-09' });
+    expect(read('Renew books in 3 days')).toEqual({ title: 'Renew books', dueDate: '2026-11-05' });
+  });
+
+  it('reads dates, moving to next year once they have gone by', () => {
+    expect(read('Pay fees nov 5')).toEqual({ title: 'Pay fees', dueDate: '2026-11-05' });
+    expect(read('Pay fees by November 5th')).toEqual({ title: 'Pay fees', dueDate: '2026-11-05' });
+    expect(read('Payer le 5 novembre')).toEqual({ title: 'Payer', dueDate: '2026-11-05' });
+    expect(read('Register jan 10')).toEqual({ title: 'Register', dueDate: '2027-01-10' });
+    expect(read('Reminder 2026-12-01')).toEqual({ title: 'Reminder', dueDate: '2026-12-01' });
+  });
+
+  it('leaves everything else as typed', () => {
+    for (const text of ['Renew library books', "Ask about Monday's class", 'Friday', 'Read chapter 3', 'Pay fees feb 31', 'Meet at 5 pm', 'Buy a mar bar', 'Call Sam', 'Swim in the sun', 'Get wed', 'Vue sur la mer', 'Text Dim', 'Mon']) {
+      expect(read(text)).toEqual({ title: text, dueDate: null });
+    }
   });
 });

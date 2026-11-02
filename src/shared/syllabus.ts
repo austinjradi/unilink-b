@@ -29,7 +29,7 @@ const MONTHS: [RegExp, number][] = [
   [/^d[eé]c(ember|embre)?$/, 11],
 ];
 
-const MONTH = String.raw`(jan(?:uary|vier)?|f[eé]v(?:rier)?|feb(?:ruary)?|mar(?:ch|s)?|apr(?:il)?|avr(?:il)?|ma[yi]|june?|juin|july?|juil(?:let)?|aug(?:ust)?|ao[uû]t?|sept?(?:ember|embre)?|oct(?:ober|obre)?|nov(?:ember|embre)?|d[eé]c(?:ember|embre)?)\.?`;
+export const MONTH = String.raw`(jan(?:uary|vier)?|f[eé]v(?:rier)?|feb(?:ruary)?|mar(?:ch|s)?|apr(?:il)?|avr(?:il)?|ma[yi]|june?|juin|july?|juil(?:let)?|aug(?:ust)?|ao[uû]t?|sept?(?:ember|embre)?|oct(?:ober|obre)?|nov(?:ember|embre)?|d[eé]c(?:ember|embre)?)\.?`;
 const WEEKDAY = String.raw`(?:(?:mon|tues?|wed(?:nes)?|thu(?:rs)?|fri|sat(?:ur)?|sun)(?:day)?\.?,?\s+)?`;
 // "October 22", "Oct. 22nd, 2026", "22 October", "le 22 octobre", "2026-10-22". Dates like
 // "10/6" are left out: they're read day-first in French and month-first in English.
@@ -45,9 +45,14 @@ const DATE_PATTERNS: { re: RegExp; read: (m: RegExpMatchArray) => { month: numbe
   },
 ];
 
-function monthDay(monthText: string, dayText: string, yearText?: string) {
+// January is 0; undefined if it isn't a month, in English or French.
+export function monthIndex(monthText: string) {
   const name = monthText.toLowerCase().replace(/\.$/, '');
-  const month = MONTHS.find(([re]) => re.test(name))?.[1];
+  return MONTHS.find(([re]) => re.test(name))?.[1];
+}
+
+function monthDay(monthText: string, dayText: string, yearText?: string) {
+  const month = monthIndex(monthText);
   return month == null ? null : { month, day: +dayText, year: yearText ? +yearText : undefined };
 }
 

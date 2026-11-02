@@ -22,6 +22,7 @@
   "Accept answer": "Accepter la réponse",
   "Accepted answer": "Réponse acceptée",
   "Add a grading scheme here first.": "Ajoutez d’abord un barème ici.",
+  "Add a task… try \"read chapter 3 friday\"": "Ajouter une tâche… essayez « lire le chapitre 3 vendredi »",
   "Add an assignment, split it into tasks (e.g. one per problem), and UniLink will schedule them as soon as you have free time, keeping two spare days before the deadline.": "Ajoutez un travail, divisez-le en tâches (p. ex. une par problème), et UniLink les placera dès que vous avez du temps libre, en gardant deux jours de réserve avant l’échéance.",
   "Add courses from a transcript": "Ajouter des cours d’un relevé de notes",
   "Add deadlines to your calendar": "Ajoutez vos échéances au calendrier",
@@ -572,5 +573,6 @@
   "{{name}} replied in \"{{title}}\"": "{{name}} a répondu dans « {{title}} »",
   "{{name}} sets the grading scheme for this section. Your grades are private.": "{{name}} établit le barème de cette section. Vos notes restent privées.",
   "{{title}} is in {{count}} days_one": "{{title}} a lieu dans {{count}} jour",
-  "{{title}} is in {{count}} days_other": "{{title}} a lieu dans {{count}} jours"
+  "{{title}} is in {{count}} days_other": "{{title}} a lieu dans {{count}} jours",
+  "“{{title}}”, due {{when}}": "« {{title}} », pour {{when}}"
 }
