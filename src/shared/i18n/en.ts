@@ -58,6 +58,7 @@ export const EN: Record<string, string> = {
     '{{count}} person is already going. Pick a limit of at least that.',
   ),
   ...plural('{{count}} planned tasks left', '{{count}} planned task left'),
+  ...plural('{{count}} new posts', '{{count}} new post'),
   ...plural('{{count}} required courses', '{{count}} required course'),
   ...plural('{{count}} students from {{code}} are on UniLink.', '{{count}} student from {{code}} is on UniLink.'),
   ...plural('{{count}} students on UniLink', '{{count}} student on UniLink'),

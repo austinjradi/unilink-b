@@ -468,6 +468,24 @@ describe('S4 discussion board', () => {
     expect((await unresolved()).map((p) => p.id)).toEqual([postId]);
   });
 
+  it('marks posts new until you open the class discussion', async () => {
+    const {
+      classId,
+      people: [maya, leo],
+    } = await classmates('Maya', 'Leo');
+    const ask = (title: string) => leo.api.board.create({ classId, kind: 'question', topic: 'Exams', title, body: '?', visibility: 'class', audienceEmails: [] });
+    await ask('Is the final cumulative?');
+    expect((await maya.api.board.feed({ classIds: null, topics: [], since: null, search: '', unresolved: false })).map((p) => p.isNew)).toEqual([true]);
+    expect(await maya.api.board.newCounts()).toEqual([{ classId, count: 1 }]);
+    expect(await leo.api.board.newCounts()).toEqual([]); // not your own posts
+
+    await maya.api.board.seen({ classId });
+    expect(await maya.api.board.newCounts()).toEqual([]);
+    clock = new Date(clock.getTime() + 60_000);
+    await ask('Office hours moved?');
+    expect(await maya.api.board.newCounts()).toEqual([{ classId, count: 1 }]);
+  });
+
   it('keeps the replies when a post is deleted', async () => {
     const { classId, people } = await classmates('Maya', 'Leo');
     const [maya, leo] = people;

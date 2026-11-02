@@ -63,6 +63,7 @@ function MyCourses() {
   const today = ymd(new Date());
   const week = useQuery({ queryKey: ['calendar', today, addDays(today, 7)], queryFn: () => rpc.calendar.range({ from: today, to: addDays(today, 7) }) });
   const due = useQuery({ queryKey: ['calendar', 'upcoming', 60], queryFn: () => rpc.calendar.upcoming({ days: 60 }) });
+  const fresh = useQuery({ queryKey: ['board', 'newCounts'], queryFn: () => rpc.board.newCounts() });
   const open = useQuery({
     queryKey: ['board', 'feed', 'open'],
     queryFn: () => rpc.board.feed({ classIds: null, topics: [], since: null, search: '', unresolved: true }),
@@ -86,6 +87,7 @@ function MyCourses() {
         const lecture = week.data?.find((e) => e.kind === 'class' && e.classId === c.id && e.start > new Date());
         const next = due.data?.find((e) => e.classId === c.id);
         const questions = open.data?.filter((p) => p.classId === c.id).length ?? 0;
+        const newPosts = fresh.data?.find((n) => n.classId === c.id)?.count ?? 0;
         return (
           <Card key={c.id} component={Link} to={`/classes/${c.id}`} className="clickable" padding="lg">
             <Group justify="space-between" mb="xs">
@@ -123,6 +125,11 @@ function MyCourses() {
                     <IconMessageQuestion size={16} />
                     <Text size="sm">{t('{{count}} unanswered questions', { count: questions })}</Text>
                   </Group>
+                )}
+                {newPosts > 0 && (
+                  <Badge size="sm" variant="light">
+                    {t('{{count}} new posts', { count: newPosts })}
+                  </Badge>
                 )}
               </Group>
             </Stack>

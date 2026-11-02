@@ -1,7 +1,8 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import {
   ActionIcon,
   Anchor,
+  Badge,
   Button,
   Card,
   Chip,
@@ -182,6 +183,11 @@ function PostCard({ post, onOpen }: { post: FeedPost; onOpen: () => void }) {
               <Text size="sm" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
                 {fromNow(post.createdAt)}
               </Text>
+              {post.isNew && (
+                <Badge size="xs" variant="filled" style={{ flex: 'none' }}>
+                  {t('New')}
+                </Badge>
+              )}
             </Group>
             <Group gap={6}>
               {post.visibility === 'selected' && (
@@ -299,6 +305,12 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
       }),
     placeholderData: keepPreviousData,
   });
+  // Opening a class's discussion marks it seen once the posts are on screen; they keep their
+  // New badge until the next visit.
+  const loaded = feed.isSuccess;
+  useEffect(() => {
+    if (classId && loaded) rpc.board.seen({ classId }).catch(() => {});
+  }, [classId, loaded]);
 
   const filters = (
     <Stack gap="md">

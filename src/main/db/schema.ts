@@ -437,6 +437,17 @@ export const studyModeSettings = sqliteTable('study_mode_settings', {
   pausedUntil: timestamp('paused_until'),
 });
 
+// S4: when each student last opened a class's discussion, for "new since your last visit".
+export const boardVisits = sqliteTable(
+  'board_visits',
+  {
+    userId: userRef(),
+    classId: classRef(),
+    seenAt: timestamp('seen_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.classId] })],
+);
+
 // --- 🐐 reactions on discussion posts and replies (UI design, A2Team.pdf) --------------
 
 export const postReactions = sqliteTable(

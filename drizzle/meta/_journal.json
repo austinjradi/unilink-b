@@ -50,6 +50,13 @@
       "when": 1793560790755,
       "tag": "0006_planner_follows_deadlines",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1793578027921,
+      "tag": "0007_board_visits",
+      "breakpoints": true
     }
   ]
 }

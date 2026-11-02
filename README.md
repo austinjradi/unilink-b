@@ -49,7 +49,8 @@ The interface follows the team's wireframes in `A2Team.pdf`:
 - **Home:** today's tasks and deadline countdowns on the left, a cross-class discussion feed with 🐐
   reactions in the middle, and filters on the right.
 - **Threads:** one list of replies, with the accepted answer pinned first. A classmate's name opens their
-  profile card; the feed sorts by newest or most 🐐.
+  profile card; the feed sorts by newest or most 🐐, and posts since your last visit to a class are marked New
+  (counted on its course card).
 - **Grade Calculator:** a "You need at least X%" bubble and a scenarios table.
 - **Calendar & Planner:** Month, Week, Semester and Key dates views. Pick any day to list everything on it; on phones
   the month shows a coloured dot per event.
@@ -249,7 +250,7 @@ invitations and individual reports; study mode follows the section's shared clas
 | Plans that follow a class deadline | `services/planner.ts` (`followMovedDeadlines`), `services/calendar.ts` (`collect`) |
 
 The database changes are migrations `0004_version_b` (new tables and columns), `0005_version_b_cleanup`
-(columns and tables B no longer uses) and `0006_planner_follows_deadlines` (what a plan follows).
+(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) and `0007_board_visits` (new posts since your last visit).
 
 ## Not built yet
 

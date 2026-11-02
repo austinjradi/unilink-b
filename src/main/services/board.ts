@@ -2,7 +2,7 @@ import { and, asc, count, desc, eq, gte, inArray, isNull, like, or, sql } from '
 import { z } from 'zod';
 import { goatFor } from '@shared/goat';
 import type { DB } from '../db/client';
-import { classes, courses, enrollments, postAudience, postReactions, posts, replies, replyReactions, users } from '../db/schema';
+import { boardVisits, classes, courses, enrollments, postAudience, postReactions, posts, replies, replyReactions, users } from '../db/schema';
 import { AppError, idSchema, nonEmpty, procedure } from '../rpc/core';
 import { FORMER_STUDENT_EMAIL, notFound, requireMember, sectionCode } from './access';
 import { enrolledUsersByEmail } from './classes';
@@ -38,6 +38,22 @@ function myClassIds(db: DB, userId: number) {
     .where(eq(enrollments.userId, userId))
     .all()
     .map((r) => r.id);
+}
+
+// "New since your last visit": posts by others after the student last opened the class's
+// discussion. Before their first visit, only the last three days count, not the whole term.
+const FIRST_VISIT_WINDOW = 3 * 86_400_000;
+
+function lastSeen(db: DB, userId: number, now: Date) {
+  const seen = new Map(
+    db
+      .select()
+      .from(boardVisits)
+      .where(eq(boardVisits.userId, userId))
+      .all()
+      .map((v) => [v.classId, v.seenAt.getTime()]),
+  );
+  return (classId: number) => seen.get(classId) ?? now.getTime() - FIRST_VISIT_WINDOW;
 }
 
 function visiblePost(db: DB, userId: number, postId: number) {
@@ -121,6 +137,7 @@ export const boardRouter = {
             : null;
       const term = `%${search}%`;
       const goats = sql<number>`(select count(*) from ${postReactions} where ${postReactions.postId} = ${posts.id})`.mapWith(Number);
+      const seen = lastSeen(ctx.db, ctx.userId, now);
 
       return ctx.db
         .select({
@@ -158,9 +175,36 @@ export const boardRouter = {
         .orderBy(...(sort === 'top' ? [desc(goats)] : []), desc(posts.createdAt), desc(posts.id))
         .limit(100)
         .all()
-        .map(withGoat);
+        .map((p) => ({ ...withGoat(p), isNew: p.authorId !== ctx.userId && !p.deletedAt && p.createdAt.getTime() > seen(p.classId) }));
     },
   ),
+
+  // Opening a class's discussion marks its posts as seen.
+  seen: procedure(z.object({ classId: idSchema }), ({ classId }, ctx) => {
+    requireMember(ctx.db, ctx.userId, classId);
+    const seenAt = ctx.now();
+    ctx.db
+      .insert(boardVisits)
+      .values({ userId: ctx.userId, classId, seenAt })
+      .onConflictDoUpdate({ target: [boardVisits.userId, boardVisits.classId], set: { seenAt } })
+      .run();
+  }),
+
+  // How many posts are new in each of the student's classes.
+  newCounts: procedure(z.void(), (_input, ctx) => {
+    const ids = myClassIds(ctx.db, ctx.userId);
+    if (!ids.length) return [];
+    const seen = lastSeen(ctx.db, ctx.userId, ctx.now());
+    const counts = new Map<number, number>();
+    for (const p of ctx.db
+      .select({ classId: posts.classId, authorId: posts.authorId, createdAt: posts.createdAt })
+      .from(posts)
+      .where(and(inArray(posts.classId, ids), canSee(ctx.userId), isNull(posts.deletedAt)))
+      .all()) {
+      if (p.authorId !== ctx.userId && p.createdAt.getTime() > seen(p.classId)) counts.set(p.classId, (counts.get(p.classId) ?? 0) + 1);
+    }
+    return [...counts].map(([classId, count]) => ({ classId, count }));
+  }),
 
   get: procedure(z.object({ postId: idSchema }), ({ postId }, ctx) => {
     const post = visiblePost(ctx.db, ctx.userId, postId);
@@ -236,7 +280,7 @@ export const boardRouter = {
       return ctx.db.transaction((tx) => {
         const post = tx
           .insert(posts)
-          .values({ ...fields, classId, authorId: ctx.userId })
+          .values({ ...fields, classId, authorId: ctx.userId, createdAt: ctx.now() })
           .returning({ id: posts.id })
           .get();
         if (audience.length) tx.insert(postAudience).values(audience.map((u) => ({ postId: post.id, userId: u.id }))).run();

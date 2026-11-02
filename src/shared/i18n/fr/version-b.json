@@ -307,6 +307,8 @@
   "{{count}} classmates reported it. Fix the link, or mark it fixed if it works._other": "{{count}} camarades l’ont signalé. Corrigez le lien, ou marquez-le comme réglé s’il fonctionne.",
   "{{count}} classmates say it works_one": "{{count}} camarade dit qu’il fonctionne",
   "{{count}} classmates say it works_other": "{{count}} camarades disent qu’il fonctionne",
+  "{{count}} new posts_one": "{{count}} nouvelle publication",
+  "{{count}} new posts_other": "{{count}} nouvelles publications",
   "{{count}} on the waitlist_one": "{{count}} sur la liste d’attente",
   "{{count}} on the waitlist_other": "{{count}} sur la liste d’attente",
   "{{count}} people are already going. Pick a limit of at least that._one": "{{count}} personne participe déjà. Choisissez une limite d’au moins ce nombre.",
