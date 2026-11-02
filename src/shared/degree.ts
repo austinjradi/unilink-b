@@ -154,3 +154,12 @@ export function evaluateDegree(
     graduated: totals.completed >= program.totalCredits && groups.every((g) => g.done),
   };
 }
+
+// A2: the credits a term it takes to finish by the expected graduation, assuming that's the Winter
+// term of that year and courses are taken in Fall and Winter. This term's courses count as done.
+export function graduationPace(creditsLeft: number, gradYear: number, currentTerm: string): { terms: number; perTerm: number } | null {
+  if (creditsLeft <= 0) return null;
+  const [season, year] = currentTerm.split(' ');
+  const terms = Math.max(0, 2 * (gradYear - Number(year)) - (season === 'Fall' ? 1 : 0));
+  return { terms, perTerm: terms ? Math.ceil(creditsLeft / terms) : creditsLeft };
+}

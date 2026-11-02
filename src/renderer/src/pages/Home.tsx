@@ -12,6 +12,7 @@ import { dayLabel, fmtDateTime } from '../lib/format';
 import { FocusButton } from '../components/FocusTask';
 import { useAction, useMe } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
+import { useUndo } from '../lib/undo';
 import { t } from '../lib/i18n';
 
 type TodayItem = Out<typeof rpc.todos.today>['today'][number];
@@ -173,7 +174,12 @@ function TaskRow({ item, today }: { item: TodayItem; today: string }) {
   const toggle = useAction((done: boolean) =>
     item.kind === 'task' ? rpc.planner.setDone({ taskId: item.id, done }) : rpc.todos.setDone({ id: item.id, done }),
   );
-  const remove = useAction(() => rpc.todos.remove({ id: item.id }));
+  const undo = useUndo();
+  const remove = useAction(() => rpc.todos.remove({ id: item.id }), {
+    onSuccess: () => {
+      if (!item.done) undo(t('To-do deleted'), () => rpc.todos.add({ title: item.title, dueDate: item.due, classId: item.classId, weekly: item.weekly }));
+    },
+  });
 
   return (
     <Group gap={8} wrap="nowrap" align="flex-start">

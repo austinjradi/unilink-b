@@ -8,10 +8,10 @@ import { DEFAULT_WEEKLY_MINUTES, minutesAroundClasses, minutesOn, planTasks, typ
 import { passwordProblems } from '@shared/validation';
 import { parseCourseQuery, parseSchedule } from '@shared/courseQuery';
 import { goalOutlook, summarizeRecord, termOrder } from '@shared/academics';
-import { evaluateDegree, type Program } from '@shared/degree';
+import { evaluateDegree, graduationPace, type Program } from '@shared/degree';
 import { type FocusWindow, studyModeStatus } from '@shared/studyMode';
 import { parseSyllabus } from '@shared/syllabus';
-import { findParts, minutesForParts } from '@shared/assignment';
+import { findParts, looksLikeExam, minutesForParts } from '@shared/assignment';
 import { clashes, groupMeetings } from '@shared/meetings';
 import { BACKUP_APP, readBackup, writeBackup } from '@shared/backup';
 import { docxText, docxXmlToText } from '@shared/docx';
@@ -754,5 +754,30 @@ describe('A3 busy weeks', () => {
     expect(isBusyWeek([{}, {}, {}, {}])).toBe(true);
     expect(isBusyWeek([{ weight: 30 }])).toBe(true);
     expect(isBusyWeek([{ weight: 15 }, { weight: 15 }])).toBe(true);
+  });
+});
+
+describe('A2 graduation pace', () => {
+  it('spreads the credits left over the Fall and Winter terms before graduating', () => {
+    // After Fall 2026, graduating in 2028: Winter 2027, Fall 2027, Winter 2028.
+    expect(graduationPace(45, 2028, 'Fall 2026')).toEqual({ terms: 3, perTerm: 15 });
+    expect(graduationPace(46, 2028, 'Fall 2026')).toEqual({ terms: 3, perTerm: 16 });
+    // After Winter 2027, graduating in 2028: Fall 2027, Winter 2028.
+    expect(graduationPace(30, 2028, 'Winter 2027')).toEqual({ terms: 2, perTerm: 15 });
+    // After Fall 2026, graduating in 2027: only Winter 2027 is left.
+    expect(graduationPace(15, 2027, 'Fall 2026')).toEqual({ terms: 1, perTerm: 15 });
+  });
+
+  it('has nothing to say when nothing is left, and says when no terms are', () => {
+    expect(graduationPace(0, 2028, 'Fall 2026')).toBeNull();
+    expect(graduationPace(-3, 2028, 'Fall 2026')).toBeNull();
+    expect(graduationPace(12, 2026, 'Fall 2026')).toEqual({ terms: 0, perTerm: 12 });
+  });
+});
+
+describe('ST2 exam plans', () => {
+  it('recognizes a plan for an exam', () => {
+    for (const title of ['Midterm', 'COMP 251 final exam', 'Examen intra', 'Final', 'Physics test']) expect(looksLikeExam(title)).toBe(true);
+    for (const title of ['Assignment 3', 'Finalize the essay', 'Latest reading', 'Contest entry']) expect(looksLikeExam(title)).toBe(false);
   });
 });

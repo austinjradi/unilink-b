@@ -54,3 +54,6 @@ export function minutesForParts(parts: AssignmentPart[], minutes: number) {
   if (!total || parts.some((p) => !p.points)) return parts.map(() => minutes);
   return parts.map((p) => Math.min(600, Math.max(15, Math.round((minutes * parts.length * p.points!) / total / 15) * 15)));
 }
+
+// A plan for an exam rather than an assignment has no problems to split it by.
+export const looksLikeExam = (title: string) => /\b(?:midterm|exam|examen|intra|final|finale|test)\b/i.test(title);

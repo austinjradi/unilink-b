@@ -101,7 +101,7 @@ const session = (fields: Partial<Parameters<RpcClient<AppRouter>['studySessions'
 
 const problems = (minutes: number) => ['Problem 1', 'Problem 2', 'Problem 3'].map((title) => ({ title, minutes }));
 
-const titles = async (s: { api: RpcClient<AppRouter> }) => (await s.api.notifications.list()).items.filter((n) => n.type !== 'week-ahead').map((n) => n.title);
+const titles = async (s: { api: RpcClient<AppRouter> }) => (await s.api.notifications.list()).items.filter((n) => n.type !== 'week-ahead' && n.type !== 'key-date').map((n) => n.title);
 
 const expectCode = (promise: Promise<unknown>, code: string) => expect(promise).rejects.toMatchObject({ code });
 
@@ -1789,6 +1789,37 @@ describe('G3 notifications', () => {
     clock = new Date(2026, 9, 19, 7);
     sweepReminders(authed);
     expect((await week())[0].body).toMatch(/\+2 more$/);
+  });
+
+  it('reminds about add/drop and withdrawal deadlines a week ahead and the day before, once each', async () => {
+    const { people } = await classmates('Maya');
+    const [maya] = people;
+    const authed = { ...maya.ctx, userId: maya.user.id };
+    const reminders = async () => (await maya.api.notifications.list()).items.filter((n) => n.type === 'key-date').map((n) => n.title);
+    // Fall 2026's "Last day to withdraw (W, no refund)" is 27 October.
+    clock = new Date(2026, 9, 19, 9);
+    sweepReminders(authed);
+    expect(await reminders()).toEqual([]);
+    clock = new Date(2026, 9, 20, 9);
+    sweepReminders(authed);
+    sweepReminders(authed);
+    clock = new Date(2026, 9, 22, 9);
+    sweepReminders(authed);
+    expect(await reminders()).toEqual(['Last day to withdraw (W, no refund) is in 7 days']);
+    clock = new Date(2026, 9, 26, 9);
+    sweepReminders(authed);
+    clock = new Date(2026, 9, 27, 9);
+    sweepReminders(authed);
+    expect(await reminders()).toEqual(['Last day to withdraw (W, no refund): tomorrow', 'Last day to withdraw (W, no refund) is in 7 days']);
+    clock = new Date(2026, 9, 28, 9);
+    sweepReminders(authed);
+    expect(await reminders()).toHaveLength(2);
+
+    // Someone with no classes that term isn't told, and neither is whoever teaches them.
+    const loner = await student('Sam');
+    clock = new Date(2026, 9, 26, 9);
+    sweepReminders({ ...loner.ctx, userId: loner.user.id });
+    expect((await loner.api.notifications.list()).items.filter((n) => n.type === 'key-date')).toEqual([]);
   });
 
   it('reminds about a final exam the day before', async () => {

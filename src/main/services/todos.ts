@@ -34,6 +34,7 @@ export interface TodayItem {
   kind: 'task' | 'todo';
   id: number;
   title: string;
+  classId: number | null;
   context: string | null;
   due: string | null;
   overdue: boolean;
@@ -83,6 +84,7 @@ export const todosRouter = {
         kind: 'task',
         id: task.id,
         title: task.title,
+        classId,
         context: [assignment, classLabel(ctx.db, classId)].filter(Boolean).join(' · '),
         due: task.scheduledFor,
         overdue: !task.doneAt && task.scheduledFor < today,
@@ -103,6 +105,7 @@ export const todosRouter = {
           kind: 'todo',
           id: t.id,
           title: t.title,
+          classId: t.classId,
           context: classLabel(ctx.db, t.classId),
           due: t.dueDate,
           overdue: !t.doneAt && t.dueDate != null && t.dueDate < today,

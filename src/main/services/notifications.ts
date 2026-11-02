@@ -2,7 +2,7 @@ import { type AnyColumn, and, asc, count, desc, eq, gt, inArray, isNull, lte, or
 import { z } from 'zod';
 import { addDays, atTime, daysBetween, ymd } from '@shared/dates';
 import { type Locale, type Message, type Params, render, translate } from '@shared/i18n';
-import { finalExamFor } from '@shared/keyDates';
+import { finalExamFor, KEY_DATES } from '@shared/keyDates';
 import { channelsFor, NOTIFICATION_TYPES, type NotificationType } from '@shared/notifications';
 import type { DB } from '../db/client';
 import {
@@ -149,6 +149,35 @@ function weekAhead(ctx: AuthedContext, locale: Locale) {
   });
 }
 
+// A3: add/drop and withdrawal deadlines for the terms a student has classes in: a week ahead, when
+// there's still time to decide, and again the day before.
+function keyDateReminders(ctx: AuthedContext, locale: Locale) {
+  const { db, userId } = ctx;
+  const today = ymd(ctx.now());
+  const terms = new Set(
+    db
+      .select({ term: classes.term })
+      .from(enrollments)
+      .innerJoin(classes, eq(enrollments.classId, classes.id))
+      .where(eq(enrollments.userId, userId))
+      .all()
+      .map((c) => c.term),
+  );
+  for (const k of KEY_DATES) {
+    if (k.type !== 'deadline' || !terms.has(k.term)) continue;
+    const days = daysBetween(today, k.date);
+    if (days < 0 || days > 7) continue;
+    const title = render(locale, m(k.title));
+    notify(db, userId, {
+      type: 'key-date',
+      title: days === 0 ? m('{{title}}: today', { title }) : days === 1 ? m('{{title}}: tomorrow', { title }) : m('{{title}} is in {{count}} days', { title, count: days }),
+      body: k.approximate ? m('This date is approximate. Check it with McGill.') : raw(k.term),
+      link: '/calendar',
+      dedupeKey: `key-date:${k.term}:${k.date}:${days <= 1 ? 'day' : 'week'}`,
+    });
+  }
+}
+
 // Time-based reminders for the signed-in user; run every tick by the main process.
 export function sweepReminders(ctx: AuthedContext) {
   const { db, userId } = ctx;
@@ -197,6 +226,7 @@ export function sweepReminders(ctx: AuthedContext) {
   // A3: final exams from the exam schedule, in the student's language.
   const locale = recipient(db, userId)?.locale ?? 'en';
   if (!teaching) weekAhead(ctx, locale);
+  if (!teaching) keyDateReminders(ctx, locale);
   for (const d of teaching ? [] : visibleDeadlines(db, userId, in24h, in3Days)) {
     if (d.kind !== 'exam' || d.done) continue;
     headsUp(raw(d.title), d.dueAt, raw(classLabel(db, d.classId) ?? ''), d.classId ? `/classes/${d.classId}` : '/calendar', `deadline:${d.id}`);

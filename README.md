@@ -94,6 +94,7 @@ The interface follows the team's wireframes in `A2Team.pdf`:
   Picking one sets up the session and tells everyone who answered, who then choose whether to join (`services/timePolls.ts`).
 - **Study Mode:** its own tab, with a pill in the top bar while it's on. A planned task (on Home or the Planner) can start a
   **focus session as long as the task is meant to take**, and when it ends the app asks whether you finished it.
+- **Degree plan:** which of your courses count and what's left, with the **credits a term** it takes to graduate in your expected year.
 - **Course record:** credits and CGPA, plus a **CGPA goal**: type the CGPA you're aiming for and see what your next credits
   have to average, or how far straight A's would get you if it's out of reach (`goalOutlook` in `shared/academics.ts`).
 - **Settings:** sections down the side.
@@ -291,7 +292,7 @@ both versions.
 The yellow features (A1, A2, G3, ST1, ST3) keep version A's decisions, adjusted where they touch the above:
 notifications cover waitlist spots, host hand-offs, session changes, replies in followed threads, accepted answers,
 hidden links and failed sign-ins instead of invitations and individual reports; study mode follows the section's shared class times.
-Students also get **one summary of the week ahead**, the first time they open the app after Sunday 16:00, listing what's due in
+McGill's **add/drop and withdrawal deadlines** remind students a week ahead and the day before. Students also get **one summary of the week ahead**, the first time they open the app after Sunday 16:00, listing what's due in
 the next seven days (nothing if nothing is due; it can be turned off for desktop and email like the rest).
 
 ### Where the decisions live

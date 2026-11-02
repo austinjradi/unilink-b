@@ -41,7 +41,7 @@ import {
 import { useMutation, useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useSearchParams } from 'react-router';
-import { type AssignmentPart, minutesForParts } from '@shared/assignment';
+import { type AssignmentPart, looksLikeExam, minutesForParts } from '@shared/assignment';
 import { addDays, ymd } from '@shared/dates';
 import { DEFAULT_BUFFER_DAYS, weeklyMinutes } from '@shared/planner';
 import { Empty, Loading, PageHeader } from '../components/ui';
@@ -49,8 +49,9 @@ import { dayLabel, fmtDateTime, fromNow, toDate } from '../lib/format';
 import { FocusButton } from '../components/FocusTask';
 import { useAction, useMe } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
+import { useUndo } from '../lib/undo';
 import { ClassSelect } from './Calendar';
-import { t } from '../lib/i18n';
+import { t, tx } from '../lib/i18n';
 
 type Assignment = Out<typeof rpc.planner.list>[number];
 type Task = Assignment['tasks'][number];
@@ -324,10 +325,23 @@ function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onE
   );
 }
 
+// What most exam plans come down to; the student can change any of it before saving.
+const EXAM_STEPS = [
+  { title: tx('Go through the lecture notes'), minutes: 120 },
+  { title: tx('Redo the assignments and practice problems'), minutes: 120 },
+  { title: tx('Write a past exam, timed'), minutes: 120 },
+  { title: tx('Go over what you got wrong'), minutes: 60 },
+];
+
 function TaskRow({ task, dueDay }: { task: Task; dueDay: string }) {
+  const undo = useUndo();
   const setDone = useAction((done: boolean) => rpc.planner.setDone({ taskId: task.id, done }));
   const move = useAction((day: string) => rpc.planner.moveTask({ taskId: task.id, day }), { success: 'Task moved. It will stay on that day.' });
-  const remove = useAction(() => rpc.planner.removeTask({ taskId: task.id }));
+  const remove = useAction(() => rpc.planner.removeTask({ taskId: task.id }), {
+    onSuccess: () => {
+      if (!task.doneAt) undo(t('Task deleted'), () => rpc.planner.addTask({ assignmentId: task.assignmentId, title: task.title, minutes: task.minutes }));
+    },
+  });
 
   return (
     // On narrow screens the minutes, day and delete wrap under the task instead of squeezing it.
@@ -538,6 +552,17 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
           <Text size="sm" fw={500} mb={6}>
             {t('How should it be split?')}
           </Text>
+          {looksLikeExam(v.title) && (
+            <Button
+              display="block"
+              size="xs"
+              variant="light"
+              mb="sm"
+              onClick={() => form.setValues({ mode: 'custom', custom: EXAM_STEPS.map((step) => ({ title: t(step.title), minutes: step.minutes })) })}
+            >
+              {t('Studying for an exam? Start from these steps')}
+            </Button>
+          )}
           <SegmentedControl
             data={[
               { value: 'parts', label: t('Equal parts') },

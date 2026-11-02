@@ -12,6 +12,7 @@ export const NOTIFICATION_TYPES = {
   'answer-accepted': { label: 'Your answer was accepted', desktop: true, email: false },
   'link-hidden': { label: 'Your group chat link was hidden after reports', desktop: true, email: false },
   'deadline-soon': { label: 'Deadlines in the next 24 hours, and exams 3 days ahead', desktop: true, email: true },
+  'key-date': { label: "McGill's add/drop and withdrawal deadlines, a week ahead and the day before", desktop: true, email: true },
   'week-ahead': { label: 'What you have due in the week ahead, once a week', desktop: true, email: false },
   'tasks-today': { label: "Today's planned tasks", desktop: true, email: false },
   'plan-moved': { label: 'Plans that moved with a class deadline', desktop: true, email: false },

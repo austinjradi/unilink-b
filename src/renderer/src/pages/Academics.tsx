@@ -28,10 +28,11 @@ import { IconAlertTriangle, IconCertificate, IconCircleCheck, IconClipboardText,
 import { useQuery } from '@tanstack/react-query';
 import { goalOutlook, OTHER_GRADES, RECORD_GRADES, RECORD_STATUSES, type RecordStatus, summarizeRecord, termOptions, termOrder } from '@shared/academics';
 import { CURRENT_TERM } from '@shared/dates';
+import { graduationPace } from '@shared/degree';
 import { letterFor } from '@shared/grades';
 import { parseTranscript } from '@shared/transcript';
 import { Empty, Loading, SectionCard } from '../components/ui';
-import { useAction } from '../lib/hooks';
+import { useAction, useMe } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
 import { t, term, tx } from '../lib/i18n';
 
@@ -469,6 +470,9 @@ function DegreeTab({ onPlan }: { onPlan: (draft: Partial<RecordDraft>) => void }
 
 function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.degree.evaluate>>; onPlan: (d: Partial<RecordDraft>) => void }) {
   const { program, evaluation: e, titles } = result;
+  const gradYear = useMe().gradYear;
+  const left = program.totalCredits - e.credits.completed - e.credits['in-progress'];
+  const pace = gradYear != null && !e.graduated ? graduationPace(left, gradYear, CURRENT_TERM) : null;
   const pct = (n: number) => (n / program.totalCredits) * 100;
   const isOpen = (c: { state: string }) => c.state === 'missing' || c.state === 'below-minimum';
   const missingRequired = e.groups.filter((g) => g.kind === 'required').flatMap((g) => g.courses.filter(isOpen)).length;
@@ -523,6 +527,14 @@ function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.d
           <Alert color="orange" icon={<IconAlertTriangle size={18} />}>
             {t('Your plan still needs {{gaps}}. Use "Plan it" below to add courses to a future term.', { gaps: gaps.join(', ') })}
           </Alert>
+        )}
+        {pace && gradYear != null && (
+          <Text size="sm" mt="sm" c={pace.perTerm > 18 ? 'orange' : undefined}>
+            {pace.terms
+              ? t('{{count}} credits left after this term: about {{pace}} a term to graduate in {{year}}.', { count: left, pace: pace.perTerm, year: gradYear })
+              : t('{{count}} credits left after this term, with none left before graduating in {{year}}.', { count: left, year: gradYear })}
+            {pace.terms > 0 && pace.perTerm > 18 && ` ${t('That’s more than the usual 15 to 18, so you may need summer courses or another term.')}`}
+          </Text>
         )}
       </SectionCard>
 
