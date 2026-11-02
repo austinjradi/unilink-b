@@ -95,7 +95,7 @@ export function SessionRow({ session: s, onDetails }: { session: Session; onDeta
           {s.waitlistCount ? t('+{{count}} waiting', { count: s.waitlistCount }) : t('members')}
         </Text>
       </div>
-      <Group gap="xs" wrap="nowrap" w={170} justify="flex-end">
+      <Group gap="xs" wrap="nowrap" w={190} justify="flex-end">
         {!s.cancelledAt && s.myStatus === null && (
           <Button onClick={() => join.mutate()} loading={join.isPending} variant={s.isFull ? 'default' : 'filled'}>
             {s.isFull ? t('Join waitlist') : t('Join')}

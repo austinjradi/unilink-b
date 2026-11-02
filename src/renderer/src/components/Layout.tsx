@@ -130,7 +130,7 @@ export function Layout({ children }: { children: ReactNode }) {
             )}
             {me.role === 'student' && <StudyModePill />}
             {me.role === 'student' && <FocusCheckIn />}
-            {/* Phones: the tabs don't fit, so they're also in a menu. */}
+            {/* Phones and small tablets: the tabs don't fit, so they're in a menu. */}
             <Menu position="bottom-end" width={220}>
               <Menu.Target>
                 <ActionIcon variant="subtle" color="gray" size="lg" className="nav-menu" aria-label={t('Menu')}>

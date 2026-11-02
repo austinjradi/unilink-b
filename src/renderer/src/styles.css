@@ -274,8 +274,9 @@ h3,
   }
 }
 
-/* Web build on phones: the tabs scroll sideways instead of pushing the bell and
-   account menu off the screen, and the header logo drops its wordmark. */
+/* The tabs scroll sideways instead of pushing the bell and account menu off the screen.
+   The header logo drops its wordmark when that's what makes them fit (French tab names
+   are longer), and below that they move into a menu. */
 .nav-tabs {
   min-width: 0;
   overflow-x: auto;
@@ -290,7 +291,7 @@ h3,
   flex-shrink: 0;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 760px), (min-width: 1024px) and (max-width: 1115px) {
   .header-logo .display {
     display: none;
   }
@@ -300,7 +301,7 @@ h3,
   display: none;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 1023px) {
   .nav-tabs {
     display: none;
   }
