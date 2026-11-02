@@ -1324,6 +1324,31 @@ describe('Professors', () => {
     await expectCode(leo.api.board.get({ postId: lonely }), 'NOT_FOUND');
   });
 
+  it('counts a question as answered once the professor answers or endorses', async () => {
+    const { classId, prof, maya, leo } = await taught();
+    const unanswered = async () => (await maya.api.board.feed({ classIds: [classId], topics: [], since: null, search: '', unresolved: true })).map((p) => p.title);
+    const { id: first } = await maya.api.board.create({ ...question, classId, title: 'Answered by the professor' });
+    const { id: second } = await maya.api.board.create({ ...question, classId, title: 'Endorsed by the professor' });
+    await maya.api.board.create({ ...question, classId, title: 'Only a classmate replied' });
+    const open = (await maya.api.board.feed({ classIds: [classId], topics: [], since: null, search: '' })).find((p) => p.title === 'Only a classmate replied')!;
+    await leo.api.board.reply({ postId: open.id, body: 'I think so' });
+    expect((await unanswered()).sort()).toEqual(['Answered by the professor', 'Endorsed by the professor', 'Only a classmate replied']);
+
+    await prof.api.board.reply({ postId: first, body: 'Yes.' });
+    await leo.api.board.reply({ postId: second, body: 'It is B' });
+    const [reply] = (await prof.api.board.get({ postId: second })).replies;
+    await prof.api.board.endorse({ replyId: reply.id, endorsed: true });
+
+    expect(await unanswered()).toEqual(['Only a classmate replied']);
+    expect((await maya.api.board.get({ postId: first })).professorAnswered).toBe(true);
+    expect((await maya.api.board.get({ postId: open.id })).professorAnswered).toBe(false);
+    const feed = await maya.api.board.feed({ classIds: [classId], topics: [], since: null, search: '' });
+    expect(feed.find((p) => p.id === second)?.professorAnswered).toBe(true);
+    // Taking the endorsement back reopens it.
+    await prof.api.board.endorse({ replyId: reply.id, endorsed: false });
+    expect((await unanswered()).sort()).toEqual(['Endorsed by the professor', 'Only a classmate replied']);
+  });
+
   it('takes reports from students, without saying who, and keeps them from everyone else', async () => {
     const { classId, prof, maya, leo } = await taught();
     const ana = await student('Ana');

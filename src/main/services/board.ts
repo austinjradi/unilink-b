@@ -245,6 +245,8 @@ export const boardRouter = {
       const goats = sql<number>`(select count(*) from ${postReactions} where ${postReactions.postId} = ${posts.id})`.mapWith(Number);
       const seen = lastSeen(ctx.db, ctx.userId, now);
       const reportsSql = sql`(select count(*) from ${postReports} where ${postReports.postId} = ${posts.id})`;
+      // A professor's reply or endorsement answers a question, whether or not the asker accepts one.
+      const professorAnsweredSql = sql<number>`exists (select 1 from ${replies} inner join ${users} on ${users.id} = ${replies.authorId} where ${replies.postId} = ${posts.id} and (${replies.endorsedAt} is not null or ${users.role} = 'professor'))`;
       const taught = ids.filter((id) => teaches(ctx.db, ctx.userId, id));
 
       const rows = ctx.db
@@ -265,6 +267,7 @@ export const boardRouter = {
           lockedAt: posts.lockedAt,
           removedByProfessor: posts.removedByProfessor,
           reports: reportsSql.mapWith(Number),
+          professorAnswered: professorAnsweredSql.mapWith(Boolean),
           ...authorColumns,
           replyCount: sql<number>`(select count(*) from ${replies} where ${replies.postId} = ${posts.id})`.mapWith(Number),
           goats,
@@ -281,7 +284,7 @@ export const boardRouter = {
             topics.length ? inArray(posts.topic, topics) : undefined,
             from ? gte(posts.createdAt, from) : undefined,
             search ? or(like(posts.title, term), like(posts.body, term)) : undefined,
-            unresolved ? and(eq(posts.kind, 'question'), isNull(posts.acceptedReplyId), isNull(posts.deletedAt)) : undefined,
+            unresolved ? and(eq(posts.kind, 'question'), isNull(posts.acceptedReplyId), isNull(posts.deletedAt), sql`not ${professorAnsweredSql}`) : undefined,
             following ? sql`${followsSql(ctx.userId)} > 0` : undefined,
             // Only in sections they teach: whether something's been reported is theirs to know.
             reported ? and(inArray(posts.classId, taught), sql`${reportsSql} > 0`) : undefined,
@@ -376,6 +379,7 @@ export const boardRouter = {
       classLabel: label ?? '',
       mine: post.authorId === ctx.userId,
       canModerate,
+      professorAnswered: replyRows.some((r) => r.endorsedAt != null || r.authorRole === 'professor'),
       // Reports go to the section's professor, so there's nobody to tell without one.
       canReport: hasProfessor && !canModerate,
       reports: reasonsFor(null),

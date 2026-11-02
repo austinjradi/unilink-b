@@ -329,11 +329,11 @@ function AuthorName({ who, size }: { who: Author; size?: 'sm' }) {
 }
 
 // "Question · Answered" / "Question · Unanswered" / "Note".
-function KindTag({ post }: { post: { kind: string; acceptedReplyId: number | null; deletedAt: Date | null; authorRole: string; visibility: string } }) {
+function KindTag({ post }: { post: { kind: string; acceptedReplyId: number | null; professorAnswered: boolean; deletedAt: Date | null; authorRole: string; visibility: string } }) {
   // A professor's note to the whole section went out to everyone.
   if (post.kind === 'note' && post.authorRole === 'professor' && post.visibility === 'class') return <Tag color="periwinkle">{t('Announcement')}</Tag>;
   if (post.kind === 'note') return <Tag color="gray">{t('Note')}</Tag>;
-  return post.acceptedReplyId ? (
+  return post.acceptedReplyId || post.professorAnswered ? (
     <Tag color="teal">
       <IconCheck size={12} style={{ verticalAlign: -1 }} /> {t('Answered')}
     </Tag>
@@ -975,7 +975,7 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
         </div>
       </Group>
 
-      {p.mine && isQuestion && !p.acceptedReplyId && p.replies.some((r) => !r.mine) && (
+      {p.mine && isQuestion && !p.acceptedReplyId && !p.professorAnswered && p.replies.some((r) => !r.mine) && (
         <Text size="xs" c="dimmed">
           {t('Did a reply answer your question? Accept it so classmates find it first.')}
         </Text>
