@@ -1,6 +1,6 @@
 import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { bestFromName, cgpaWith, finalIfRemainingAverages, letterFor, markFromParts, parseMark, parseMarks, summarize, termGpa } from '@shared/grades';
+import { bestFromName, cgpaWith, finalIfRemainingAverages, isBusyWeek, letterFor, markFromParts, parseMark, parseMarks, summarize, termGpa } from '@shared/grades';
 import { buildCalendar, parseCalendar } from '@shared/ics';
 import { noClassesOn } from '@shared/keyDates';
 import { isHidden, parseChatLink } from '@shared/links';
@@ -744,5 +744,15 @@ describe('ST3 weekly to-dos', () => {
     expect(parse('Every class counts')).toEqual({ title: 'Every class counts', dueDate: null });
     expect(parse('Ask about every problem')).toEqual({ title: 'Ask about every problem', dueDate: null });
     expect(parse('Read chapter 3 friday').weekly).toBeUndefined();
+  });
+});
+
+describe('A3 busy weeks', () => {
+  it('flags a week with a lot due, or a lot riding on it', () => {
+    expect(isBusyWeek([])).toBe(false);
+    expect(isBusyWeek([{ weight: 10 }, { weight: 10 }, {}])).toBe(false);
+    expect(isBusyWeek([{}, {}, {}, {}])).toBe(true);
+    expect(isBusyWeek([{ weight: 30 }])).toBe(true);
+    expect(isBusyWeek([{ weight: 15 }, { weight: 15 }])).toBe(true);
   });
 });

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActionIcon, Group, Highlight, Modal, Stack, Text, TextInput, Tooltip, UnstyledButton } from '@mantine/core';
 import { useDebouncedValue, useHotkeys } from '@mantine/hooks';
 import { IconBook, IconCalendarDue, IconListCheck, IconMessage, IconMessages, IconPercentage, IconSearch, IconUsersGroup } from '@tabler/icons-react';
@@ -33,7 +33,15 @@ export function GlobalSearch() {
     enabled: open && debounced.trim().length >= 2,
     placeholderData: keepPreviousData,
   });
-  const list = debounced.trim().length >= 2 ? (results.data ?? []) : [];
+  const found = debounced.trim().length >= 2 ? (results.data ?? []) : [];
+  // In the order they're shown, so Enter and the arrow keys follow what's on screen.
+  const list = GROUPS.flatMap((g) => found.filter((r) => r.kind === g.kind));
+  const [active, setActive] = useState(0);
+  useEffect(() => setActive(0), [debounced]);
+  const optionId = (r: Result) => `search-${r.kind}-${r.id}`;
+  useEffect(() => {
+    if (list[active]) document.getElementById(optionId(list[active]))?.scrollIntoView({ block: 'nearest' });
+  }, [active, list]);
   const go = (to: string) => {
     setOpen(false);
     setQuery('');
@@ -55,10 +63,17 @@ export function GlobalSearch() {
             leftSection={<IconSearch size={16} />}
             placeholder={t('Courses, posts, deadlines, sessions…')}
             aria-label={t('Search everything')}
+            role="combobox"
+            aria-expanded={list.length > 0}
+            aria-controls="search-results"
+            aria-activedescendant={list[active] ? optionId(list[active]) : undefined}
             value={query}
             onChange={(e) => setQuery(e.currentTarget.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && list[0]) go(list[0].to);
+              if (e.key === 'Enter' && list[active]) go(list[active].to);
+              if (!list.length || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return;
+              e.preventDefault();
+              setActive((a) => (a + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length);
             }}
           />
           {debounced.trim().length >= 2 && !results.isPending && !list.length && (
@@ -66,17 +81,29 @@ export function GlobalSearch() {
               {t('Nothing matches "{{query}}".', { query: debounced.trim() })}
             </Text>
           )}
+          <Stack gap="md" id="search-results" role="listbox" aria-label={t('Search everything')}>
           {GROUPS.map(({ kind, label, icon: Icon }) => {
             const items = list.filter((r) => r.kind === kind);
             if (!items.length) return null;
             return (
-              <div key={kind}>
+              <div key={kind} role="group" aria-label={t(label)}>
                 <Text size="xs" fw={800} c="dimmed" tt="uppercase" mb={4}>
                   {t(label)}
                 </Text>
                 <Stack gap={0}>
                   {items.map((r) => (
-                    <UnstyledButton key={`${kind}-${r.id}`} className="clickable" px={8} py={6} style={{ borderRadius: 8 }} onClick={() => go(r.to)}>
+                    <UnstyledButton
+                      key={`${kind}-${r.id}`}
+                      id={optionId(r)}
+                      role="option"
+                      aria-selected={list[active] === r}
+                      className="clickable"
+                      px={8}
+                      py={6}
+                      style={{ borderRadius: 8, background: list[active] === r ? 'var(--mantine-color-gray-light)' : undefined }}
+                      onMouseEnter={() => setActive(list.indexOf(r))}
+                      onClick={() => go(r.to)}
+                    >
                       <Group gap="sm" wrap="nowrap">
                         <Icon size={16} style={{ flex: 'none' }} />
                         <div style={{ minWidth: 0 }}>
@@ -96,6 +123,7 @@ export function GlobalSearch() {
               </div>
             );
           })}
+          </Stack>
         </Stack>
       </Modal>
     </>

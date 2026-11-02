@@ -162,6 +162,12 @@ export function markFromParts(marks: number[], best: number | null): { score: nu
   };
 }
 
+// A3: a week worth warning about on the semester view. Weights are each a share of a different
+// class, so their sum only says how much is riding on that week.
+export function isBusyWeek(due: { weight?: number }[]): boolean {
+  return due.length >= 4 || due.reduce((sum, d) => sum + (d.weight ?? 0), 0) >= 30;
+}
+
 // What a component's name says about it, like "Homework (best 5 of 6)".
 export function bestFromName(name: string): number | null {
   const found = name.match(/\bbest\s+(\d{1,2})\s+(?:of|out of)\s+\d|\b(\d{1,2})\s+meilleure?s?\s+(?:sur|de)\s+\d/i);

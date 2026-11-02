@@ -41,9 +41,10 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router';
 import { addDays, CURRENT_TERM, eachDay, TERMS, ymd } from '@shared/dates';
+import { isBusyWeek } from '@shared/grades';
 import { EXAM_SCHEDULE_TERMS, FINAL_EXAMS, keyDatesFor, termWithExams } from '@shared/keyDates';
 import { parseSyllabus, type SyllabusItem } from '@shared/syllabus';
-import { chipStyle, Empty, KindBadge, kindColor, Loading, PageHeader } from '../components/ui';
+import { chipStyle, Empty, KindBadge, kindColor, Loading, PageHeader, Tag } from '../components/ui';
 import { fmtDateTime, fmtTime, toDate } from '../lib/format';
 import { useAction } from '../lib/hooks';
 import { type Out, rpc, RpcError } from '../lib/rpc';
@@ -404,9 +405,12 @@ function SemesterView() {
     <Stack gap="sm">
       {weeks.map((week) => (
         <Group key={week} align="flex-start" wrap="nowrap" gap="md">
-          <Text size="sm" fw={800} w={110} style={{ flex: 'none' }}>
-            {t('Week of {{date}}', { date: dayjs(week).format(t('MMM D')) })}
-          </Text>
+          <div style={{ flex: 'none', width: 110 }}>
+            <Text size="sm" fw={800}>
+              {t('Week of {{date}}', { date: dayjs(week).format(t('MMM D')) })}
+            </Text>
+            <BusyWeek week={week} due={items.filter((e) => e.kind === 'deadline' && !e.done && mondayOf(ymd(e.start)) === week)} />
+          </div>
           <Group gap={6}>
             {items
               .filter((e) => mondayOf(ymd(e.start)) === week)
@@ -422,6 +426,19 @@ function SemesterView() {
         </Group>
       ))}
     </Stack>
+  );
+}
+
+// Only weeks still to come: there's nothing to do about the ones that went by.
+function BusyWeek({ week, due }: { week: string; due: { weight?: number }[] }) {
+  if (week < mondayOf(ymd(new Date())) || !isBusyWeek(due)) return null;
+  const worth = due.reduce((sum, d) => sum + (d.weight ?? 0), 0);
+  return (
+    <Tooltip label={worth ? t('{{count}} things due, worth {{worth}}% across your classes', { count: due.length, worth }) : t('{{count}} things due', { count: due.length })} multiline w={220}>
+      <span>
+        <Tag color="orange">{t('Busy week')}</Tag>
+      </span>
+    </Tooltip>
   );
 }
 

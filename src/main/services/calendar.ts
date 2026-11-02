@@ -32,6 +32,8 @@ import { gradedItems } from './courses';
 export const DEADLINE_KINDS = ['assignment', 'exam', 'quiz', 'other'] as const;
 
 export type CalendarEvent = {
+  // A graded item's share of its class's grade.
+  weight?: number;
   key: string;
   // "key": the term's key dates that aren't deadlines (classes start, reading break, exams).
   kind: 'class' | 'deadline' | 'session' | 'task' | 'key';
@@ -229,6 +231,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
       key: `assessment-${a.id}`,
       kind: 'deadline',
       detail: 'graded',
+      weight: a.weight,
       title: `${a.name} (${a.weight}%)`,
       start: a.dueAt,
       end: null,
