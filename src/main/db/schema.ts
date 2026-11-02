@@ -154,6 +154,8 @@ export const studySessions = sqliteTable(
     format: text('format', { enum: ['in-person', 'online'] }).notNull().default('in-person'),
     meetingUrl: text('meeting_url').notNull().default(''),
     inviteCode: text('invite_code').notNull().default(''),
+    // Weekly sessions created together share the first one's id here, and one invite code.
+    seriesId: integer('series_id'),
     cancelledAt: timestamp('cancelled_at'),
     createdAt: createdAt(),
   },

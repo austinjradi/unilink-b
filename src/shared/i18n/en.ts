@@ -13,6 +13,8 @@ export const EN: Record<string, string> = {
   ...plural('Choose {{count}} credits from:', 'Choose {{count}} credit from:'),
   ...plural('Earlier sessions ({{count}})', 'Earlier sessions ({{count}})'),
   ...plural('Email outbox ({{count}})', 'Email outbox ({{count}})'),
+  ...plural('Every week, {{count}} times', 'Every week, {{count}} time'),
+  ...plural('Every week. Joining adds you to the {{count}} weeks still to come.', 'Every week. Joining adds you to the {{count}} week still to come.'),
   ...plural('Exported {{count}} events to {{path}}', 'Exported {{count}} event to {{path}}'),
   ...plural(
     'Exported {{count}} events. Import the file into Google Calendar.',
@@ -40,6 +42,7 @@ export const EN: Record<string, string> = {
   ...plural('Reported by {{count}} classmates', 'Reported by {{count}} classmate'),
   ...plural('You have {{count}} tasks for today', 'You have {{count}} task for today'),
   ...plural('more ({{count}})', 'more ({{count}})'),
+  ...plural("You joined {{count}} weeks. Where one is full, you're on its waitlist.", "You joined {{count}} week. Where it's full, you're on its waitlist."),
   ...plural('{{count}} buffer days', '{{count}} buffer day'),
   ...plural(
     '{{count}} credits from other courses count as electives toward the {{total}}-credit total.',

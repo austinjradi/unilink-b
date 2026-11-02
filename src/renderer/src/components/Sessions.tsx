@@ -5,6 +5,7 @@ import {
   Autocomplete,
   Button,
   Card,
+  Checkbox,
   Code,
   CopyButton,
   Divider,
@@ -51,7 +52,12 @@ function when(s: Session) {
 
 const place = (s: Session) => (s.format === 'online' ? t('Online') : s.location);
 
-const joinedMessage = (r: { status: string }) => (r.status === 'going' ? t("You're going!") : t("It's full, so you're on the waitlist. We'll tell you if a spot opens up."));
+const joinedMessage = (r: { status: string; weeks?: number }) =>
+  r.weeks && r.weeks > 1
+    ? t("You joined {{count}} weeks. Where one is full, you're on its waitlist.", { count: r.weeks })
+    : r.status === 'going'
+      ? t("You're going!")
+      : t("It's full, so you're on the waitlist. We'll tell you if a spot opens up.");
 
 export function SessionRow({ session: s, onDetails }: { session: Session; onDetails: () => void }) {
   const join = useAction(() => rpc.studySessions.join({ sessionId: s.id }), { success: joinedMessage });
@@ -62,6 +68,7 @@ export function SessionRow({ session: s, onDetails }: { session: Session; onDeta
           <Tag>{s.classLabel}</Tag>
           {s.tag && <Tag color="periwinkle">{t(s.tag)}</Tag>}
           {s.visibility === 'invite' && <Tag color="grape">{t('Invite only')}</Tag>}
+          {s.seriesId != null && <Tag color="cyan">{t('Weekly')}</Tag>}
           {s.cancelledAt && <Tag color="red">{t('Cancelled')}</Tag>}
         </Group>
         <Text fw={800} td={s.cancelledAt ? 'line-through' : undefined} lineClamp={1}>
@@ -176,19 +183,29 @@ export function SessionDetails({ session: s, onEdit, onClose }: { session: Sessi
     success: s.myStatus === 'waitlisted' ? t('You left the waitlist') : t('You left the session'),
     onSuccess: onClose,
   });
-  const cancel = useAction(() => rpc.studySessions.cancel({ sessionId: s.id }), { success: 'Session cancelled', onSuccess: onClose });
+  const cancel = useAction((laterWeeks: boolean) => rpc.studySessions.cancel({ sessionId: s.id, laterWeeks }), { success: 'Session cancelled', onSuccess: onClose });
+  const joinWeeks = useAction(() => rpc.studySessions.joinSeries({ sessionId: s.id }), { success: joinedMessage });
+  // "Join every week" when more than this one week is left to join.
+  const moreWeeks = s.myStatus === null ? s.weeksToJoin > 1 : s.weeksToJoin > 0;
   const addToCalendar = useAction(() => rpc.studySessions.exportIcs({ sessionId: s.id }), {
     success: (r) => (r ? t('Saved. Open the file to add the session to Google Calendar or another calendar app.') : ''),
   });
 
-  const confirmCancel = () =>
+  const confirmCancel = () => {
+    let laterWeeks = false;
     modals.openConfirmModal({
       title: t('Cancel this session?'),
-      children: <Text size="sm">{t("Everyone going or waiting will be told it's cancelled. To step down instead, leave it and the next person going becomes the host.")}</Text>,
+      children: (
+        <Stack gap="sm">
+          <Text size="sm">{t("Everyone going or waiting will be told it's cancelled. To step down instead, leave it and the next person going becomes the host.")}</Text>
+          {s.seriesId != null && <Checkbox label={t('Also cancel the weeks after this one')} onChange={(e) => (laterWeeks = e.currentTarget.checked)} />}
+        </Stack>
+      ),
       labels: { confirm: t('Cancel session'), cancel: t('Keep it') },
       confirmProps: { color: 'red' },
-      onConfirm: () => cancel.mutate(),
+      onConfirm: () => cancel.mutate(laterWeeks),
     });
+  };
 
   const confirmLeaveAsHost = () =>
     modals.openConfirmModal({
@@ -210,6 +227,7 @@ export function SessionDetails({ session: s, onEdit, onClose }: { session: Sessi
         <Tag>{s.classLabel}</Tag>
         {s.tag && <Tag color="periwinkle">{t(s.tag)}</Tag>}
         {s.visibility === 'invite' && <Tag color="grape">{t('Invite only')}</Tag>}
+        {s.seriesId != null && <Tag color="cyan">{t('Weekly')}</Tag>}
       </Group>
       <Title order={2}>{s.title}</Title>
       <Group gap="lg" c="dimmed">
@@ -280,6 +298,11 @@ export function SessionDetails({ session: s, onEdit, onClose }: { session: Sessi
               {s.isFull ? t('Join waitlist') : t('Join')}
             </Button>
           )}
+          {moreWeeks && (
+            <Button variant={s.myStatus === null ? 'light' : 'default'} onClick={() => joinWeeks.mutate()} loading={joinWeeks.isPending}>
+              {s.myStatus === null ? t('Join every week') : t('Join the later weeks too')}
+            </Button>
+          )}
           {s.isHost ? (
             <>
               <Button variant="default" onClick={onEdit}>
@@ -333,7 +356,7 @@ export function JoinByCode() {
   const navigate = useNavigate();
   const [code, setCode] = useState('');
   const join = useAction(() => rpc.studySessions.joinByCode({ code }), {
-    success: (r) => (r.status === 'going' ? t('You\'re going to "{{title}}"!', { title: r.title }) : joinedMessage(r)),
+    success: (r) => (r.status === 'going' && r.weeks === 1 ? t('You\'re going to "{{title}}"!', { title: r.title }) : joinedMessage(r)),
     onSuccess: (r) => {
       setCode('');
       navigate(`/classes/${r.classId}/sessions`);
@@ -382,6 +405,7 @@ export function SessionForm({ classId, existing, onDone }: { classId: number | n
       startsAt: (existing?.startsAt ?? tomorrowEvening) as Date | string | null,
       endsAt: (existing?.endsAt ?? dayjs(tomorrowEvening).add(2, 'hour').toDate()) as Date | string | null,
       capacity: (existing?.capacity ?? 6) as number | string,
+      weeks: '1',
     },
     validate: {
       classId: (v) => (v ? null : t('Pick a class')),
@@ -407,7 +431,7 @@ export function SessionForm({ classId, existing, onDone }: { classId: number | n
         tag: v.tag.trim() ? toStoredTopic(v.tag, SESSION_TAGS) : null,
       };
       if (existing) await rpc.studySessions.update({ sessionId: existing.id, ...fields });
-      else await rpc.studySessions.create({ classId: Number(v.classId), ...fields });
+      else await rpc.studySessions.create({ classId: Number(v.classId), weeks: Number(v.weeks), ...fields });
     },
     {
       success: existing
@@ -453,6 +477,18 @@ export function SessionForm({ classId, existing, onDone }: { classId: number | n
           <DateTimePicker label={t('Starts')} valueFormat="ddd D MMM, HH:mm" minDate={new Date()} {...form.getInputProps('startsAt')} />
           <DateTimePicker label={t('Ends')} valueFormat="ddd D MMM, HH:mm" minDate={new Date()} {...form.getInputProps('endsAt')} />
         </Group>
+        {!existing && (
+          <Select
+            label={t('Repeats')}
+            description={t('Weekly sessions share one invite code, which joins every week.')}
+            data={[
+              { value: '1', label: t("Doesn't repeat") },
+              ...[2, 3, 4, 6, 8, 10, 12].map((n) => ({ value: String(n), label: t('Every week, {{count}} times', { count: n }) })),
+            ]}
+            allowDeselect={false}
+            {...form.getInputProps('weeks')}
+          />
+        )}
         <Group grow align="flex-start">
           <NumberInput label={t('Max people')} description={t('Others join a waitlist once it’s full')} min={2} max={30} {...form.getInputProps('capacity')} />
           <Select
@@ -489,7 +525,7 @@ export function SessionInvite({ code }: { code: string }) {
   const navigate = useNavigate();
   const invite = useQuery({ queryKey: ['studySessions', 'invite', code], queryFn: () => rpc.studySessions.byCode({ code }) });
   const join = useAction(() => rpc.studySessions.joinByCode({ code }), {
-    success: (r) => (r.status === 'going' ? t('You\'re going to "{{title}}"!', { title: r.title }) : joinedMessage(r)),
+    success: (r) => (r.status === 'going' && r.weeks === 1 ? t('You\'re going to "{{title}}"!', { title: r.title }) : joinedMessage(r)),
     onSuccess: (r) => navigate(`/classes/${r.classId}/sessions`),
   });
 
@@ -509,6 +545,7 @@ export function SessionInvite({ code }: { code: string }) {
           <Tag>{s.classLabel}</Tag>
           {s.tag && <Tag color="periwinkle">{t(s.tag)}</Tag>}
           {s.visibility === 'invite' && <Tag color="grape">{t('Invite only')}</Tag>}
+          {s.seriesId != null && <Tag color="cyan">{t('Weekly')}</Tag>}
           {s.cancelledAt && <Tag color="red">{t('Cancelled')}</Tag>}
         </Group>
         <Title order={2}>{s.title}</Title>
@@ -523,6 +560,9 @@ export function SessionInvite({ code }: { code: string }) {
           </Group>
         </Group>
         {s.description && <Text style={{ whiteSpace: 'pre-wrap' }}>{s.description}</Text>}
+        {s.myStatus === null && s.weeksToJoin > 1 && (
+          <Text size="sm">{t('Every week. Joining adds you to the {{count}} weeks still to come.', { count: s.weeksToJoin })}</Text>
+        )}
         <Text size="sm" c="dimmed">
           {[
             s.hostFirstName ? t('Hosted by {{name}}.', { name: s.hostFirstName }) : null,

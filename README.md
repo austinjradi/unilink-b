@@ -214,6 +214,7 @@ both versions.
 | S3.4 | How do you invite if members are hidden? | By McGill email (must be in the class) | With a 6-character **invite code** the host shares anywhere (group chat, DM), or a ready-made **invite message with a link** that opens the session with a Join button. Codes can be regenerated. No email invites |
 | S3 | Size limit | Optional; full sessions refuse new people | **Required** (2–30, default 6); once full, people join a **waitlist** and move up automatically |
 | S3 | Where | A place or call link, in one text field | **In person** (a place) or **online** (a meeting link, shown only to people going) |
+| S3.1 | Sessions that meet every week? | Created one at a time | A session can **repeat weekly** (2–12 weeks). The weeks share one invite code, which joins every upcoming week; anyone can **join every week** from any of them; the host can cancel one week or that week and all later ones |
 | S3 | Who's going | Everyone sees names and emails of people going | **Only people going** see who else is; others see a count and the host's first name |
 | S3.5 | Host leaves; session changes | Hosts can't leave, only cancel. Edits don't notify | Leaving **hands the session to the next person going** (cancelled only if nobody's left). Moving the time or place **notifies everyone in it** |
 | S4 | Post types and topics | Free-form "type" with suggestions (Assignment, Midterm, Just yapping…) | Posts are a **question or a note**, under a **fixed topic list** (Lectures, Assignments, Exams, Labs and tutorials, Logistics, Off-topic) |
@@ -248,7 +249,7 @@ hidden links and failed sign-ins instead of invitations and individual reports; 
 | --- | --- |
 | Sections, wildcard search, classmate visibility, time clashes | `db/catalogue.ts` (`sectionsFor`), `services/classes.ts`, `shared/courseQuery.ts`, `shared/meetings.ts` |
 | Link identity, purposes, hiding rule | `shared/links.ts`, `services/links.ts` |
-| Invite codes, waitlist, hand-off | `services/studySessions.ts` |
+| Invite codes, waitlist, hand-off, weekly series | `services/studySessions.ts` |
 | Questions, accepted answers, topics, deleted posts, following threads, similar posts | `services/board.ts`, `components/Feed.tsx`, `shared/similar.ts` |
 | Shared section info and private marks | `services/courses.ts`, `services/calendar.ts` (`visibleDeadlines`), `db/schema.ts` (`class_details`, `assessment_scores`, `deadline_done`) |
 | Unlisted weight, a second scheme | `shared/grades.ts`, `services/courses.ts` (`setSecondScheme`) |
@@ -258,7 +259,7 @@ hidden links and failed sign-ins instead of invitations and individual reports; 
 | Plans that follow a class deadline | `services/planner.ts` (`followMovedDeadlines`), `services/calendar.ts` (`collect`) |
 
 The database changes are migrations `0004_version_b` (new tables and columns), `0005_version_b_cleanup`
-(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows`, `0010_sign_in_limits` and `0011_second_grading_scheme`.
+(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows`, `0010_sign_in_limits`, `0011_second_grading_scheme` and `0012_weekly_sessions`.
 
 ## Not built yet
 

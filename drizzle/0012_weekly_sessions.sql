@@ -1,0 +1,1 @@
+ALTER TABLE `study_sessions` ADD `series_id` integer;

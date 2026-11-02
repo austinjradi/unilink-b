@@ -445,6 +445,58 @@ describe('S3 study sessions', () => {
     await leo.api.studySessions.joinByCode({ code: fresh });
   });
 
+  it('repeats a session weekly, with one code that joins every week', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo', 'Ana');
+    const [maya, leo, ana] = people;
+    const start = new Date(2026, 9, 6, 18);
+    const { id, inviteCode } = await maya.api.studySessions.create({
+      classId,
+      weeks: 3,
+      ...session({ startsAt: start, endsAt: new Date(2026, 9, 6, 20), visibility: 'invite', capacity: 2 }),
+    });
+    const weeks = await maya.api.studySessions.list({ classId });
+    expect(weeks.map((w) => [w.startsAt.getDate(), w.seriesId, w.inviteCode])).toEqual([
+      [6, id, inviteCode],
+      [13, id, inviteCode],
+      [20, id, inviteCode],
+    ]);
+
+    // The shared code joins all three weeks.
+    expect(await leo.api.studySessions.joinByCode({ code: inviteCode })).toMatchObject({ status: 'going', weeks: 3 });
+    expect((await leo.api.studySessions.list({ classId })).map((w) => w.myStatus)).toEqual(['going', 'going', 'going']);
+
+    // The weeks are full (2 people), so the code puts Ana on every week's waitlist.
+    expect(await ana.api.studySessions.joinByCode({ code: inviteCode })).toMatchObject({ status: 'waitlisted', weeks: 3 });
+
+    // Cancelling "this and later weeks" from week 2 leaves week 1.
+    await maya.api.studySessions.cancel({ sessionId: weeks[1].id, laterWeeks: true });
+    expect((await maya.api.studySessions.list({ classId })).map((w) => [w.startsAt.getDate(), w.cancelledAt != null])).toEqual([
+      [6, false],
+      [13, true],
+      [20, true],
+    ]);
+    // A new code works for the whole series.
+    const { inviteCode: fresh } = await maya.api.studySessions.newCode({ sessionId: id });
+    expect((await maya.api.studySessions.list({ classId })).every((w) => w.inviteCode === fresh)).toBe(true);
+  });
+
+  it('joins the later weeks of an open series from any week', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    await maya.api.studySessions.create({ classId, weeks: 4, ...session({ startsAt: new Date(2026, 9, 6, 18), endsAt: new Date(2026, 9, 6, 20) }) });
+    const [first, second] = await leo.api.studySessions.list({ classId });
+    expect(first.weeksToJoin).toBe(4);
+    await leo.api.studySessions.join({ sessionId: first.id });
+    expect((await leo.api.studySessions.list({ classId }))[0].weeksToJoin).toBe(3);
+    expect(await leo.api.studySessions.joinSeries({ sessionId: second.id })).toMatchObject({ weeks: 3 });
+    expect((await leo.api.studySessions.list({ classId })).map((w) => [w.myStatus, w.weeksToJoin])).toEqual([
+      ['going', 0],
+      ['going', 0],
+      ['going', 0],
+      ['going', 0],
+    ]);
+  });
+
   it('tells everyone when the time or place changes, and only the host edits', async () => {
     const { classId, people } = await classmates('Maya', 'Leo');
     const [maya, leo] = people;
