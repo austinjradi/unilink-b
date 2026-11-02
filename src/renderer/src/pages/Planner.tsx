@@ -22,7 +22,7 @@ import {
   TextInput,
   Tooltip,
 } from '@mantine/core';
-import { DateInput, DateTimePicker } from '@mantine/dates';
+import { DateInput, DatePickerInput, DateTimePicker } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { modals } from '@mantine/modals';
 import {
@@ -140,10 +140,17 @@ export function PlannerPage() {
 export function StudyTimeForm({ onDone }: { onDone?: () => void }) {
   const me = useMe();
   const [minutes, setMinutes] = useState(weeklyMinutes(me.weeklyStudyMinutes));
-  const save = useAction(() => rpc.planner.setAvailability({ minutes }), {
-    success: 'Free time saved. Your plans were updated.',
-    onSuccess: () => onDone?.(),
-  });
+  const [daysOff, setDaysOff] = useState<string[]>(me.daysOff ?? []);
+  const save = useAction(
+    async () => {
+      await rpc.planner.setAvailability({ minutes });
+      await rpc.planner.setDaysOff({ days: daysOff });
+    },
+    {
+      success: 'Free time saved. Your plans were updated.',
+      onSuccess: () => onDone?.(),
+    },
+  );
   const total = minutes.reduce((a, b) => a + b, 0);
   return (
     <Stack>
@@ -164,6 +171,17 @@ export function StudyTimeForm({ onDone }: { onDone?: () => void }) {
           />
         ))}
       </SimpleGrid>
+      <DatePickerInput
+        type="multiple"
+        label={t('Days off')}
+        description={t('Days you won’t study at all, like a trip. Plans move around them.')}
+        placeholder={t('Pick days')}
+        valueFormat="D MMM"
+        minDate={new Date()}
+        clearable
+        value={daysOff}
+        onChange={(days) => setDaysOff(days.map((day) => day.slice(0, 10)))}
+      />
       <Group justify="space-between">
         <Text size="sm">{t('{{hours}} h a week', { hours: Math.round(total / 6) / 10 })}</Text>
         <Button onClick={() => save.mutate()} loading={save.isPending}>

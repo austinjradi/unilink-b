@@ -98,10 +98,20 @@ function dailyLoad(db: DB, userId: number, from: string, to: string, excludeAssi
   return load;
 }
 
-// Free study minutes for a given day, from the student's weekly availability.
+// Free study minutes for a given day, from the student's weekly availability and days off.
 function studyBudget(db: DB, userId: number) {
-  const weekly = weeklyMinutes(db.select({ m: users.weeklyStudyMinutes }).from(users).where(eq(users.id, userId)).get()?.m);
-  return (day: string) => minutesOn(weekly, day);
+  const user = db.select({ weekly: users.weeklyStudyMinutes, off: users.daysOff }).from(users).where(eq(users.id, userId)).get();
+  const weekly = weeklyMinutes(user?.weekly);
+  const off = new Set(user?.off ?? []);
+  return (day: string) => (off.has(day) ? 0 : minutesOn(weekly, day));
+}
+
+// Free time changed, so every assignment still to come is planned again.
+function replanOpen(ctx: AuthedContext) {
+  const today = ymd(ctx.now());
+  for (const a of ctx.db.select().from(plannerAssignments).where(eq(plannerAssignments.userId, ctx.userId)).all()) {
+    if (ymd(a.dueAt) >= today) replan(ctx, a.id);
+  }
 }
 
 export function replan(ctx: Context & { userId: number }, assignmentId: number, { unpinAll = false } = {}) {
@@ -252,12 +262,17 @@ export const plannerRouter = {
     ({ minutes }, ctx) => {
       if (!minutes.some((m) => m > 0)) throw new AppError('Leave some study time on at least one day.');
       ctx.db.update(users).set({ weeklyStudyMinutes: minutes }).where(eq(users.id, ctx.userId)).run();
-      const today = ymd(ctx.now());
-      for (const a of ctx.db.select().from(plannerAssignments).where(eq(plannerAssignments.userId, ctx.userId)).all()) {
-        if (ymd(a.dueAt) >= today) replan(ctx, a.id);
-      }
+      replanOpen(ctx);
     },
   ),
+
+  // Days with no study time at all. Past ones are dropped, since they no longer matter.
+  setDaysOff: procedure(z.object({ days: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(120) }), ({ days }, ctx) => {
+    const today = ymd(ctx.now());
+    const upcoming = [...new Set(days)].filter((day) => day >= today).sort();
+    ctx.db.update(users).set({ daysOff: upcoming }).where(eq(users.id, ctx.userId)).run();
+    replanOpen(ctx);
+  }),
 
   list: procedure(z.void(), (_input, ctx) => {
     reconcile(ctx);

@@ -1002,6 +1002,24 @@ describe('ST2 assignment planner', () => {
     expect(plan.tasks.map((t) => t.scheduledFor)).toEqual(['2026-10-05', '2026-10-05', '2026-10-08']);
   });
 
+  it('plans around days off, and shows them on the calendar', async () => {
+    const { api } = await student('Maya');
+    await api.planner.create({ title: 'Essay', classId: null, dueAt: new Date(2026, 9, 12, 23, 59), notes: '', tasks: problems(45), attachmentPath: null });
+    const days = async () => (await api.planner.list())[0].tasks.map((t) => t.scheduledFor);
+    expect(await days()).toEqual(['2026-10-05', '2026-10-05', '2026-10-06']);
+
+    // Away Monday: everything moves, and a past date isn't kept.
+    await api.planner.setDaysOff({ days: ['2026-10-05', '2026-10-01', '2026-10-05'] });
+    expect((await api.auth.me())?.daysOff).toEqual(['2026-10-05']);
+    expect(await days()).toEqual(['2026-10-06', '2026-10-06', '2026-10-07']);
+    const dayOff = (await api.calendar.range({ from: '2026-10-05', to: '2026-10-05' })).filter((e) => e.detail === 'day-off');
+    expect(dayOff.map((e) => [e.title, e.allDay])).toEqual([['Day off', true]]);
+
+    await expectCode(api.planner.setDaysOff({ days: ['next tuesday'] }), 'BAD_INPUT');
+    await api.planner.setDaysOff({ days: [] });
+    expect(await days()).toEqual(['2026-10-05', '2026-10-05', '2026-10-06']);
+  });
+
   it('moves work off a day that a study session has filled up', async () => {
     const { classId, people } = await classmates('Maya');
     const [maya] = people;

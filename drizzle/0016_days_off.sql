@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `days_off` text;

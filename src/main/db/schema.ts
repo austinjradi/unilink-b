@@ -42,6 +42,8 @@ export const users = sqliteTable('users', {
   lockedUntil: timestamp('locked_until'),
   // ST2: free study minutes for each weekday, Sunday first; null uses DEFAULT_WEEKLY_MINUTES.
   weeklyStudyMinutes: text('weekly_study_minutes', { mode: 'json' }).$type<number[]>(),
+  // ST2: dates ("YYYY-MM-DD") with no study time at all, like a trip; plans go around them.
+  daysOff: text('days_off', { mode: 'json' }).$type<string[]>(),
   // Language for the UI, notifications and emails.
   locale: text('locale', { enum: ['en', 'fr'] }).notNull().default('en'),
   createdAt: createdAt(),

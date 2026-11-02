@@ -113,6 +113,13 @@
       "when": 1793599416135,
       "tag": "0015_mute_replies",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1793599860791,
+      "tag": "0016_days_off",
+      "breakpoints": true
     }
   ]
 }

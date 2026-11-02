@@ -156,6 +156,27 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
     });
   }
 
+  // ST2: the days off the planner works around, so they're visible where plans are.
+  const daysOff = db.select({ off: users.daysOff }).from(users).where(eq(users.id, userId)).get()?.off ?? [];
+  for (const day of daysOff) {
+    if (day < ymd(from) || day > ymd(new Date(to.getTime() - 1))) continue;
+    events.push({
+      key: `day-off-${day}`,
+      kind: 'key',
+      detail: 'day-off',
+      title: translate(locale, 'Day off'),
+      start: parseYmd(day),
+      end: null,
+      allDay: true,
+      classId: null,
+      classLabel: null,
+      location: '',
+      done: false,
+      deadlineId: null,
+      addedBy: null,
+    });
+  }
+
   // A3: the term's key dates, for everyone. Deadlines are due at 23:59; breaks and periods
   // cover each of their days.
   const firstDay = ymd(from);
