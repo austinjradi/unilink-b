@@ -170,6 +170,7 @@ function LinkCard({ link, classLabel, onEdit }: { link: ChatLink; classLabel: st
           <Group gap="xs">
             <Text fw={700}>{link.label || t('{{platform}} group', { platform: link.platform })}</Text>
             <Tag color={PURPOSE_COLORS[link.purpose]}>{t(LINK_PURPOSES[link.purpose])}</Tag>
+            {link.ownerRole === 'professor' && <Tag color="periwinkle">{t('From the professor')}</Tag>}
           </Group>
           <Text size="sm" c="dimmed" truncate>
             {t('Added by {{name}} {{when}}', { name: link.mine ? t('you') : link.ownerName, when: fromNow(link.createdAt) })} · {link.url}

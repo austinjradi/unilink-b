@@ -1154,6 +1154,38 @@ describe('Professors', () => {
     await expectCode(stranger.api.courses.copyScheme({ fromClassId: classId, toClassId: other }), 'FORBIDDEN');
   });
 
+  it('shows students their plan, and the professor a count of who is done, only in larger sections', async () => {
+    const { classId, prof, maya, leo } = await taught();
+    const dueAt = new Date(2026, 9, 20, 23, 59);
+    const { id } = await prof.api.assignments.post({ classId, title: 'A3', dueAt, notes: '', weight: null, attachmentPath: null });
+    expect((await maya.api.assignments.list({ classId }))[0]).toMatchObject({ planned: false, progress: null });
+
+    await maya.api.planner.create({ title: 'A3', classId, dueAt, notes: '', tasks: [{ title: 'Start', minutes: 30 }], attachmentPath: null, deadlineId: id, assessmentId: null });
+    expect((await maya.api.assignments.list({ classId }))[0].planned).toBe(true);
+    expect((await leo.api.assignments.list({ classId }))[0].planned).toBe(false);
+
+    // Two students: too few for a count that couldn't point at someone.
+    await maya.api.calendar.setDeadlineDone({ id, done: true });
+    expect((await prof.api.assignments.list({ classId }))[0].progress).toBeNull();
+    for (const name of ['Ana', 'Sam', 'Noor']) {
+      const other = await student(name);
+      await other.api.classes.join({ classId });
+    }
+    expect((await prof.api.assignments.list({ classId }))[0].progress).toEqual({ done: 1, total: 5 });
+    // Students never see it, and the professor checking it off wouldn't count.
+    expect((await leo.api.assignments.list({ classId }))[0].progress).toBeNull();
+    await prof.api.calendar.setDeadlineDone({ id, done: true });
+    expect((await prof.api.assignments.list({ classId }))[0].progress).toEqual({ done: 1, total: 5 });
+  });
+
+  it('tags what a professor shares', async () => {
+    const { classId, prof, maya } = await taught();
+    await prof.api.links.add({ classId, url: 'https://discord.gg/official251', label: 'Official', purpose: 'course' });
+    expect((await maya.api.links.list({ classId })).map((l) => [l.ownerName, l.ownerRole])).toEqual([['Ouellet', 'professor']]);
+    await prof.api.studySessions.create({ classId, weeks: 2, ...session({ title: 'Office hours', tag: 'Office hours', startsAt: new Date(2026, 9, 6, 14), endsAt: new Date(2026, 9, 6, 15) }) });
+    expect((await maya.api.studySessions.list({ classId })).map((s) => [s.title, s.hostIsProfessor, s.seriesId != null])).toEqual([['Office hours', true, true], ['Office hours', true, true]]);
+  });
+
   it('corrects class deadlines students added, but not private ones', async () => {
     const { classId, prof, maya } = await taught();
     const deadline = { kind: 'assignment' as const, title: 'A wrong date', dueAt: new Date(2026, 9, 20, 23, 59), notes: '' };

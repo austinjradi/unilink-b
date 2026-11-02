@@ -109,10 +109,15 @@ function AssignmentCard({ assignment: a, teaching, onEdit }: { assignment: Assig
             {a.attachmentName}
           </Button>
         )}
-        {!teaching && !past && (
-          <Button size="xs" variant="default" leftSection={<IconListCheck size={14} />} component={Link} to={`/planner?new=1&from=deadline-${a.id}`}>
-            {t('Plan it')}
+        {!teaching && (a.planned || !past) && (
+          <Button size="xs" variant="default" leftSection={<IconListCheck size={14} />} component={Link} to={a.planned ? '/planner' : `/planner?new=1&from=deadline-${a.id}`}>
+            {a.planned ? t('See my plan') : t('Plan it')}
           </Button>
+        )}
+        {a.progress && (
+          <Text size="sm" c="dimmed">
+            {t('{{done}} of {{count}} students checked it off', { done: a.progress.done, count: a.progress.total })}
+          </Text>
         )}
       </Group>
     </Card>

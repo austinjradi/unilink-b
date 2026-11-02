@@ -97,6 +97,7 @@ export const linksRouter = {
         createdAt: chatLinks.createdAt,
         ownerId: chatLinks.ownerId,
         ownerName: users.name,
+        ownerRole: users.role,
         reports: voteCount('report'),
         works: voteCount('works'),
         myVote,

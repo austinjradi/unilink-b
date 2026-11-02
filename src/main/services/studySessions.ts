@@ -134,6 +134,7 @@ function describe(db: DB, userId: number, rows: SessionRow[], now: Date) {
       name: users.name,
       email: users.email,
       avatar: users.avatar,
+      role: users.role,
       status: studySessionMembers.status,
     })
     .from(studySessionMembers)
@@ -177,6 +178,7 @@ function describe(db: DB, userId: number, rows: SessionRow[], now: Date) {
       meetingUrl: attending ? s.meetingUrl : '',
       classLabel: labels.get(s.classId) ?? '',
       hostFirstName: going.find((m) => m.userId === s.hostId)?.name.split(' ')[0] ?? null,
+      hostIsProfessor: going.find((m) => m.userId === s.hostId)?.role === 'professor',
       goingCount: going.length,
       waitlistCount: waitlist.length,
       going: attending

@@ -87,5 +87,6 @@ export const EN: Record<string, string> = {
   ...plural('Too many failed attempts. Try again in {{count}} minutes.', 'Too many failed attempts. Try again in {{count}} minute.'),
   ...plural('{{title}} is in {{count}} days', '{{title}} is in {{count}} day'),
   ...plural('{{done}} of {{count}} courses', '{{done}} of {{count}} course'),
+  ...plural('{{done}} of {{count}} students checked it off', '{{done}} of {{count}} student checked it off'),
   ...plural('{{done}} of {{count}} credits', '{{done}} of {{count}} credit'),
 };

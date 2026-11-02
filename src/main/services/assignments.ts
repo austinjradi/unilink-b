@@ -1,9 +1,9 @@
 import { rm } from 'node:fs/promises';
-import { eq } from 'drizzle-orm';
+import { and, count, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
-import { deadlines } from '../db/schema';
+import { deadlineDone, deadlines, plannerAssignments } from '../db/schema';
 import { AppError, type AuthedContext, idSchema, nonEmpty, procedure } from '../rpc/core';
-import { classLabel, notFound, requireMember, requireTeacher, studentsOf } from './access';
+import { classLabel, notFound, requireMember, requireTeacher, studentsOf, teaches } from './access';
 import { visibleDeadlines } from './calendar';
 import { addComponent } from './courses';
 import { m, type NotifyInput, notify, raw } from './notifications';
@@ -18,6 +18,9 @@ const fields = {
   notes: z.string().trim().max(5000),
 };
 
+// Below this many students, a count could point at someone, so professors don't see one.
+const MIN_STUDENTS_FOR_COUNT = 5;
+
 function posted(ctx: AuthedContext, id: number) {
   const row = ctx.db.select().from(deadlines).where(eq(deadlines.id, id)).get();
   if (!row?.official || row.classId == null) notFound('assignment');
@@ -29,10 +32,33 @@ function tellStudents(ctx: AuthedContext, classId: number, message: NotifyInput)
 }
 
 export const assignmentsRouter = {
-  // The assignments posted to a section, soonest first, with whether you've checked each off.
+  // The assignments posted to a section, soonest first, with whether you've checked each off
+  // and planned it. Its professor sees how many students are done, as a count only.
   list: procedure(z.object({ classId: idSchema }), ({ classId }, ctx) => {
     requireMember(ctx.db, ctx.userId, classId);
-    return visibleDeadlines(ctx.db, ctx.userId).filter((d) => d.classId === classId && d.official);
+    const rows = visibleDeadlines(ctx.db, ctx.userId).filter((d) => d.classId === classId && d.official);
+    if (!rows.length) return [];
+    const ids = rows.map((d) => d.id);
+    const planned = new Set(
+      ctx.db
+        .select({ id: plannerAssignments.deadlineId })
+        .from(plannerAssignments)
+        .where(and(eq(plannerAssignments.userId, ctx.userId), inArray(plannerAssignments.deadlineId, ids)))
+        .all()
+        .map((p) => p.id),
+    );
+    const students = teaches(ctx.db, ctx.userId, classId) ? studentsOf(ctx.db, classId).map((s) => s.id) : [];
+    const doneCount = (id: number) =>
+      ctx.db
+        .select({ n: count() })
+        .from(deadlineDone)
+        .where(and(eq(deadlineDone.deadlineId, id), inArray(deadlineDone.userId, students)))
+        .get()?.n ?? 0;
+    return rows.map((d) => ({
+      ...d,
+      planned: planned.has(d.id),
+      progress: students.length >= MIN_STUDENTS_FOR_COUNT ? { done: doneCount(d.id), total: students.length } : null,
+    }));
   }),
 
   // With a weight, it also joins the grading scheme as a component.

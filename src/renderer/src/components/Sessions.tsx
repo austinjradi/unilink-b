@@ -43,7 +43,7 @@ import { toStoredTopic } from './Feed';
 export type Session = Out<typeof rpc.studySessions.list>[number];
 
 // Stored in English (so search and tags match for everyone), shown translated.
-export const SESSION_TAGS = [tx('Assignment'), tx('Midterm'), tx('Final'), tx('Lab'), tx('Project'), tx('Review')];
+export const SESSION_TAGS = [tx('Assignment'), tx('Midterm'), tx('Final'), tx('Lab'), tx('Project'), tx('Review'), tx('Office hours')];
 
 function when(s: Session) {
   const start = dayjs(s.startsAt);
@@ -69,6 +69,7 @@ export function SessionRow({ session: s, onDetails }: { session: Session; onDeta
           {s.tag && <Tag color="periwinkle">{t(s.tag)}</Tag>}
           {s.visibility === 'invite' && <Tag color="grape">{t('Invite only')}</Tag>}
           {s.seriesId != null && <Tag color="cyan">{t('Weekly')}</Tag>}
+          {s.hostIsProfessor && <Tag color="periwinkle">{t('Professor')}</Tag>}
           {s.cancelledAt && <Tag color="red">{t('Cancelled')}</Tag>}
         </Group>
         <Text fw={800} td={s.cancelledAt ? 'line-through' : undefined} lineClamp={1}>
@@ -228,6 +229,7 @@ export function SessionDetails({ session: s, onEdit, onClose }: { session: Sessi
         {s.tag && <Tag color="periwinkle">{t(s.tag)}</Tag>}
         {s.visibility === 'invite' && <Tag color="grape">{t('Invite only')}</Tag>}
         {s.seriesId != null && <Tag color="cyan">{t('Weekly')}</Tag>}
+        {s.hostIsProfessor && <Tag color="periwinkle">{t('Professor')}</Tag>}
       </Group>
       <Title order={2}>{s.title}</Title>
       <Group gap="lg" c="dimmed">
