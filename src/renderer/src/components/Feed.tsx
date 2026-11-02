@@ -1,6 +1,7 @@
 import { type ClipboardEvent, type ReactNode, useEffect, useState } from 'react';
 import {
   ActionIcon,
+  Alert,
   Anchor,
   Badge,
   Button,
@@ -43,6 +44,7 @@ import {
   IconSchool,
   IconShieldX,
   IconFilter,
+  IconFlag,
   IconLock,
   IconMessageCircle,
   IconMessages,
@@ -211,6 +213,51 @@ function ImageDraft({ draft }: { draft: ReturnType<typeof useImageDraft> }) {
   );
 }
 
+// A student reports a post or reply to the professor, who sees the reason but not who gave it.
+function confirmReport(title: string, onConfirm: (reason: string) => void) {
+  let reason = '';
+  modals.openConfirmModal({
+    title,
+    children: (
+      <Stack gap="sm">
+        <Text size="sm">{t('This goes to the section’s professor. They see your reason, not your name.')}</Text>
+        <Textarea label={t('What’s wrong with it?')} placeholder={t('Optional')} autosize minRows={2} maxLength={500} onChange={(e) => (reason = e.currentTarget.value)} />
+      </Stack>
+    ),
+    labels: { confirm: t('Report'), cancel: t('Cancel') },
+    onConfirm: () => onConfirm(reason),
+  });
+}
+
+function ReportButton({ reported, size, onReport }: { reported: boolean; size?: 'sm'; onReport: () => void }) {
+  const label = reported ? t('You reported this') : t('Report to the professor');
+  return (
+    <Tooltip label={label}>
+      <ActionIcon size={size} variant="subtle" color="gray" disabled={reported} onClick={onReport} aria-label={label}>
+        <IconFlag size={size ? 14 : 16} />
+      </ActionIcon>
+    </Tooltip>
+  );
+}
+
+// What the professor sees on something students reported.
+function ReportNotice({ reasons, onDismiss }: { reasons: string[]; onDismiss: () => void }) {
+  if (!reasons.length) return null;
+  const written = reasons.filter(Boolean);
+  return (
+    <Alert color="orange" variant="light" icon={<IconFlag size={16} />} p="xs" mb="xs" title={t('Reported by {{count}} students', { count: reasons.length })}>
+      {written.map((reason, i) => (
+        <Text key={i} size="sm" style={{ whiteSpace: 'pre-wrap' }}>
+          “{reason}”
+        </Text>
+      ))}
+      <Button size="compact-xs" variant="subtle" color="gray" mt={4} onClick={onDismiss}>
+        {t('It’s fine, dismiss')}
+      </Button>
+    </Alert>
+  );
+}
+
 type Author = Pick<FeedPost, 'authorName' | 'authorEmail' | 'authorPronouns' | 'authorFaculty' | 'authorGradYear' | 'authorRole' | 'formerStudent' | 'authorGoat'>;
 
 // A professor's removal asks why; the author is told, with the reason if there is one.
@@ -326,6 +373,11 @@ function PostCard({ post, onOpen }: { post: FeedPost; onOpen: () => void }) {
                   <IconPin size={12} style={{ verticalAlign: -2 }} /> {t('Pinned')}
                 </Tag>
               )}
+              {post.reports > 0 && (
+                <Tag color="red">
+                  <IconFlag size={12} style={{ verticalAlign: -2 }} /> {t('{{count}} reports', { count: post.reports })}
+                </Tag>
+              )}
               {post.lockedAt && (
                 <Tooltip label={t('Locked: only the professor can reply')}>
                   <IconMessageOff size={14} />
@@ -407,6 +459,7 @@ function MoreChips<T extends string>({ items, render }: { items: T[]; render: (i
 }
 
 export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) {
+  const professor = useMe().role === 'professor';
   const [params, setParams] = useSearchParams();
   const openPost = Number(params.get('post')) || null;
   const setOpenPost = (id: number | null) =>
@@ -426,10 +479,11 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
   const [since, setSince] = useState<Since>(null);
   const [unresolved, setUnresolved] = useState(false);
   const [following, setFollowing] = useState(false);
+  const [reported, setReported] = useState(false);
   const [sort, setSort] = useState<'new' | 'top'>('new');
   // Below the wide layout the filters would sit under every post, so they open in a drawer.
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const activeFilters = classIds.length + topics.length + (since ? 1 : 0) + (unresolved ? 1 : 0) + (following ? 1 : 0) + (search.trim() ? 1 : 0);
+  const activeFilters = classIds.length + topics.length + (since ? 1 : 0) + (unresolved ? 1 : 0) + (following ? 1 : 0) + (reported ? 1 : 0) + (search.trim() ? 1 : 0);
   const [composing, setComposing] = useState<PostDetail | 'new' | null>(null);
 
   const classes = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
@@ -439,7 +493,7 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
   });
   const allTopics = useQuery({ queryKey: ['board', 'topics', classId ?? null], queryFn: () => rpc.board.topics({ classId: classId ?? null }) });
   const feed = useQuery({
-    queryKey: ['board', 'feed', classId ?? null, classIds, topics, since, debounced, unresolved, following, sort],
+    queryKey: ['board', 'feed', classId ?? null, classIds, topics, since, debounced, unresolved, following, reported, sort],
     queryFn: () =>
       rpc.board.feed({
         classIds: classId ? [classId] : classIds.length ? classIds.map(Number) : null,
@@ -448,6 +502,7 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
         search: debounced,
         unresolved,
         following,
+        reported,
         sort,
       }),
     placeholderData: keepPreviousData,
@@ -498,6 +553,11 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
         <Chip size="sm" variant="outline" checked={following} onChange={setFollowing}>
           {t('Ones I follow')}
         </Chip>
+        {professor && (
+          <Chip size="sm" variant="outline" mt={6} checked={reported} onChange={setReported}>
+            {t('Reported by students')}
+          </Chip>
+        )}
       </ChipSection>
       <ChipSection title={t('Topic')}>
         <Chip.Group multiple value={topics} onChange={setTopics}>
@@ -576,7 +636,7 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
           ) : (
             <Card>
               <Empty icon={<IconMessages size={22} />}>
-                {search || topics.length || classIds.length || since || unresolved || following
+                {search || topics.length || classIds.length || since || unresolved || following || reported
                   ? t('No posts match these filters.')
                   : classes.data?.length
                     ? t('No posts yet. Ask a question or start a discussion!')
@@ -670,7 +730,7 @@ function ReplyBox({ postId, isQuestion }: { postId: number; isQuestion: boolean 
 
 type Reply = PostDetail['replies'][number];
 
-function ReplyItem({ reply, postId, canAccept, canModerate }: { reply: Reply; postId: number; canAccept: boolean; canModerate: boolean }) {
+function ReplyItem({ reply, postId, canAccept, canModerate, canReport }: { reply: Reply; postId: number; canAccept: boolean; canModerate: boolean; canReport: boolean }) {
   const react = useAction(() => rpc.board.reactReply({ replyId: reply.id }));
   const remove = useAction(() => rpc.board.removeReply({ replyId: reply.id }));
   const [draft, setDraft] = useState<string | null>(null);
@@ -680,12 +740,15 @@ function ReplyItem({ reply, postId, canAccept, canModerate }: { reply: Reply; po
   });
   const endorse = useAction(() => rpc.board.endorse({ replyId: reply.id, endorsed: !reply.endorsed }));
   const removeAsProfessor = useAction((reason: string) => rpc.board.removeReplyAsProfessor({ replyId: reply.id, reason }), { success: 'Reply removed' });
+  const report = useAction((reason: string) => rpc.board.report({ postId, replyId: reply.id, reason }), { success: 'Reported. Thanks for telling the professor.' });
+  const dismiss = useAction(() => rpc.board.dismissReports({ postId, replyId: reply.id }));
   return (
     <Card
       padding="sm"
       withBorder={reply.accepted}
       style={reply.accepted ? { borderColor: 'var(--mantine-color-teal-5)', background: 'var(--mantine-color-teal-light)' } : { background: 'transparent' }}
     >
+      <ReportNotice reasons={reply.reports} onDismiss={() => dismiss.mutate()} />
       {reply.accepted && (
         <Group gap={4} c="teal" mb={6}>
           <IconCircleCheck size={16} />
@@ -747,6 +810,9 @@ function ReplyItem({ reply, postId, canAccept, canModerate }: { reply: Reply; po
                 <IconTrash size={14} />
               </ActionIcon>
             )}
+            {canReport && !reply.mine && (
+              <ReportButton size="sm" reported={reply.reportedByMe} onReport={() => confirmReport(t('Report this reply?'), (reason) => report.mutate(reason))} />
+            )}
             {canModerate && (
               <Button size="compact-xs" variant="subtle" leftSection={<IconSchool size={12} />} onClick={() => endorse.mutate()}>
                 {reply.endorsed ? t('Take back endorsement') : t('Endorse')}
@@ -784,6 +850,8 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
   });
   const pin = useAction((pinned: boolean) => rpc.board.pin({ postId, pinned }));
   const lock = useAction((locked: boolean) => rpc.board.lock({ postId, locked }));
+  const report = useAction((reason: string) => rpc.board.report({ postId, replyId: null, reason }), { success: 'Reported. Thanks for telling the professor.' });
+  const dismiss = useAction(() => rpc.board.dismissReports({ postId, replyId: null }));
   const removeAsProfessor = useAction((reason: string) => rpc.board.removeAsProfessor({ postId, reason }), {
     success: 'Post removed',
     onSuccess: (r) => !r.kept && onDeleted(),
@@ -809,6 +877,7 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
 
   return (
     <Stack gap="lg">
+      <ReportNotice reasons={p.reports} onDismiss={() => dismiss.mutate()} />
       <Group align="flex-start" wrap="nowrap" gap="md">
         <GoatAvatar goat={p.authorGoat} size={64} />
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -829,6 +898,9 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
               <Tag>{p.classLabel}</Tag>
               <TopicTag topic={p.topic} />
               <KindTag post={p} />
+              {p.canReport && !p.mine && !p.deletedAt && (
+                <ReportButton reported={p.reportedByMe} onReport={() => confirmReport(t('Report this post?'), (reason) => report.mutate(reason))} />
+              )}
               {p.canModerate && !p.deletedAt && (
                 <>
                   <Tooltip label={p.pinnedAt ? t('Unpin') : t('Pin to the top of the class board')}>
@@ -917,7 +989,7 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
       )}
       {(!p.lockedAt || p.canModerate) && <ReplyBox key={postId} postId={postId} isQuestion={isQuestion} />}
       {p.replies.map((r) => (
-        <ReplyItem key={r.id} reply={r} postId={postId} canAccept={p.mine && isQuestion && !p.deletedAt} canModerate={p.canModerate} />
+        <ReplyItem key={r.id} reply={r} postId={postId} canAccept={p.mine && isQuestion && !p.deletedAt} canModerate={p.canModerate} canReport={p.canReport} />
       ))}
     </Stack>
   );

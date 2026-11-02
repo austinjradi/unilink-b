@@ -254,6 +254,24 @@ export const boardImages = sqliteTable(
   (t) => [index('board_images_post_idx').on(t.postId)],
 );
 
+// S4: students telling the section's professor about a post or reply. Each student reports
+// something once, and the professor sees the reasons but not who gave them.
+export const postReports = sqliteTable(
+  'post_reports',
+  {
+    id: id(),
+    postId: integer('post_id')
+      .notNull()
+      .references(() => posts.id, { onDelete: 'cascade' }),
+    // Set when it's about a reply rather than the post itself.
+    replyId: integer('reply_id').references(() => replies.id, { onDelete: 'cascade' }),
+    userId: userRef(),
+    reason: text('reason').notNull().default(''),
+    createdAt: createdAt(),
+  },
+  (t) => [index('post_reports_post_idx').on(t.postId)],
+);
+
 // --- A3 Dates and deadlines ----------------------------------------------------
 
 export const classMeetings = sqliteTable('class_meetings', {

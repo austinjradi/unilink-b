@@ -37,6 +37,7 @@ export const EN: Record<string, string> = {
   ...plural('Join {{count}} sections', 'Join {{count}} section'),
   ...plural('Later ({{count}})', 'Later ({{count}})'),
   ...plural('Planned {{count}} tasks before the deadline', 'Planned {{count}} task before the deadline'),
+  ...plural('Reported by {{count}} students', 'Reported by {{count}} student'),
   ...plural('Teach {{count}} sections', 'Teach {{count}} section'),
   ...plural(
     'Powers class search. UniLink ships with a built-in sample of {{count}} courses for {{terms}}.',
@@ -77,6 +78,7 @@ export const EN: Record<string, string> = {
   ...plural('{{count}} tasks', '{{count}} task'),
   ...plural('{{count}} failed sign-in attempts since you last signed in', '{{count}} failed sign-in attempt since you last signed in'),
   ...plural('{{count}} pts', '{{count}} pt'),
+  ...plural('{{count}} reports', '{{count}} report'),
   ...plural('{{count}} unanswered questions', '{{count}} unanswered question'),
   ...plural('{{count}} went', '{{count}} went'),
   ...plural('{{count}} working days before the deadline', '{{count}} working day before the deadline'),

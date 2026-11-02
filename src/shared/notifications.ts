@@ -19,6 +19,7 @@ export const NOTIFICATION_TYPES = {
   'assignment-posted': { label: 'Assignments your professor posts or moves', desktop: true, email: true },
   'scheme-changed': { label: 'Changes to a grading scheme by your professor', desktop: true, email: false },
   moderation: { label: 'Something you posted was removed by a professor', desktop: true, email: true },
+  'post-reported': { label: 'Posts students report in the sections you teach', desktop: true, email: true },
 } as const;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;

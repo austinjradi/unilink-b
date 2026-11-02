@@ -1291,6 +1291,57 @@ describe('Professors', () => {
     await expectCode(leo.api.board.get({ postId: lonely }), 'NOT_FOUND');
   });
 
+  it('takes reports from students, without saying who, and keeps them from everyone else', async () => {
+    const { classId, prof, maya, leo } = await taught();
+    const ana = await student('Ana');
+    await ana.api.classes.join({ classId });
+    const { id: postId } = await maya.api.board.create({ ...question, classId, title: 'Answers to A3' });
+    await maya.api.board.reply({ postId, body: 'Here they are' });
+    const feed = (s: { api: RpcClient<AppRouter> }, reported = true) => s.api.board.feed({ classIds: [classId], topics: [], since: null, search: '', reported });
+
+    // Not your own, and once each.
+    await expectCode(maya.api.board.report({ postId, replyId: null, reason: '' }), 'BAD_INPUT');
+    await leo.api.board.report({ postId, replyId: null, reason: 'Gives away the assignment' });
+    await expectCode(leo.api.board.report({ postId, replyId: null, reason: 'Again' }), 'CONFLICT');
+    await ana.api.board.report({ postId, replyId: null, reason: '' });
+
+    // The professor sees the reasons and a queue, and hears about it. No names anywhere.
+    expect(await titles(prof)).toContain('A student reported "Answers to A3"');
+    expect((await feed(prof)).map((p) => [p.id, p.reports])).toEqual([[postId, 2]]);
+    const thread = await prof.api.board.get({ postId });
+    expect(thread.reports).toEqual(['Gives away the assignment', '']);
+    expect(JSON.stringify(thread.reports)).not.toContain('Leo');
+
+    // Nobody else can tell: not the author, not a reporter, not by asking for the queue.
+    expect((await maya.api.board.get({ postId })).reports).toEqual([]);
+    expect((await leo.api.board.get({ postId })).reports).toEqual([]);
+    expect((await leo.api.board.get({ postId })).reportedByMe).toBe(true);
+    expect((await maya.api.board.get({ postId })).reportedByMe).toBe(false);
+    expect(await feed(maya)).toEqual([]);
+    expect((await feed(maya, false))[0].reports).toBe(0);
+
+    // A reply can be reported too, and dismissing clears only that one.
+    const [reply] = thread.replies;
+    await leo.api.board.report({ postId, replyId: reply.id, reason: 'Also this' });
+    expect((await prof.api.board.get({ postId })).replies[0].reports).toEqual(['Also this']);
+    await expectCode(leo.api.board.dismissReports({ postId, replyId: null }), 'FORBIDDEN');
+    await prof.api.board.dismissReports({ postId, replyId: null });
+    expect((await prof.api.board.get({ postId })).reports).toEqual([]);
+    expect((await prof.api.board.get({ postId })).replies[0].reports).toEqual(['Also this']);
+
+    // Removing the reply takes its report with it, and then the queue is empty.
+    await prof.api.board.removeReplyAsProfessor({ replyId: reply.id, reason: '' });
+    expect(await feed(prof)).toEqual([]);
+  });
+
+  it('has no one to report to without a professor', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const { id: postId } = await maya.api.board.create({ ...question, classId });
+    expect((await leo.api.board.get({ postId })).canReport).toBe(false);
+    await expectCode(leo.api.board.report({ postId, replyId: null, reason: '' }), 'BAD_INPUT');
+  });
+
   it('leaves private posts private, and only moderates its own sections', async () => {
     const { classId, prof, maya, leo } = await taught();
     await leo.api.board.create({ ...question, classId, title: 'Hello' });

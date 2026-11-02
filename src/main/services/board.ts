@@ -5,9 +5,9 @@ import { z } from 'zod';
 import { goatFor } from '@shared/goat';
 import { keywords, similarity } from '@shared/similar';
 import type { DB } from '../db/client';
-import { boardImages, boardVisits, classes, courseInfo, courses, enrollments, postAudience, postFollows, postReactions, posts, replies, replyReactions, users } from '../db/schema';
+import { boardImages, boardVisits, classes, courseInfo, courses, enrollments, postAudience, postFollows, postReactions, postReports, posts, replies, replyReactions, users } from '../db/schema';
 import { AppError, type AuthedContext, idSchema, nonEmpty, procedure } from '../rpc/core';
-import { classLabel, FORMER_STUDENT_EMAIL, notFound, requireMember, requireTeacher, sectionCode, studentsOf, teaches } from './access';
+import { classLabel, FORMER_STUDENT_EMAIL, notFound, professorsOf, requireMember, requireTeacher, sectionCode, studentsOf, teaches } from './access';
 import { visibleClassmatesByEmail } from './classes';
 import { m, notify, raw } from './notifications';
 import { storeAttachment } from './planner';
@@ -163,6 +163,11 @@ function moderatedPost(ctx: AuthedContext, postId: number) {
   return post;
 }
 
+// What's been reported in a post (replyId null is the post itself), for its professor.
+function reportsOn(db: DB, postId: number) {
+  return db.select({ replyId: postReports.replyId, reason: postReports.reason, userId: postReports.userId }).from(postReports).where(eq(postReports.postId, postId)).all();
+}
+
 const nameOf = (db: DB, userId: number) => db.select({ name: users.name }).from(users).where(eq(users.id, userId)).get()?.name ?? '';
 
 function audienceOf(db: DB, postId: number) {
@@ -220,8 +225,10 @@ export const boardRouter = {
       sort: z.enum(['new', 'top']).default('new'),
       // Only threads the student follows.
       following: z.boolean().default(false),
+      // For a professor: only threads with something students reported.
+      reported: z.boolean().default(false),
     }),
-    ({ classIds, topics, since, search, unresolved, sort, following }, ctx) => {
+    ({ classIds, topics, since, search, unresolved, sort, following, reported }, ctx) => {
       const mine = myClassIds(ctx.db, ctx.userId);
       const ids = classIds ? classIds.filter((id) => mine.includes(id)) : mine;
       if (classIds?.length === 1 && !ids.length) requireMember(ctx.db, ctx.userId, classIds[0]);
@@ -237,6 +244,8 @@ export const boardRouter = {
       const term = `%${search}%`;
       const goats = sql<number>`(select count(*) from ${postReactions} where ${postReactions.postId} = ${posts.id})`.mapWith(Number);
       const seen = lastSeen(ctx.db, ctx.userId, now);
+      const reportsSql = sql`(select count(*) from ${postReports} where ${postReports.postId} = ${posts.id})`;
+      const taught = ids.filter((id) => teaches(ctx.db, ctx.userId, id));
 
       const rows = ctx.db
         .select({
@@ -255,6 +264,7 @@ export const boardRouter = {
           pinnedAt: posts.pinnedAt,
           lockedAt: posts.lockedAt,
           removedByProfessor: posts.removedByProfessor,
+          reports: reportsSql.mapWith(Number),
           ...authorColumns,
           replyCount: sql<number>`(select count(*) from ${replies} where ${replies.postId} = ${posts.id})`.mapWith(Number),
           goats,
@@ -273,6 +283,8 @@ export const boardRouter = {
             search ? or(like(posts.title, term), like(posts.body, term)) : undefined,
             unresolved ? and(eq(posts.kind, 'question'), isNull(posts.acceptedReplyId), isNull(posts.deletedAt)) : undefined,
             following ? sql`${followsSql(ctx.userId)} > 0` : undefined,
+            // Only in sections they teach: whether something's been reported is theirs to know.
+            reported ? and(inArray(posts.classId, taught), sql`${reportsSql} > 0`) : undefined,
           ),
         )
         // On one class's board, what its professor pinned comes first.
@@ -284,6 +296,8 @@ export const boardRouter = {
         ...withGoat(p),
         isNew: p.authorId !== ctx.userId && !p.deletedAt && p.createdAt.getTime() > seen(p.classId),
         images: images.filter((image) => image.postId === p.id),
+        // Only the section's professor sees that anything's been reported.
+        reports: taught.includes(p.classId) ? p.reports : 0,
       }));
     },
   ),
@@ -333,6 +347,11 @@ export const boardRouter = {
       .orderBy(asc(replies.createdAt), asc(replies.id))
       .all();
     const images = imagesFor(ctx.db, [postId]);
+    const canModerate = teaches(ctx.db, ctx.userId, post.classId);
+    const reports = reportsOn(ctx.db, postId);
+    const reasonsFor = (replyId: number | null) => (canModerate ? reports.filter((r) => r.replyId === replyId).map((r) => r.reason) : []);
+    const reportedByMe = (replyId: number | null) => reports.some((r) => r.replyId === replyId && r.userId === ctx.userId);
+    const hasProfessor = professorsOf(ctx.db, post.classId).length > 0;
     const replyGoats = replyRows.length
       ? ctx.db
           .select()
@@ -356,7 +375,11 @@ export const boardRouter = {
       ...author,
       classLabel: label ?? '',
       mine: post.authorId === ctx.userId,
-      canModerate: teaches(ctx.db, ctx.userId, post.classId),
+      canModerate,
+      // Reports go to the section's professor, so there's nobody to tell without one.
+      canReport: hasProfessor && !canModerate,
+      reports: reasonsFor(null),
+      reportedByMe: reportedByMe(null),
       images: images.filter((image) => image.replyId == null),
       goats: reactions.length,
       goated: reactions.some((r) => r.userId === ctx.userId),
@@ -373,6 +396,8 @@ export const boardRouter = {
           accepted: r.id === post.acceptedReplyId,
           endorsed: r.endorsedAt != null,
           images: images.filter((image) => image.replyId === r.id),
+          reports: reasonsFor(r.id),
+          reportedByMe: reportedByMe(r.id),
           mine: r.authorId === ctx.userId,
           goats: replyGoats.filter((g) => g.replyId === r.id).length,
           goated: replyGoats.some((g) => g.replyId === r.id && g.userId === ctx.userId),
@@ -552,6 +577,34 @@ export const boardRouter = {
     ctx.db.update(replies).set({ body, editedAt: ctx.now() }).where(eq(replies.id, replyId)).run();
   }),
 
+  // A student tells the section's professor about a post or reply, once. Their name stays out of it.
+  report: procedure(z.object({ postId: idSchema, replyId: idSchema.nullable(), reason: z.string().trim().max(500) }), ({ postId, replyId, reason }, ctx) => {
+    const post = visiblePost(ctx.db, ctx.userId, postId);
+    const professors = professorsOf(ctx.db, post.classId);
+    if (!professors.length) throw new AppError("This section's professor isn't on UniLink, so there's nobody to tell.");
+    const reply = replyId ? ctx.db.select().from(replies).where(and(eq(replies.id, replyId), eq(replies.postId, postId))).get() ?? notFound('reply') : null;
+    if ((reply?.authorId ?? post.authorId) === ctx.userId) throw new AppError("You can't report your own post.");
+    const about = and(eq(postReports.postId, postId), replyId ? eq(postReports.replyId, replyId) : isNull(postReports.replyId));
+    if (ctx.db.select({ id: postReports.id }).from(postReports).where(and(about, eq(postReports.userId, ctx.userId))).get()) {
+      throw new AppError('You already reported this.', 'CONFLICT');
+    }
+    ctx.db.insert(postReports).values({ postId, replyId, reason, userId: ctx.userId, createdAt: ctx.now() }).run();
+    for (const professor of professors) {
+      notify(ctx.db, professor.id, {
+        type: 'post-reported',
+        title: reply ? m('A student reported a reply in "{{title}}"', { title: post.title || { t: 'a deleted post' } }) : m('A student reported "{{title}}"', { title: post.title }),
+        body: reason ? raw(reason) : undefined,
+        link: `/classes/${post.classId}/discussion?post=${postId}`,
+      });
+    }
+  }),
+
+  // The professor looked and it's fine.
+  dismissReports: procedure(z.object({ postId: idSchema, replyId: idSchema.nullable() }), ({ postId, replyId }, ctx) => {
+    moderatedPost(ctx, postId);
+    ctx.db.delete(postReports).where(and(eq(postReports.postId, postId), replyId ? eq(postReports.replyId, replyId) : isNull(postReports.replyId))).run();
+  }),
+
   // Moderation, for the section's professor.
   pin: procedure(z.object({ postId: idSchema, pinned: z.boolean() }), ({ postId, pinned }, ctx) => {
     moderatedPost(ctx, postId);
@@ -582,6 +635,7 @@ export const boardRouter = {
   removeAsProfessor: procedure(z.object({ postId: idSchema, reason: z.string().trim().max(500) }), async ({ postId, reason }, ctx) => {
     const post = moderatedPost(ctx, postId);
     await deleteImages(ctx, ownImagesOf(postId));
+    ctx.db.delete(postReports).where(and(eq(postReports.postId, postId), isNull(postReports.replyId))).run();
     const replyCount = ctx.db.select({ n: count() }).from(replies).where(eq(replies.postId, postId)).get()?.n ?? 0;
     if (replyCount) {
       ctx.db.update(posts).set({ title: '', body: '', deletedAt: ctx.now(), removedByProfessor: true, pinnedAt: null }).where(eq(posts.id, postId)).run();

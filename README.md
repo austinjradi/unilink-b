@@ -51,6 +51,7 @@ sections of a course. The demo has **Daniel Ouellet**, a made-up professor teach
 | Run the grading scheme, course details and class times | Class page → Grading scheme, Overview | Sections are wiki-style until a professor teaches them; then only the professor can change these, and students see them read-only. Students are told when the scheme changes, once a day at most. If the last professor leaves, it's wiki-style again |
 | Post assignments with a handout | Class page → Assignments (new tab) | A class deadline with instructions and a file, on everyone's calendar. Everyone's notified, and again if the due date moves. A weight adds it to the scheme. **Plan it** brings the handout and its problems into the student's plan, which follows the assignment's date |
 | Moderate the discussion | Class page → Discussion | **Pin** to the top of the class board, **lock** a thread so only they can reply, **endorse** a reply, or **remove** a post or reply with an optional reason. The author is told. A removed post with replies stays up, blanked |
+| Hear about problems | Notifications; Discussion → Filters | Students can **report** a post or reply. The professor sees the reason, never who gave it, and a "Reported by students" filter, and can remove it or dismiss the report. Nobody else can tell it was reported |
 | Make announcements | New post → Announcement | A note from a professor to the whole section notifies everyone |
 | Correct class deadlines | Calendar | They can edit or remove a class deadline a student added, not private ones |
 | See how an assignment is going | Class page → Assignments | How many students checked it off, as a count only, and only in sections of 5 or more so it can't point at anyone |
@@ -299,7 +300,7 @@ hidden links and failed sign-ins instead of invitations and individual reports; 
 | Professors: who can change what, assignments, moderation | `services/access.ts` (`canEditShared`, `requireTeacher`), `services/assignments.ts`, `services/board.ts` |
 
 The database changes are migrations `0004_version_b` (new tables and columns), `0005_version_b_cleanup`
-(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows`, `0010_sign_in_limits`, `0011_second_grading_scheme`, `0012_weekly_sessions`, `0013_professors`, `0014_board_images`, `0015_mute_replies` and `0016_days_off`.
+(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows`, `0010_sign_in_limits`, `0011_second_grading_scheme`, `0012_weekly_sessions`, `0013_professors`, `0014_board_images`, `0015_mute_replies`, `0016_days_off` and `0017_post_reports`.
 
 ## Not built yet
 
