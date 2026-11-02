@@ -2,12 +2,12 @@ import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { bestFromName, cgpaWith, finalIfRemainingAverages, isBusyWeek, letterFor, markFromParts, parseMark, parseMarks, summarize, termGpa } from '@shared/grades';
 import { buildCalendar, parseCalendar } from '@shared/ics';
-import { noClassesOn } from '@shared/keyDates';
+import { examConflicts, noClassesOn } from '@shared/keyDates';
 import { isHidden, parseChatLink } from '@shared/links';
 import { DEFAULT_WEEKLY_MINUTES, minutesAroundClasses, minutesOn, planTasks, type PlannableTask, weeklyMinutes } from '@shared/planner';
 import { passwordProblems } from '@shared/validation';
 import { parseCourseQuery, parseSchedule } from '@shared/courseQuery';
-import { goalOutlook, summarizeRecord, termOrder } from '@shared/academics';
+import { goalOutlook, gpaTrend, summarizeRecord, termOrder } from '@shared/academics';
 import { evaluateDegree, graduationPace, type Program } from '@shared/degree';
 import { type FocusWindow, studyModeStatus } from '@shared/studyMode';
 import { parseScheme, parseSyllabus } from '@shared/syllabus';
@@ -847,5 +847,50 @@ describe('S4 math in posts', () => {
     expect(kinds('`echo $HOME$`')).toEqual([['code', 'echo $HOME$']]);
     expect(kinds('```\nx = $a$\n```')).toEqual([['block', 'x = $a$']]);
     expect(kinds('See https://example.com/$a$')[0][0]).toBe('text');
+  });
+});
+
+describe('A3 final exam conflicts', () => {
+  const exam = (course: string, date: string, start: string, end: string) => ({ course, date, start, end });
+
+  it('tells overlapping exams from ones that only share a day', () => {
+    const conflicts = examConflicts([
+      exam('COMP 251', '2026-12-14', '14:00', '17:00'),
+      exam('MATH 240', '2026-12-14', '16:00', '19:00'),
+      exam('COMP 302', '2026-12-15', '09:00', '12:00'),
+      exam('COMP 206', '2026-12-15', '14:00', '17:00'),
+      exam('MATH 133', '2026-12-16', '09:00', '12:00'),
+    ]);
+    expect(conflicts.get('COMP 251')).toEqual({ overlap: true, with: 'MATH 240' });
+    expect(conflicts.get('MATH 240')).toEqual({ overlap: true, with: 'COMP 251' });
+    expect(conflicts.get('COMP 302')).toEqual({ overlap: false, with: 'COMP 206' });
+    expect(conflicts.has('MATH 133')).toBe(false);
+  });
+
+  it('prefers telling you about an overlap, and one ending as another starts is not one', () => {
+    const conflicts = examConflicts([
+      exam('A 1', '2026-12-14', '09:00', '12:00'),
+      exam('B 2', '2026-12-14', '12:00', '15:00'),
+      exam('C 3', '2026-12-14', '11:00', '13:00'),
+    ]);
+    expect(conflicts.get('A 1')).toEqual({ overlap: true, with: 'C 3' });
+    expect(examConflicts([exam('A 1', '2026-12-14', '09:00', '12:00'), exam('B 2', '2026-12-14', '12:00', '15:00')]).get('A 1')?.overlap).toBe(false);
+  });
+});
+
+describe('A1 GPA by term', () => {
+  it('follows the term GPA and the CGPA it brought them to, leaving out terms with nothing graded', () => {
+    const record = (term: string, credits: number, grade: string | null, status: 'completed' | 'in-progress' = 'completed') => ({ term, credits, grade, status });
+    const { terms } = summarizeRecord([
+      record('Fall 2025', 3, 'A'),
+      record('Fall 2025', 3, 'B'),
+      record('Winter 2026', 6, 'B+'),
+      record('Fall 2026', 3, null, 'in-progress'),
+    ]);
+    expect(gpaTrend(terms)).toEqual([
+      { term: 'Fall 2025', gpa: 3.5, cgpa: 3.5 },
+      { term: 'Winter 2026', gpa: 3.3, cgpa: 3.4 },
+    ]);
+    expect(gpaTrend(summarizeRecord([]).terms)).toEqual([]);
   });
 });

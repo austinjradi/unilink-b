@@ -42,7 +42,7 @@ import dayjs from 'dayjs';
 import { useNavigate } from 'react-router';
 import { addDays, CURRENT_TERM, eachDay, TERMS, ymd } from '@shared/dates';
 import { isBusyWeek } from '@shared/grades';
-import { EXAM_SCHEDULE_TERMS, FINAL_EXAMS, keyDatesFor, termWithExams } from '@shared/keyDates';
+import { EXAM_SCHEDULE_TERMS, examConflicts, FINAL_EXAMS, keyDatesFor, termWithExams } from '@shared/keyDates';
 import { parseSyllabus, type SyllabusItem } from '@shared/syllabus';
 import { chipStyle, Empty, KindBadge, kindColor, Loading, PageHeader, Tag } from '../components/ui';
 import { fmtDateTime, fmtTime, toDate } from '../lib/format';
@@ -459,6 +459,7 @@ function KeyDatesView() {
   const myCourses = new Set((mine.data ?? []).filter((c) => c.term === termName).map((c) => `${c.subject} ${c.number}`));
   const exams = FINAL_EXAMS.filter((e) => e.term === termName).sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`));
   const myExams = exams.filter((e) => myCourses.has(e.course));
+  const conflicts = examConflicts(myExams);
   const query = search.trim().toLowerCase().replace(/\s+/g, '');
   const listed = exams.filter((e) => !query || `${e.course}${titles.get(e.course) ?? ''}`.toLowerCase().replace(/\s+/g, '').includes(query));
   const day = (date: string) => dayjs(date).format(t('ddd, MMM D'));
@@ -524,6 +525,11 @@ function KeyDatesView() {
                     <Text size="sm" style={{ flex: 1 }}>
                       {day(e.date)} · {e.start}–{e.end}
                     </Text>
+                    {conflicts.has(e.course) && (
+                      <Tag color={conflicts.get(e.course)!.overlap ? 'red' : 'orange'}>
+                        {conflicts.get(e.course)!.overlap ? t('Overlaps {{course}}', { course: conflicts.get(e.course)!.with }) : t('Same day as {{course}}', { course: conflicts.get(e.course)!.with })}
+                      </Tag>
+                    )}
                     <Text size="sm" c="dimmed">
                       {e.location}
                     </Text>

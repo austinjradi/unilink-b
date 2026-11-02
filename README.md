@@ -77,7 +77,7 @@ The interface follows the team's wireframes in `A2Team.pdf`:
   Ctrl/Cmd+K) searches your classes, posts and replies, deadlines, graded work, study sessions, plans and group chats at once,
   and only what you could already see elsewhere (`services/search.ts`).
 - **Goat mascot:** customizable under Settings → Goat (`components/Goat.tsx`, `shared/goat.ts`).
-- **Home:** a checklist of first steps for a new account, ticked off as they're done; today's tasks and deadline countdowns on the left, a cross-class discussion feed with 🐐
+- **Home:** "Can't study today?" moves today's planned tasks to your next free time in one click. A checklist of first steps for a new account, ticked off as they're done; today's tasks and deadline countdowns on the left, a cross-class discussion feed with 🐐
   reactions in the middle, and filters on the right.
 - **Math:** posts and replies can have math between dollar signs, rendered by KaTeX (bundled, loaded only when needed), with a preview while writing.
 - **Threads:** one list of replies, with the accepted answer pinned first, and a Follow button for reply notifications. Posts and replies you haven't sent are kept as drafts on this device, per account. A classmate's name opens their
@@ -89,6 +89,7 @@ The interface follows the team's wireframes in `A2Team.pdf`:
   counting only the best ones if the syllabus drops the rest.
 - **Calendar & Planner:** Month, Week, Semester and Key dates views, with a chip per class to show or hide it. Pick any day to list everything on it; on phones
   the month shows a coloured dot per event. The Google Calendar export can include your planned tasks, as all-day events.
+- **Find courses:** **Fits my timetable** leaves out sections that clash with your classes. **Your final exams** tags any that overlap or share a day.
 - **Courses:** each class card shows the next lecture, the next thing due and unanswered questions; a class's
   Overview lists what's coming up in it.
 - **Group chat links:** cards with Open/Report buttons.
@@ -99,7 +100,7 @@ The interface follows the team's wireframes in `A2Team.pdf`:
 - **Study Mode:** its own tab, with a pill in the top bar while it's on. A planned task (on Home or the Planner) can start a
   **focus session as long as the task is meant to take**, and when it ends the app asks whether you finished it.
 - **Degree plan:** which of your courses count and what's left, with the **credits a term** it takes to graduate in your expected year.
-- **Course record:** credits and CGPA, plus a **CGPA goal**: type the CGPA you're aiming for and see what your next credits
+- **Course record:** a chart of **GPA by term** (`components/GpaTrend.tsx`), credits and CGPA, plus a **CGPA goal**: type the CGPA you're aiming for and see what your next credits
   have to average, or how far straight A's would get you if it's out of reach (`goalOutlook` in `shared/academics.ts`).
 - **Settings:** sections down the side.
 

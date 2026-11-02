@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Badge, Button, Card, Checkbox, Group, Modal, Select, SimpleGrid, Stack, Table, Tabs, Text, Textarea, TextInput } from '@mantine/core';
+import { Badge, Button, Card, Checkbox, Group, Modal, Select, SimpleGrid, Stack, Table, Tabs, Text, Textarea, TextInput, Tooltip } from '@mantine/core';
 import { useDebouncedValue } from '@mantine/hooks';
 import { IconCalendarDue, IconCertificate, IconClipboardText, IconClock, IconListDetails, IconMessageQuestion, IconSchool, IconSearch, IconUsers } from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
@@ -167,6 +167,8 @@ function FindCourses() {
   const [level, setLevel] = useState<string | null>(null);
   const [debounced] = useDebouncedValue(query, 200);
   const [pasting, setPasting] = useState(false);
+  // Your own section stays listed, so you can always see where you are.
+  const [fits, setFits] = useState(false);
 
   const terms = useQuery({ queryKey: ['catalogue', 'terms'], queryFn: () => rpc.catalogue.terms() });
   const results = useQuery({
@@ -182,6 +184,8 @@ function FindCourses() {
     success: 'Switched sections',
     onSuccess: (_data, classId) => navigate(`/classes/${classId}`),
   });
+
+  const shown = results.data?.filter((c) => !fits || c.joined || !c.clashesWith.length);
 
   return (
     <SectionCard
@@ -218,10 +222,15 @@ function FindCourses() {
           clearable
           w={140}
         />
+        {!professor && (
+          <Tooltip label={t('Leaves out sections that clash with your classes that term. Sections with no times entered yet stay listed.')} multiline w={260}>
+            <Checkbox label={t('Fits my timetable')} checked={fits} onChange={(e) => setFits(e.currentTarget.checked)} mb={8} />
+          </Tooltip>
+        )}
       </Group>
       {results.isPending ? (
         <Loading />
-      ) : results.data?.length ? (
+      ) : shown?.length ? (
         <Table.ScrollContainer minWidth={560}>
           <Table highlightOnHover verticalSpacing="sm">
             <Table.Thead>
@@ -234,7 +243,7 @@ function FindCourses() {
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {results.data.map((c) => (
+              {shown.map((c) => (
                 <Table.Tr key={c.id}>
                   <Table.Td fw={700} style={{ whiteSpace: 'nowrap' }}>
                     {c.code}

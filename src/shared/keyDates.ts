@@ -127,4 +127,16 @@ export const FINAL_EXAMS: FinalExam[] = [
 // Terms whose exam schedule is out (the rest show "not published yet").
 export const EXAM_SCHEDULE_TERMS = ['Fall 2026'];
 
+// A student's exams that overlap, or at least fall on the same day, by course.
+export function examConflicts(exams: Pick<FinalExam, 'course' | 'date' | 'start' | 'end'>[]) {
+  const conflicts = new Map<string, { overlap: boolean; with: string }>();
+  for (const exam of exams) {
+    const sameDay = exams.filter((other) => other.course !== exam.course && other.date === exam.date);
+    const overlapping = sameDay.find((other) => other.start < exam.end && exam.start < other.end);
+    if (overlapping) conflicts.set(exam.course, { overlap: true, with: overlapping.course });
+    else if (sameDay[0]) conflicts.set(exam.course, { overlap: false, with: sameDay[0].course });
+  }
+  return conflicts;
+}
+
 export const finalExamFor = (course: string, term: string) => FINAL_EXAMS.find((e) => e.course === course && e.term === term) ?? null;

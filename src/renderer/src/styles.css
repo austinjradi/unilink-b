@@ -5,6 +5,9 @@
   --ul-soft: #eceef8;
   --ul-rule: var(--ul-ink);
   --ul-recess: color-mix(in srgb, var(--ul-soft) 60%, transparent);
+  /* Two chart series, checked for colour blindness against each mode's cards. */
+  --ul-series-1: #4e5bea;
+  --ul-series-2: #0f8f6f;
 }
 
 /* Built on the tinted dark greys in theme.ts: the page sits below the cards,
@@ -16,6 +19,8 @@
   --ul-soft: var(--mantine-color-dark-6);
   --ul-rule: var(--mantine-color-dark-4);
   --ul-recess: color-mix(in srgb, var(--ul-page) 70%, transparent);
+  --ul-series-1: #6f7aee;
+  --ul-series-2: #22a583;
 }
 
 body {

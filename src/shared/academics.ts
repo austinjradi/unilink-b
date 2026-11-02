@@ -105,3 +105,15 @@ export function goalOutlook(record: { cgpaPoints: number; cgpaCredits: number },
   const grade = [...MCGILL_SCALE].reverse().find((g) => g.gpa >= average)?.letter ?? MCGILL_SCALE[0].letter;
   return { kind: there ? 'keep' : 'reach', average, grade };
 }
+
+// A1: term by term, that term's GPA and the CGPA it brought them to. Terms with nothing graded yet are left out.
+export function gpaTrend(terms: { term: string; gpa: number | null; credits: number; points: number }[]) {
+  let credits = 0;
+  let points = 0;
+  return terms.flatMap((row) => {
+    if (row.gpa == null) return [];
+    credits += row.credits;
+    points += row.points;
+    return [{ term: row.term, gpa: row.gpa, cgpa: round2(points / credits) }];
+  });
+}

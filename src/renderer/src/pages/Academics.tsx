@@ -26,11 +26,12 @@ import {
 import { useForm } from '@mantine/form';
 import { IconAlertTriangle, IconCertificate, IconCircleCheck, IconClipboardText, IconDownload, IconListDetails, IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { goalOutlook, OTHER_GRADES, RECORD_GRADES, RECORD_STATUSES, type RecordStatus, summarizeRecord, termOptions, termOrder } from '@shared/academics';
+import { goalOutlook, gpaTrend, OTHER_GRADES, RECORD_GRADES, RECORD_STATUSES, type RecordStatus, summarizeRecord, termOptions, termOrder } from '@shared/academics';
 import { CURRENT_TERM } from '@shared/dates';
 import { graduationPace } from '@shared/degree';
 import { letterFor } from '@shared/grades';
 import { parseTranscript } from '@shared/transcript';
+import { GpaTrend } from '../components/GpaTrend';
 import { Empty, Loading, SectionCard } from '../components/ui';
 import { useAction, useMe } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
@@ -289,6 +290,8 @@ function RecordTab({ onEdit }: { onEdit: (r: CourseRecord) => void }) {
         <Stat label={t('In progress')} value={String(summary.creditsInProgress)} hint={t('credits')} />
         <Stat label={t('Planned')} value={String(summary.creditsPlanned)} hint={t('credits')} />
       </SimpleGrid>
+
+      <GpaTrend points={gpaTrend(summary.terms)} />
 
       <CgpaGoal summary={summary} />
 

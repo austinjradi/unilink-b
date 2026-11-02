@@ -130,6 +130,14 @@ function TodayTasks() {
 
   const items = data.data?.today ?? [];
   const done = items.filter((i) => i.done).length;
+  // ST2: plans move around a day off, so a bad day only takes one click.
+  const me = useMe();
+  const undo = useUndo();
+  const daysOff = me.daysOff ?? [];
+  const planned = items.some((i) => i.kind === 'task' && !i.done && i.due === today);
+  const takeOff = useAction(() => rpc.planner.setDaysOff({ days: [...daysOff, today] }), {
+    onSuccess: () => undo(t('Today’s planned tasks moved to your next free time.'), () => rpc.planner.setDaysOff({ days: daysOff })),
+  });
 
   return (
     <Card padding="md">
@@ -158,6 +166,11 @@ function TodayTasks() {
           {items.map((item) => (
             <TaskRow key={item.key} item={item} today={today} />
           ))}
+          {planned && !daysOff.includes(today) && (
+            <Anchor component="button" type="button" size="xs" c="dimmed" ta="left" w="fit-content" onClick={() => takeOff.mutate()}>
+              {t('Can’t study today? Move today’s tasks')}
+            </Anchor>
+          )}
           <form
             onSubmit={(e) => {
               e.preventDefault();

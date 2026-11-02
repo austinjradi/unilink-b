@@ -721,6 +721,25 @@ describe('A4 several marks in one component', () => {
   });
 });
 
+describe('ST2 taking today off', () => {
+  it('moves what was planned for today, and undoing it puts it back', async () => {
+    const { api } = await student('Maya');
+    // Clock: Monday 5 October 2026.
+    await api.planner.create({ title: 'Essay', classId: null, dueAt: new Date(2026, 9, 20, 23, 59), notes: '', tasks: [{ title: 'Outline', minutes: 30 }], attachmentPath: null });
+    const days = async () => (await api.planner.list())[0].tasks.map((t) => t.scheduledFor);
+    expect(await days()).toEqual(['2026-10-05']);
+    const today = async () => (await api.todos.today()).today.filter((i) => i.kind === 'task').map((i) => i.title);
+    expect(await today()).toEqual(['Outline']);
+
+    await api.planner.setDaysOff({ days: ['2026-10-05'] });
+    expect(await days()).toEqual(['2026-10-06']);
+    expect(await today()).toEqual([]);
+
+    await api.planner.setDaysOff({ days: [] });
+    expect(await days()).toEqual(['2026-10-05']);
+  });
+});
+
 describe('G3 notification settings', () => {
   it('offers each role only what it could ever get', async () => {
     const { people, classId } = await classmates('Maya');
