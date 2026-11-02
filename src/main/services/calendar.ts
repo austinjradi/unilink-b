@@ -406,7 +406,8 @@ export const calendarRouter = {
   }),
 
   // G2 → Google Calendar: an .ics file Google Calendar can import.
-  exportIcs: procedure(z.void(), async (_input, ctx) => {
+  // `tasks` adds what's planned and not done yet (ST2), as all-day events: plans have a day, not a time.
+  exportIcs: procedure(z.object({ tasks: z.boolean() }), async ({ tasks }, ctx) => {
     const target = await ctx.platform.chooseSaveLocation({
       title: 'Export calendar',
       defaultPath: 'unilink.ics',
@@ -419,14 +420,15 @@ export const calendarRouter = {
     const locale = ctx.db.select({ locale: users.locale }).from(users).where(eq(users.id, ctx.userId)).get()?.locale ?? 'en';
     // Key dates that span days go out once each, as all-day events (below).
     const events: IcsEvent[] = collect(ctx.db, ctx.userId, now, horizon)
-      .filter((e) => e.kind !== 'class' && e.kind !== 'task' && e.kind !== 'key')
+      .filter((e) => e.kind !== 'class' && e.kind !== 'key' && (e.kind !== 'task' || (tasks && !e.done)))
       .map((e) => ({
         uid: `${e.key}@unilink`,
         title: e.kind === 'deadline' ? translate(locale, 'Due: {{title}}', { title: e.title }) : e.title,
         start: e.start,
         end: e.end ?? e.start,
         location: e.location,
-        description: e.classLabel ?? undefined,
+        description: (e.kind === 'task' ? [e.detail, e.classLabel].filter(Boolean).join(' · ') : e.classLabel) ?? undefined,
+        allDay: e.kind === 'task',
       }));
 
     for (const k of KEY_DATES) {

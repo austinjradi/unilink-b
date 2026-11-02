@@ -11,7 +11,7 @@ import { t, term } from '../lib/i18n';
 export function IntegrationsPanel() {
   const stats = useQuery({ queryKey: ['catalogue', 'stats'], queryFn: () => rpc.catalogue.stats() });
   const [importClass, setImportClass] = useState<number | null>(null);
-  const exportIcs = useAction(() => rpc.calendar.exportIcs(), {
+  const exportIcs = useAction(() => rpc.calendar.exportIcs({ tasks: false }), {
     success: (r) => (r ? t('Exported {{count}} events to {{path}}', { count: r.count, path: r.path }) : ''),
   });
   const importIcs = useAction(() => rpc.calendar.importIcs({ classId: importClass }), {

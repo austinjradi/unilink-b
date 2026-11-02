@@ -666,6 +666,32 @@ describe('S4 discussion board', () => {
   });
 });
 
+describe('G2 calendar export', () => {
+  it('adds planned tasks as all-day events only when asked, and never the finished ones', async () => {
+    const { api, ctx } = await student('Maya');
+    await api.planner.create({ title: 'Essay', classId: null, dueAt: new Date(2026, 9, 20, 23, 59), notes: '', tasks: [{ title: 'Outline', minutes: 40 }, { title: 'Draft', minutes: 30 }], attachmentPath: null });
+    await api.calendar.addDeadline({ classId: null, kind: 'other', title: 'Forms', dueAt: new Date(2026, 9, 9, 8), notes: '' });
+    const [{ tasks }] = await api.planner.list();
+    await api.planner.setDone({ taskId: tasks[0].id, done: true });
+
+    const file = join(tmpdir(), `unilink-calendar-${Date.now()}.ics`);
+    ctx.platform.chooseSaveLocation = async () => file;
+    await api.calendar.exportIcs({ tasks: false });
+    const plain = await readFile(file, 'utf8');
+    expect(plain).toContain('SUMMARY:Due: Forms');
+    expect(plain).not.toContain('Draft');
+
+    await api.calendar.exportIcs({ tasks: true });
+    const planned = await readFile(file, 'utf8');
+    expect(planned).toContain('SUMMARY:Due: Forms');
+    expect(planned).not.toContain('Outline');
+    const event = planned.split('BEGIN:VEVENT').find((e) => e.includes('Draft'))!;
+    expect(event).toContain('SUMMARY:Draft · Essay');
+    expect(event).toContain('DTSTART;VALUE=DATE:');
+    expect(event).toContain('DESCRIPTION:30 min');
+  });
+});
+
 describe('Search', () => {
   it('finds things across the app, only in your classes and only what you can see', async () => {
     const { classId, people } = await classmates('Maya', 'Leo', 'Ana');

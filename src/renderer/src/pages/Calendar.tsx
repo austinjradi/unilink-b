@@ -111,7 +111,7 @@ export function CalendarPage() {
   // Remembered between visits, on this device.
   const [hidden, setHidden] = useLocalStorage<number[]>({ key: 'unilink-calendar-hidden-classes', defaultValue: [] });
 
-  const exportIcs = useAction(() => rpc.calendar.exportIcs(), {
+  const exportIcs = useAction((tasks: boolean) => rpc.calendar.exportIcs({ tasks }), {
     success: (r) => (r ? t('Exported {{count}} events. Import the file into Google Calendar.', { count: r.count }) : ''),
   });
   const importIcs = useAction(() => rpc.calendar.importIcs({ classId: null }), {
@@ -144,8 +144,11 @@ export function CalendarPage() {
                 </Button>
               </Menu.Target>
               <Menu.Dropdown>
-                <Menu.Item leftSection={<IconDownload size={14} />} onClick={() => exportIcs.mutate()}>
+                <Menu.Item leftSection={<IconDownload size={14} />} onClick={() => exportIcs.mutate(false)}>
                   {t('Export for Google Calendar (.ics)')}
+                </Menu.Item>
+                <Menu.Item leftSection={<IconDownload size={14} />} onClick={() => exportIcs.mutate(true)}>
+                  {t('Export with my planned tasks (.ics)')}
                 </Menu.Item>
                 <Menu.Item leftSection={<IconUpload size={14} />} onClick={() => importIcs.mutate()}>
                   {t('Import from myCourses (.ics)')}
