@@ -48,6 +48,9 @@ import {
   replyReactions,
   studySessionMembers,
   studySessions,
+  timePollOptions,
+  timePolls,
+  timePollVotes,
   todos,
   users,
 } from './schema';
@@ -127,7 +130,7 @@ export const demoEmail = (name: string) =>
 // section's graded items. 4: a professor teaching COMP 251. 5: their course outline. 6: a thread
 // with code in it and a reported post waiting for them, to show those off.
 const SEED_KEY = 'demo_seed';
-const SEED_VERSION = '7';
+const SEED_VERSION = '8';
 const HOUR = 3_600_000;
 
 function hash(password: string) {
@@ -177,6 +180,7 @@ export function seedDemoData(db: DB) {
     .where(and(eq(classDetails.classId, classId(db, 'COMP', '251', '001')), isNull(classDetails.outlinePath)))
     .run();
   seedShowcase(db);
+  seedTimePoll(db);
   followSeededThreads(db);
   db.insert(appState)
     .values({ key: SEED_KEY, value: SEED_VERSION })
@@ -514,6 +518,41 @@ function seedProfessor(db: DB, passwordHash: string) {
 
 // What a visitor wouldn't otherwise run into: a question with a code block and a link, and one
 // that's been reported, so the professor has something to moderate.
+// S3: Priya asks COMP 251 when works, so the "find a time" poll shows up with answers on it.
+function seedTimePoll(db: DB) {
+  if (db.select({ id: timePolls.id }).from(timePolls).get()) return;
+  const comp251 = classId(db, 'COMP', '251', '001');
+  const priya = db.select({ id: users.id }).from(users).where(eq(users.email, CORE_EMAILS.priya)).get()?.id;
+  if (!priya) return;
+  const signIns = Object.values(CORE_EMAILS);
+  const voters = db
+    .select({ id: users.id, email: users.email })
+    .from(enrollments)
+    .innerJoin(users, eq(enrollments.userId, users.id))
+    .where(eq(enrollments.classId, comp251))
+    .all()
+    .filter((u) => !signIns.includes(u.email))
+    .slice(0, 6);
+  const today = ymd(new Date());
+  db.transaction((tx) => {
+    const poll = tx.insert(timePolls).values({ classId: comp251, hostId: priya, title: 'Practice final together' }).returning().get();
+    [
+      { days: 3, votes: 2 },
+      { days: 4, votes: 5 },
+      { days: 6, votes: 3 },
+    ].forEach(({ days, votes }) => {
+      const startsAt = atTime(addDays(today, days), '18:00');
+      const option = tx
+        .insert(timePollOptions)
+        .values({ pollId: poll.id, startsAt, endsAt: new Date(startsAt.getTime() + 2 * HOUR) })
+        .returning()
+        .get();
+      const rows = voters.slice(0, votes).map((v) => ({ optionId: option.id, userId: v.id }));
+      if (rows.length) tx.insert(timePollVotes).values(rows).run();
+    });
+  });
+}
+
 const SHOWCASE_TITLE = 'Why does my DFS overflow the stack on the big test?';
 const REPORTED_TITLE = 'A2 Q3: can we assume edge weights are distinct?';
 

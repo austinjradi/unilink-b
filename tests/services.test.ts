@@ -666,6 +666,84 @@ describe('S4 discussion board', () => {
   });
 });
 
+describe('S3 finding a time', () => {
+  const times = [new Date(2026, 9, 7, 18), new Date(2026, 9, 8, 18), new Date(2026, 9, 9, 18)];
+
+  it('offers times to the section, shows only counts, and tells voters what was picked', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo', 'Ana');
+    const [maya, leo, ana] = people;
+    const elsewhere = await student('Sam');
+    await elsewhere.api.classes.join({ classId: await comp251(elsewhere.api, '002') });
+
+    const { id: pollId } = await maya.api.timePolls.create({ classId, title: 'Midterm review', minutes: 120, times });
+    const [poll] = await leo.api.timePolls.list({ classId });
+    expect(poll).toMatchObject({ title: 'Midterm review', hostName: 'Maya', mine: false });
+    expect(poll.options.map((o) => o.endsAt)).toEqual(times.map((time) => new Date(time.getTime() + 2 * 3_600_000)));
+    expect((await maya.api.timePolls.list({ classId }))[0].mine).toBe(true);
+    await expectCode(elsewhere.api.timePolls.list({ classId }), 'FORBIDDEN');
+    await expectCode(elsewhere.api.timePolls.vote({ optionId: poll.options[0].id, on: true }), 'FORBIDDEN');
+
+    // Voting twice counts once, can be taken back, and never says who.
+    await leo.api.timePolls.vote({ optionId: poll.options[1].id, on: true });
+    await leo.api.timePolls.vote({ optionId: poll.options[1].id, on: true });
+    await ana.api.timePolls.vote({ optionId: poll.options[1].id, on: true });
+    await ana.api.timePolls.vote({ optionId: poll.options[0].id, on: true });
+    await ana.api.timePolls.vote({ optionId: poll.options[0].id, on: false });
+    const seen = (await maya.api.timePolls.list({ classId }))[0].options;
+    expect(seen.map((o) => [o.votes, o.voted])).toEqual([[0, false], [2, false], [0, false]]);
+    expect(JSON.stringify(seen)).not.toMatch(/userId|Leo|Ana/);
+    expect((await ana.api.timePolls.list({ classId }))[0].options[1].voted).toBe(true);
+
+    // Only the host picks, and only with a session that voters can see in that class.
+    const open = await maya.api.studySessions.create({ classId, ...session({ startsAt: times[1], endsAt: seen[1].endsAt }) });
+    await expectCode(leo.api.timePolls.decide({ optionId: seen[1].id, sessionId: open.id }), 'FORBIDDEN');
+    const hidden = await maya.api.studySessions.create({ classId, ...session({ visibility: 'invite' }) });
+    await expectCode(maya.api.timePolls.decide({ optionId: seen[1].id, sessionId: hidden.id }), 'NOT_FOUND');
+    const notHers = await leo.api.studySessions.create({ classId, ...session() });
+    await expectCode(maya.api.timePolls.decide({ optionId: seen[1].id, sessionId: notHers.id }), 'NOT_FOUND');
+
+    await maya.api.timePolls.decide({ optionId: seen[1].id, sessionId: open.id });
+    expect(await maya.api.timePolls.list({ classId })).toEqual([]);
+    const told = async (s: typeof maya) => (await s.api.notifications.list()).items.filter((n) => n.type === 'poll-decided');
+    expect((await told(leo))[0].title).toMatch(/^"Midterm review" is on for /);
+    expect((await told(leo))[0].link).toBe(`/classes/${classId}/sessions`);
+    expect(await told(ana)).toHaveLength(1);
+    expect(await told(maya)).toEqual([]);
+    // Voters choose to join: being told doesn't sign them up.
+    expect((await leo.api.studySessions.list({ classId })).find((s) => s.id === open.id)?.myStatus).toBeNull();
+    await expectCode(leo.api.timePolls.vote({ optionId: seen[0].id, on: true }), 'BAD_INPUT');
+    await expectCode(maya.api.timePolls.decide({ optionId: seen[0].id, sessionId: open.id }), 'BAD_INPUT');
+    expect(pollId).toBeGreaterThan(0);
+  });
+
+  it('needs at least two different future times, and drops past ones', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const ask = (when: Date[]) => maya.api.timePolls.create({ classId, title: 'Review', minutes: 60, times: when });
+    await expectCode(ask([times[0]]), 'BAD_INPUT');
+    await expectCode(ask([times[0], times[0]]), 'BAD_INPUT');
+    await expectCode(ask([new Date(2026, 8, 1, 18), times[0]]), 'BAD_INPUT');
+    await expectCode(ask([...times, ...times]), 'BAD_INPUT');
+    const { id } = await ask(times);
+
+    // The first time passes: it stops being offered. With none left, the poll goes away.
+    clock = new Date(2026, 9, 8, 0);
+    expect((await leo.api.timePolls.list({ classId }))[0].options).toHaveLength(2);
+    clock = new Date(2026, 9, 12, 0);
+    expect(await leo.api.timePolls.list({ classId })).toEqual([]);
+
+    // Votes from someone who left don't count; only the host removes it.
+    clock = new Date(2026, 9, 5, 9);
+    const [{ options }] = await leo.api.timePolls.list({ classId });
+    await leo.api.timePolls.vote({ optionId: options[0].id, on: true });
+    await leo.api.classes.leave({ classId });
+    expect((await maya.api.timePolls.list({ classId }))[0].options[0].votes).toBe(0);
+    await expectCode(leo.api.timePolls.remove({ pollId: id }), 'FORBIDDEN');
+    await maya.api.timePolls.remove({ pollId: id });
+    expect(await maya.api.timePolls.list({ classId })).toEqual([]);
+  });
+});
+
 describe('ST2 free time around classes', () => {
   it('goes by your own class times this term, and offers nothing without any', async () => {
     const { classId, people } = await classmates('Maya');

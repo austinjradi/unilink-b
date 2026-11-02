@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Button, Collapse, Group, Modal, Stack, Text, Title } from '@mantine/core';
-import { IconChevronDown, IconChevronRight, IconPlus, IconUsersGroup } from '@tabler/icons-react';
+import { IconCalendarQuestion, IconChevronDown, IconChevronRight, IconPlus, IconUsersGroup } from '@tabler/icons-react';
 import dayjs from 'dayjs';
 import { useQuery } from '@tanstack/react-query';
 import { JoinByCode, SessionForm, SessionList, SessionsCard } from '../../components/Sessions';
+import { TimePollForm, TimePolls } from '../../components/TimePolls';
 import { Empty, Loading } from '../../components/ui';
 import { rpc } from '../../lib/rpc';
 import { t } from '../../lib/i18n';
@@ -12,6 +13,7 @@ import { t } from '../../lib/i18n';
 export function StudySessions({ classId }: { classId: number }) {
   const sessions = useQuery({ queryKey: ['studySessions', classId], queryFn: () => rpc.studySessions.list({ classId }) });
   const [creating, setCreating] = useState(false);
+  const [asking, setAsking] = useState(false);
 
   return (
     <>
@@ -19,11 +21,15 @@ export function StudySessions({ classId }: { classId: number }) {
         <Title order={2}>{t('Study Sessions')}</Title>
         <Group gap="sm">
           <JoinByCode />
+          <Button variant="default" leftSection={<IconCalendarQuestion size={16} />} onClick={() => setAsking(true)}>
+            {t('Find a time')}
+          </Button>
           <Button leftSection={<IconPlus size={16} />} onClick={() => setCreating(true)}>
             {t('Create your study session')}
           </Button>
         </Group>
       </Group>
+      <TimePolls classId={classId} />
       <SessionsCard>
         {sessions.isPending ? (
           <Loading />
@@ -37,6 +43,9 @@ export function StudySessions({ classId }: { classId: number }) {
       <PastSessions classId={classId} />
       <Modal opened={creating} onClose={() => setCreating(false)} title={t('Create a study session')} size="lg">
         {creating && <SessionForm classId={classId} existing={null} onDone={() => setCreating(false)} />}
+      </Modal>
+      <Modal opened={asking} onClose={() => setAsking(false)} title={t('Find a time that works')}>
+        {asking && <TimePollForm classId={classId} onDone={() => setAsking(false)} />}
       </Modal>
     </>
   );

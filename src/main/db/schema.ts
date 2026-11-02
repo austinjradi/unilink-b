@@ -551,3 +551,38 @@ export const replyReactions = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.replyId, t.userId] })],
 );
+
+// S3: "when works for people?", before a session exists. Votes are only ever shown as counts.
+export const timePolls = sqliteTable(
+  'time_polls',
+  {
+    id: id(),
+    classId: classRef(),
+    hostId: userRef('host_id'),
+    title: text('title').notNull(),
+    // Set once the host picks a time.
+    closedAt: timestamp('closed_at'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('time_polls_class_idx').on(t.classId)],
+);
+
+export const timePollOptions = sqliteTable('time_poll_options', {
+  id: id(),
+  pollId: integer('poll_id')
+    .notNull()
+    .references(() => timePolls.id, { onDelete: 'cascade' }),
+  startsAt: timestamp('starts_at').notNull(),
+  endsAt: timestamp('ends_at').notNull(),
+});
+
+export const timePollVotes = sqliteTable(
+  'time_poll_votes',
+  {
+    optionId: integer('option_id')
+      .notNull()
+      .references(() => timePollOptions.id, { onDelete: 'cascade' }),
+    userId: userRef(),
+  },
+  (t) => [primaryKey({ columns: [t.optionId, t.userId] })],
+);

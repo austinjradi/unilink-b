@@ -16,6 +16,9 @@ import {
   studyModeSettings,
   studySessionMembers,
   studySessions,
+  timePollOptions,
+  timePolls,
+  timePollVotes,
   todos,
   users,
 } from '../db/schema';
@@ -135,6 +138,20 @@ export function collectMyData(db: DB, userId: number) {
       .where(eq(studySessionMembers.userId, userId))
       .all()
       .map(({ classId, hosting, ...s }) => ({ class: cls(classId), ...s, hosting: Boolean(hosting) })),
+    timePollsAsked: db
+      .select({ classId: timePolls.classId, title: timePolls.title, createdAt: timePolls.createdAt })
+      .from(timePolls)
+      .where(eq(timePolls.hostId, userId))
+      .all()
+      .map(({ classId, ...p }) => ({ class: cls(classId), ...p })),
+    timePollAnswers: db
+      .select({ classId: timePolls.classId, title: timePolls.title, canMake: timePollOptions.startsAt })
+      .from(timePollVotes)
+      .innerJoin(timePollOptions, eq(timePollVotes.optionId, timePollOptions.id))
+      .innerJoin(timePolls, eq(timePollOptions.pollId, timePolls.id))
+      .where(eq(timePollVotes.userId, userId))
+      .all()
+      .map(({ classId, ...a }) => ({ class: cls(classId), ...a })),
     studyMode: db
       .select({
         autoForClasses: studyModeSettings.autoForClasses,

@@ -391,21 +391,32 @@ export function JoinByCode() {
   );
 }
 
-export function SessionForm({ classId, existing, onDone }: { classId: number | null; existing: Session | null; onDone: () => void }) {
+export function SessionForm({
+  classId,
+  existing,
+  fromPoll,
+  onDone,
+}: {
+  classId: number | null;
+  existing: Session | null;
+  // Setting up the session for a time picked from a poll (see TimePolls.tsx).
+  fromPoll?: { optionId: number; title: string; startsAt: Date; endsAt: Date };
+  onDone: () => void;
+}) {
   const classes = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
   const tomorrowEvening = dayjs().add(1, 'day').hour(18).minute(0).second(0).toDate();
   const form = useForm({
     initialValues: {
       classId: String(existing?.classId ?? classId ?? ''),
       tag: existing?.tag ? t(existing.tag) : '',
-      title: existing?.title ?? '',
+      title: existing?.title ?? fromPoll?.title ?? '',
       description: existing?.description ?? '',
       format: (existing?.format ?? 'in-person') as 'in-person' | 'online',
       location: existing?.location ?? '',
       meetingUrl: existing?.meetingUrl ?? '',
       visibility: (existing?.visibility ?? 'class') as 'class' | 'invite',
-      startsAt: (existing?.startsAt ?? tomorrowEvening) as Date | string | null,
-      endsAt: (existing?.endsAt ?? dayjs(tomorrowEvening).add(2, 'hour').toDate()) as Date | string | null,
+      startsAt: (existing?.startsAt ?? fromPoll?.startsAt ?? tomorrowEvening) as Date | string | null,
+      endsAt: (existing?.endsAt ?? fromPoll?.endsAt ?? dayjs(tomorrowEvening).add(2, 'hour').toDate()) as Date | string | null,
       capacity: (existing?.capacity ?? 6) as number | string,
       weeks: '1',
     },
@@ -433,12 +444,17 @@ export function SessionForm({ classId, existing, onDone }: { classId: number | n
         tag: v.tag.trim() ? toStoredTopic(v.tag, SESSION_TAGS) : null,
       };
       if (existing) await rpc.studySessions.update({ sessionId: existing.id, ...fields });
-      else await rpc.studySessions.create({ classId: Number(v.classId), weeks: Number(v.weeks), ...fields });
+      else {
+        const created = await rpc.studySessions.create({ classId: Number(v.classId), weeks: Number(v.weeks), ...fields });
+        if (fromPoll) await rpc.timePolls.decide({ optionId: fromPoll.optionId, sessionId: created.id });
+      }
     },
     {
       success: existing
         ? t('Session updated. Everyone in it hears about a new time or place.')
-        : t('Session created. Share its invite code from the details.'),
+        : fromPoll
+          ? t('Session created. Everyone who answered has been told.')
+          : t('Session created. Share its invite code from the details.'),
       onSuccess: onDone,
     },
   );
@@ -479,7 +495,7 @@ export function SessionForm({ classId, existing, onDone }: { classId: number | n
           <DateTimePicker label={t('Starts')} valueFormat="ddd D MMM, HH:mm" minDate={new Date()} {...form.getInputProps('startsAt')} />
           <DateTimePicker label={t('Ends')} valueFormat="ddd D MMM, HH:mm" minDate={new Date()} {...form.getInputProps('endsAt')} />
         </Group>
-        {!existing && (
+        {!existing && !fromPoll && (
           <Select
             label={t('Repeats')}
             description={t('Weekly sessions share one invite code, which joins every week.')}
@@ -493,15 +509,17 @@ export function SessionForm({ classId, existing, onDone }: { classId: number | n
         )}
         <Group grow align="flex-start">
           <NumberInput label={t('Max people')} description={t('Others join a waitlist once it’s full')} min={2} max={30} {...form.getInputProps('capacity')} />
-          <Select
-            label={t('Who can see it')}
-            data={[
-              { value: 'class', label: t('Everyone in the section') },
-              { value: 'invite', label: t('Only people with the invite code') },
-            ]}
-            allowDeselect={false}
-            {...form.getInputProps('visibility')}
-          />
+          {!fromPoll && (
+            <Select
+              label={t('Who can see it')}
+              data={[
+                { value: 'class', label: t('Everyone in the section') },
+                { value: 'invite', label: t('Only people with the invite code') },
+              ]}
+              allowDeselect={false}
+              {...form.getInputProps('visibility')}
+            />
+          )}
         </Group>
         <Group justify="flex-end">
           <Button type="submit" loading={save.isPending}>

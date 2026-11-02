@@ -6,6 +6,7 @@ export const NOTIFICATION_TYPES = {
   'session-changed': { label: 'Study sessions moved to a new time or place', desktop: true, email: true },
   'session-host': { label: "You're now hosting a study session", desktop: true, email: true },
   'session-cancelled': { label: 'Study sessions cancelled', desktop: true, email: true },
+  'poll-decided': { label: 'A time was picked for a study session you answered about', desktop: true, email: false },
   'session-starting': { label: 'Study session starting in 30 minutes', desktop: true, email: false },
   reply: { label: 'Replies in threads you follow', desktop: true, email: false },
   'answer-accepted': { label: 'Your answer was accepted', desktop: true, email: false },

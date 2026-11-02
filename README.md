@@ -88,7 +88,9 @@ The interface follows the team's wireframes in `A2Team.pdf`:
 - **Courses:** each class card shows the next lecture, the next thing due and unanswered questions; a class's
   Overview lists what's coming up in it.
 - **Group chat links:** cards with Open/Report buttons.
-- **Study Sessions:** your upcoming sessions, plus a search page you can filter by class, format, free spots and date.
+- **Study Sessions:** your upcoming sessions, plus a search page you can filter by class, format, free spots and date. A
+  section's tab can also **find a time**: offer two to five times, classmates tick the ones that work, and only the counts show.
+  Picking one sets up the session and tells everyone who answered, who then choose whether to join (`services/timePolls.ts`).
 - **Study Mode:** its own tab, with a pill in the top bar while it's on. A planned task (on Home or the Planner) can start a
   **focus session as long as the task is meant to take**, and when it ends the app asks whether you finished it.
 - **Course record:** credits and CGPA, plus a **CGPA goal**: type the CGPA you're aiming for and see what your next credits
@@ -308,7 +310,7 @@ the next seven days (nothing if nothing is due; it can be turned off for desktop
 | Professors: who can change what, assignments, moderation | `services/access.ts` (`canEditShared`, `requireTeacher`), `services/assignments.ts`, `services/board.ts` |
 
 The database changes are migrations `0004_version_b` (new tables and columns), `0005_version_b_cleanup`
-(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows`, `0010_sign_in_limits`, `0011_second_grading_scheme`, `0012_weekly_sessions`, `0013_professors`, `0014_board_images`, `0015_mute_replies`, `0016_days_off`, `0017_post_reports`, `0018_course_outline`, `0019_cgpa_goal` and `0020_focus_on_task`.
+(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows`, `0010_sign_in_limits`, `0011_second_grading_scheme`, `0012_weekly_sessions`, `0013_professors`, `0014_board_images`, `0015_mute_replies`, `0016_days_off`, `0017_post_reports`, `0018_course_outline`, `0019_cgpa_goal`, `0020_focus_on_task` and `0021_time_polls`.
 
 ## Not built yet
 

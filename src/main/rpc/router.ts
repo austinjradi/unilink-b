@@ -9,6 +9,7 @@ import { linksRouter } from '../services/links';
 import { notificationsRouter } from '../services/notifications';
 import { plannerRouter } from '../services/planner';
 import { searchRouter } from '../services/search';
+import { timePollsRouter } from '../services/timePolls';
 import { studyModeRouter } from '../services/studyMode';
 import { studySessionsRouter } from '../services/studySessions';
 import { todosRouter } from '../services/todos';
@@ -31,6 +32,7 @@ export const appRouter = {
   planner: plannerRouter, // ST2
   todos: todosRouter, // ST3
   search: searchRouter, // across all of the above
+  timePolls: timePollsRouter, // S3
 };
 
 export type AppRouter = typeof appRouter;
