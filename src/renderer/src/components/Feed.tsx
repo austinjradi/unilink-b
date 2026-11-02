@@ -4,6 +4,7 @@ import {
   Alert,
   Anchor,
   Badge,
+  Box,
   Button,
   Card,
   Chip,
@@ -58,6 +59,7 @@ import {
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router';
 import { parsePost } from '@shared/postText';
+import { MathText } from './MathText';
 import { loadDraft, saveDraft } from '../lib/drafts';
 import { fromNow } from '../lib/format';
 import { t, tx } from '../lib/i18n';
@@ -128,6 +130,8 @@ function Body({ text }: { text: string }) {
           <Code key={i} block my={6}>
             {part.text}
           </Code>
+        ) : part.kind === 'math' || part.kind === 'mathblock' ? (
+          <MathText key={i} tex={part.text} block={part.kind === 'mathblock'} />
         ) : part.kind === 'link' ? (
           <Anchor key={i} href={part.text} target="_blank" rel="noopener noreferrer" inherit style={{ wordBreak: 'break-all' }} onClick={(e) => e.stopPropagation()}>
             {part.text}
@@ -137,6 +141,21 @@ function Body({ text }: { text: string }) {
         ),
       )}
     </>
+  );
+}
+
+// How code and math will come out, while writing them.
+function Preview({ text }: { text: string }) {
+  if (!parsePost(text).some((part) => part.kind !== 'text' && part.kind !== 'link')) return null;
+  return (
+    <Box px="sm" py={6} style={{ border: '1.5px dashed var(--ul-border)', borderRadius: 12 }}>
+      <Text size="xs" fw={800} c="dimmed" mb={2}>
+        {t('Preview')}
+      </Text>
+      <Text size="sm" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+        <Body text={text} />
+      </Text>
+    </Box>
   );
 }
 
@@ -723,6 +742,7 @@ function ReplyBox({ postId, isQuestion }: { postId: number; isQuestion: boolean 
           {t('Reply')}
         </Button>
       </Group>
+      <Preview text={body} />
       <ImageDraft draft={draft} />
     </Stack>
   );
@@ -1154,12 +1174,13 @@ function PostForm({
         )}
         <Textarea
           label={t('Post')}
-          description={t('Put code between `backticks`, or between lines of ``` for a block.')}
+          description={t('Put code between `backticks`, or between lines of ``` for a block. Put math between dollar signs, like $O(n \\log n)$.')}
           autosize
           minRows={5}
           onPaste={existing ? undefined : draft.onPaste}
           {...form.getInputProps('body')}
         />
+        <Preview text={form.values.body} />
         {!existing && <ImageDraft draft={draft} />}
         {!existing && (
           <>

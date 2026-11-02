@@ -79,9 +79,11 @@ The interface follows the team's wireframes in `A2Team.pdf`:
 - **Goat mascot:** customizable under Settings → Goat (`components/Goat.tsx`, `shared/goat.ts`).
 - **Home:** a checklist of first steps for a new account, ticked off as they're done; today's tasks and deadline countdowns on the left, a cross-class discussion feed with 🐐
   reactions in the middle, and filters on the right.
+- **Math:** posts and replies can have math between dollar signs, rendered by KaTeX (bundled, loaded only when needed), with a preview while writing.
 - **Threads:** one list of replies, with the accepted answer pinned first, and a Follow button for reply notifications. Posts and replies you haven't sent are kept as drafts on this device, per account. A classmate's name opens their
   profile card; the feed sorts by newest or most 🐐, and posts since your last visit to a class are marked New
   (counted on its course card).
+- **Grading scheme:** the breakdown can be read from the course outline or pasted ("Midterm 30%, Final exam 50%"), and reviewed before it's added (`parseScheme` in `shared/syllabus.ts`).
 - **Grade Calculator:** a "You need at least X%" bubble and a scenarios table, and below them every class this term with a
   projected term GPA and CGPA on McGill's scale. A component made of many small marks takes them all at once ("8/10 9/10 7/10"),
   counting only the best ones if the syllabus drops the rest.

@@ -3,6 +3,7 @@ import {
   ActionIcon,
   Button,
   Card,
+  Checkbox,
   Grid,
   Group,
   Menu,
@@ -22,9 +23,11 @@ import { DateTimePicker } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconCopy, IconListNumbers, IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
+import { IconCopy, IconFileImport, IconFileText, IconListNumbers, IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { bestFromName, finalIfRemainingAverages, hasSecondScheme, letterFor, markFromParts, MCGILL_SCALE, minimumFor, parseMark, parseMarks, summarize } from '@shared/grades';
+import { CURRENT_TERM } from '@shared/dates';
+import { parseScheme } from '@shared/syllabus';
 import { toDate } from '../lib/format';
 import { t } from '../lib/i18n';
 import { useAction } from '../lib/hooks';
@@ -45,6 +48,7 @@ export function GradeCalculator({ classId }: { classId: number }) {
   const info = useQuery({ queryKey: ['courses', 'info', classId], queryFn: () => rpc.courses.info({ classId }) });
   const [editing, setEditing] = useState<Assessment | 'new' | null>(null);
   const [severalId, setSeveralId] = useState<number | null>(null);
+  const [importing, setImporting] = useState(false);
   const remove = useAction((id: number) => rpc.courses.removeAssessment({ id }));
   const setScore = useAction((a: { id: number; score: number | null }) => rpc.courses.setScore(a));
   const setTarget = useAction((targetGrade: string) => rpc.courses.setTarget({ classId, targetGrade }));
@@ -112,6 +116,9 @@ export function GradeCalculator({ classId }: { classId: number }) {
                 disabled={setSecondScheme.isPending}
               />
             )}
+            <Button variant="subtle" leftSection={<IconFileImport size={16} />} onClick={() => setImporting(true)}>
+              {t('From the syllabus')}
+            </Button>
             <Button variant="default" leftSection={<IconPlus size={16} />} onClick={() => setEditing('new')}>
               {t('Add component')}
             </Button>
@@ -325,6 +332,9 @@ export function GradeCalculator({ classId }: { classId: number }) {
           />
         )}
       </Modal>
+      <Modal opened={importing} onClose={() => setImporting(false)} title={t('Grading scheme from a syllabus')} size="lg">
+        {importing && <SchemeImport classId={classId} scheme={list} outlineName={info.data.outlineName} onDone={() => setImporting(false)} />}
+      </Modal>
       <Modal opened={severalId != null} onClose={() => setSeveralId(null)} title={t('Marks for {{name}}', { name: list.find((a) => a.id === severalId)?.name ?? '' })}>
         {severalId != null && list.some((a) => a.id === severalId) && <SeveralMarks assessment={list.find((a) => a.id === severalId)!} onDone={() => setSeveralId(null)} />}
       </Modal>
@@ -485,6 +495,103 @@ function SeveralMarks({ assessment: a, onDone }: { assessment: Assessment; onDon
           {t('Save')}
         </Button>
       </Group>
+    </Stack>
+  );
+}
+
+// A5: the breakdown from the course outline, reviewed before anything is added to the section's scheme.
+function SchemeImport({ classId, scheme, outlineName, onDone }: { classId: number; scheme: Assessment[]; outlineName: string | null; onDone: () => void }) {
+  const [text, setText] = useState('');
+  const [unchecked, setUnchecked] = useState<Set<number>>(new Set());
+  const mine = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
+  const term = mine.data?.find((c) => c.id === classId)?.term ?? CURRENT_TERM;
+  const fill = (read: string | null) => {
+    if (read == null) return;
+    setText(read);
+    setUnchecked(new Set());
+  };
+  const readFile = useAction(() => rpc.calendar.readSyllabusFile(), { onSuccess: (r) => fill(r?.text ?? null) });
+  const readOutline = useAction(() => rpc.courses.outlineText({ classId }), { onSuccess: fill });
+  const found = parseScheme(text, term);
+  const there = (name: string) => scheme.some((a) => a.name.trim().toLowerCase() === name.trim().toLowerCase());
+  const picked = found.filter((item, n) => !unchecked.has(n) && !there(item.name));
+  const total = picked.reduce((sum, item) => sum + item.weight, 0) + scheme.reduce((sum, a) => sum + a.weight, 0);
+  const add = useAction(
+    async () => {
+      const failed: string[] = [];
+      for (const item of picked) {
+        await rpc.courses.addAssessment({ classId, name: item.name, weight: item.weight, dueAt: item.dueAt }).catch(() => failed.push(item.name));
+      }
+      return { added: picked.length - failed.length, failed };
+    },
+    {
+      success: (r) => [t('Added {{count}} components', { count: r.added }), r.failed.length ? t('Not added: {{titles}}', { titles: r.failed.join(', ') }) : ''].filter(Boolean).join(' '),
+      onSuccess: (r) => !r.failed.length && onDone(),
+    },
+  );
+  return (
+    <Stack>
+      <Text size="sm" c="dimmed">
+        {t('Read the course outline, or paste the part with the grading breakdown. You choose what gets added.')}
+      </Text>
+      <Group gap="xs">
+        {outlineName && (
+          <Button size="xs" variant="light" leftSection={<IconFileText size={14} />} onClick={() => readOutline.mutate()} loading={readOutline.isPending}>
+            {t('Read {{name}}', { name: outlineName })}
+          </Button>
+        )}
+        <Button size="xs" variant="default" leftSection={<IconFileText size={14} />} onClick={() => readFile.mutate()} loading={readFile.isPending}>
+          {t('Choose a PDF, Word or text file')}
+        </Button>
+      </Group>
+      <Textarea
+        label={t('Syllabus text')}
+        placeholder={t('Assignments 20%, Midterm 30%, Final exam 50%')}
+        autosize
+        minRows={4}
+        maxRows={10}
+        data-autofocus
+        value={text}
+        onChange={(e) => {
+          setText(e.currentTarget.value);
+          setUnchecked(new Set());
+        }}
+      />
+      {text.trim() && !found.length && (
+        <Text size="sm" c="dimmed">
+          {t('No grading breakdown found yet. Lines need a name and a percentage, like "Midterm 30%".')}
+        </Text>
+      )}
+      {found.map((item, n) => {
+        const already = there(item.name);
+        return (
+          <Checkbox
+            key={item.line}
+            disabled={already}
+            checked={!already && !unchecked.has(n)}
+            onChange={(e) =>
+              setUnchecked((u) => {
+                const next = new Set(u);
+                if (e.currentTarget.checked) next.delete(n);
+                else next.add(n);
+                return next;
+              })
+            }
+            label={`${item.name}, ${item.weight}%`}
+            description={already ? t('Already added') : item.line}
+          />
+        );
+      })}
+      {found.length > 0 && (
+        <Group justify="space-between">
+          <Text size="sm" c={total === 100 ? 'teal' : 'orange'} fw={700}>
+            {t('The scheme would total {{total}}%', { total: Math.round(total * 100) / 100 })}
+          </Text>
+          <Button onClick={() => add.mutate()} disabled={!picked.length || total > 100} loading={add.isPending}>
+            {t('Add {{count}} components', { count: picked.length })}
+          </Button>
+        </Group>
+      )}
     </Stack>
   );
 }

@@ -139,3 +139,70 @@ export function parseSyllabus(text: string, term: string): SyllabusItem[] {
   }
   return items;
 }
+
+// A5: the grading breakdown in a course outline ("Midterm 30%, Final exam 50%"), whether it's a
+// table, a list or one sentence. Like the dates, the student reviews it before anything is added.
+
+export interface SchemeItem {
+  name: string;
+  weight: number;
+  dueAt: Date | null;
+  line: string;
+}
+
+// Percentages that aren't part of the grade: penalties, the letter grade table, totals.
+const NOT_A_COMPONENT =
+  /\b(?:late|penalt|pénalit|retard|deduct|per day|par jour|total|overall|or above|or higher|and above|or better|ou plus|au moins|at least|minimum|must (?:pass|get|obtain)|attendance is|of the (?:class|students)|tax)\w*/i;
+const GRADE_RANGE = /\d\s*(?:-|–|—|to|à)\s*\d+(?:[.,]\d+)?\s*%/i;
+const INTRO = /^(?:(?:the\s+)?(?:course\s+)?(?:grading(?:\s+scheme)?|grades?|marking(?:\s+scheme)?|evaluation|assessment|breakdown|évaluation|barème)(?:\s+\w+)?\s*[:–—-]\s*)/i;
+const PERCENTS = /\d{1,3}(?:[.,]\d+)?\s*%/g;
+
+function schemeName(line: string, percent: string) {
+  const name = line
+    .replace(percent, ' ')
+    // Keep "(best 5 of 6)": the marks form reads it. Other brackets are just notes.
+    .replace(/\(([^)]*)\)/g, (whole, inside: string) => (/\b(?:best|meilleure?s?)\b/i.test(inside) ? whole : ' '))
+    .replace(/\b(?:each|chacun(?:e)?)\b/gi, ' ')
+    .replace(/\b(?:is|are)?\s*(?:worth|counts?\s+for|will\s+count\s+for|compte\s+pour|vaut)\b/gi, ' ')
+    .replace(/\b(?:of|de)\s+(?:the|your|la|votre)\s+(?:final\s+|course\s+|overall\s+)?(?:grade|mark|note)(?:\s+finale)?\b/gi, ' ')
+    .replace(/^\s*(?:[•*·>\-–—]+|\d+[.)]\s|and\s|et\s|&\s*)\s*/i, '')
+    .replace(/\.{2,}|[|:;,–—\t]+|\s-\s/g, ' ')
+    .replace(/^\s*(?:the|le|la|les|l')\s+/i, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[\s.-]+$/, '')
+    .trim();
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+export function parseScheme(text: string, term: string): SchemeItem[] {
+  const lines = text.split(/\r?\n/).map((raw) => raw.trim()).filter(Boolean);
+  // A PDF's table often comes out with the weight on a line of its own.
+  const joined = lines.reduce<string[]>((all, line) => {
+    if (/^\d{1,3}(?:[.,]\d+)?\s*%$/.test(line) && all.length && !all.at(-1)!.match(PERCENTS)) all[all.length - 1] += ` ${line}`;
+    else all.push(line);
+    return all;
+  }, []);
+  // Several in one sentence, unless the others explain the first: "Labs 20% (4 labs, 5% each)".
+  const pieces = joined.flatMap((raw) => {
+    const line = raw.replace(INTRO, '');
+    return (line.match(PERCENTS)?.length ?? 0) > 1 && !/\b(?:each|chacun)/i.test(line) ? line.split(/\s*[;,]\s*(?=\D)|(?<=%\)?)\s+(?=[A-Za-zÀ-ÿ])|\s+and\s+|\s+et\s+/) : [line];
+  });
+
+  const items: SchemeItem[] = [];
+  for (const line of pieces) {
+    const found = line.match(WEIGHT);
+    if (!found || line.length > 90 || NOT_A_COMPONENT.test(line) || GRADE_RANGE.test(line)) continue;
+    let weight = Number(found[1].replace(',', '.'));
+    // "Assignments (4), 5% each" is 20% in all.
+    if (/\b(?:each|chacun)/i.test(line) && line.match(PERCENTS)?.length === 1) {
+      const count = line.match(/\((\d{1,2})\)|\b(\d{1,2})\s+[a-zà-ÿ]/i);
+      if (count) weight *= Number(count[1] ?? count[2]);
+    }
+    const name = schemeName(line, found[0]);
+    if (weight <= 0 || weight > 100 || !/\p{L}{2}/u.test(name) || /^[A-F][+-]?$/.test(name) || name.length > 60) continue;
+    if (items.some((item) => item.name.toLowerCase() === name.toLowerCase())) continue;
+    const dated = parseSyllabus(line, term)[0];
+    items.push({ name: dated ? dated.title : name, weight, dueAt: dated?.dueAt ?? null, line });
+  }
+  return items;
+}

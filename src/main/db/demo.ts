@@ -131,7 +131,7 @@ export const demoEmail = (name: string) =>
 // section's graded items. 4: a professor teaching COMP 251. 5: their course outline. 6: a thread
 // with code in it and a reported post waiting for them, to show those off.
 const SEED_KEY = 'demo_seed';
-const SEED_VERSION = '9';
+const SEED_VERSION = '10';
 const HOUR = 3_600_000;
 
 function hash(password: string) {
@@ -183,6 +183,7 @@ export function seedDemoData(db: DB) {
   seedShowcase(db);
   seedTimePoll(db);
   seedSeveralMarks(db);
+  seedMathNote(db);
   followSeededThreads(db);
   db.insert(appState)
     .values({ key: SEED_KEY, value: SEED_VERSION })
@@ -520,6 +521,32 @@ function seedProfessor(db: DB, passwordHash: string) {
 
 // What a visitor wouldn't otherwise run into: a question with a code block and a link, and one
 // that's been reported, so the professor has something to moderate.
+// S4: Samuel's midterm notes in COMP 251, in math.
+const MATH_TITLE = 'Master theorem, the three cases';
+
+function seedMathNote(db: DB) {
+  const comp251 = classId(db, 'COMP', '251', '001');
+  const samuel = db.select({ id: users.id }).from(users).where(eq(users.email, CORE_EMAILS.samuel)).get()?.id;
+  if (!samuel || db.select({ id: posts.id }).from(posts).where(and(eq(posts.classId, comp251), eq(posts.title, MATH_TITLE))).get()) return;
+  db.insert(posts)
+    .values({
+      classId: comp251,
+      authorId: samuel,
+      kind: 'note',
+      topic: 'Exams',
+      title: MATH_TITLE,
+      body: [
+        'For the midterm, when $$T(n) = aT(n/b) + f(n)$$',
+        'Case 1: if $f(n) = O(n^{\\log_b a - \\epsilon})$, then $T(n) = \\Theta(n^{\\log_b a})$.',
+        'Case 2: if $f(n) = \\Theta(n^{\\log_b a} \\log^k n)$, then $T(n) = \\Theta(n^{\\log_b a} \\log^{k+1} n)$.',
+        'Case 3: if $f(n) = \\Omega(n^{\\log_b a + \\epsilon})$, then $T(n) = \\Theta(f(n))$.',
+      ].join('\n'),
+      visibility: 'class',
+      createdAt: new Date(Date.now() - 20 * HOUR),
+    })
+    .run();
+}
+
 // A4: Alex's homework in COMP 302, entered as several marks with the lowest dropped, once.
 function seedSeveralMarks(db: DB) {
   const alex = db.select({ id: users.id }).from(users).where(eq(users.email, CORE_EMAILS.alex)).get()?.id;

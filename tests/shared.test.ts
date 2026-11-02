@@ -10,7 +10,7 @@ import { parseCourseQuery, parseSchedule } from '@shared/courseQuery';
 import { goalOutlook, summarizeRecord, termOrder } from '@shared/academics';
 import { evaluateDegree, graduationPace, type Program } from '@shared/degree';
 import { type FocusWindow, studyModeStatus } from '@shared/studyMode';
-import { parseSyllabus } from '@shared/syllabus';
+import { parseScheme, parseSyllabus } from '@shared/syllabus';
 import { findParts, looksLikeExam, minutesForParts } from '@shared/assignment';
 import { clashes, groupMeetings } from '@shared/meetings';
 import { BACKUP_APP, readBackup, writeBackup } from '@shared/backup';
@@ -779,5 +779,73 @@ describe('ST2 exam plans', () => {
   it('recognizes a plan for an exam', () => {
     for (const title of ['Midterm', 'COMP 251 final exam', 'Examen intra', 'Final', 'Physics test']) expect(looksLikeExam(title)).toBe(true);
     for (const title of ['Assignment 3', 'Finalize the essay', 'Latest reading', 'Contest entry']) expect(looksLikeExam(title)).toBe(false);
+  });
+});
+
+describe('A5 grading scheme from a syllabus', () => {
+  const read = (text: string) => parseScheme(text, 'Fall 2026').map((i) => [i.name, i.weight]);
+
+  it('reads a sentence, a list or a table', () => {
+    expect(read('Midterm 30%, Final 50%')).toEqual([['Midterm', 30], ['Final', 50]]);
+    expect(read('Grading: Assignments 20%, Midterm 30% and Final exam 50%.')).toEqual([['Assignments', 20], ['Midterm', 30], ['Final exam', 50]]);
+    expect(read('• Assignments: 20%\n• Midterm – 30%\n• Final exam .......... 50 %')).toEqual([['Assignments', 20], ['Midterm', 30], ['Final exam', 50]]);
+    expect(read('Assignments\t20%\nFinal exam\t80%')).toEqual([['Assignments', 20], ['Final exam', 80]]);
+    expect(read('30% Midterm\n70% Final')).toEqual([['Midterm', 30], ['Final', 70]]);
+    expect(read('The midterm is worth 30% of your grade')).toEqual([['Midterm', 30]]);
+    expect(read('Examen final 50 %\nTravaux : 22,5 %')).toEqual([['Examen final', 50], ['Travaux', 22.5]]);
+    // A PDF's table, with each weight on the next line.
+    expect(read('Midterm\n30%\nFinal exam\n70%')).toEqual([['Midterm', 30], ['Final exam', 70]]);
+  });
+
+  it('adds up "each", and keeps what the marks form reads', () => {
+    expect(read('Assignments (4), 5% each')).toEqual([['Assignments', 20]]);
+    expect(read('4 quizzes, 2.5% each')).toEqual([['4 quizzes', 10]]);
+    expect(read('Labs 20% (4 labs, 5% each)')).toEqual([['Labs', 20]]);
+    expect(read('Homework (best 5 of 6) 30%')).toEqual([['Homework (best 5 of 6)', 30]]);
+    expect(read('Assignments (4) 20%')).toEqual([['Assignments', 20]]);
+  });
+
+  it('skips percentages that are not part of the grade', () => {
+    for (const line of [
+      'Late penalty: 10% per day',
+      'A 85-100%',
+      'A- 80 – 84%',
+      'Total 100%',
+      'You must get at least 50% on the final',
+      'Students with 85% or above get an A',
+      'Assignments lose 10% for each day they are late and cannot be resubmitted after one week has gone by at all',
+    ]) expect(read(line)).toEqual([]);
+    expect(read('Midterm 30%\nMidterm 30%')).toEqual([['Midterm', 30]]);
+    expect(read('Nothing here')).toEqual([]);
+  });
+
+  it('takes the date when the line has one', () => {
+    const [item] = parseScheme('Assignment 2 (10%) due Oct 6 at 11:59 pm', 'Fall 2026');
+    expect(item).toMatchObject({ name: 'Assignment 2', weight: 10 });
+    expect(item.dueAt).toEqual(new Date(2026, 9, 6, 23, 59));
+    expect(parseScheme('Midterm 30%', 'Fall 2026')[0].dueAt).toBeNull();
+  });
+});
+
+describe('S4 math in posts', () => {
+  const kinds = (text: string) => parsePost(text).map((p) => [p.kind, p.text]);
+
+  it('finds math between dollar signs, inline and as a block', () => {
+    expect(kinds('It runs in $O(n \\log n)$ time')).toEqual([['text', 'It runs in '], ['math', 'O(n \\log n)'], ['text', ' time']]);
+    expect(kinds('Let $n$ be')).toEqual([['text', 'Let '], ['math', 'n'], ['text', ' be']]);
+    expect(kinds('So:\n$$T(n) = 2T(n/2)$$\nDone')).toEqual([['text', 'So:'], ['mathblock', 'T(n) = 2T(n/2)'], ['text', 'Done']]);
+    expect(kinds('$$\na^2 + b^2\n$$')).toEqual([['mathblock', 'a^2 + b^2']]);
+  });
+
+  it('leaves prices and shell variables alone', () => {
+    for (const text of ['Textbook is $5 and $10', 'Between $5-$10', 'Use $HOME and $PATH', 'It costs $5.', 'A lone $ sign', '$ spaced $', 'US$ and CA$']) {
+      expect(kinds(text)).toEqual([['text', text]]);
+    }
+  });
+
+  it('leaves code alone', () => {
+    expect(kinds('`echo $HOME$`')).toEqual([['code', 'echo $HOME$']]);
+    expect(kinds('```\nx = $a$\n```')).toEqual([['block', 'x = $a$']]);
+    expect(kinds('See https://example.com/$a$')[0][0]).toBe('text');
   });
 });
