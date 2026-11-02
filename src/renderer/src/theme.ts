@@ -43,6 +43,7 @@ const dark: MantineColorsTuple = [
 ];
 
 export const theme = createTheme({
+  respectReducedMotion: true,
   primaryColor: 'periwinkle',
   primaryShade: { light: 6, dark: 6 },
   colors: { periwinkle, dark },

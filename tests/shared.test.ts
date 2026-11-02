@@ -1,6 +1,6 @@
 import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { cgpaWith, finalIfRemainingAverages, letterFor, summarize, termGpa } from '@shared/grades';
+import { cgpaWith, finalIfRemainingAverages, letterFor, parseMark, summarize, termGpa } from '@shared/grades';
 import { buildCalendar, parseCalendar } from '@shared/ics';
 import { noClassesOn } from '@shared/keyDates';
 import { isHidden, parseChatLink } from '@shared/links';
@@ -63,6 +63,18 @@ describe('grades (A4)', () => {
     expect(s.remainingWeight).toBe(50);
     expect([s.worstFinal, s.bestFinal]).toEqual([40, 90]);
     expect(s.requirements.find((r) => r.letter === 'A')).toEqual({ letter: 'A', needed: 90, status: 'possible', scheme: 0 });
+  });
+
+  it('reads marks however they were handed back', () => {
+    expect(parseMark('88')).toBe(88);
+    expect(parseMark(' 88.5% ')).toBe(88.5);
+    expect(parseMark('44/50')).toBe(88);
+    expect(parseMark('44 / 50')).toBe(88);
+    expect(parseMark('8,5/10')).toBe(85);
+    expect(parseMark('2/3')).toBe(66.67);
+    expect(parseMark('55/50')).toBe(110); // bonus marks
+    expect(parseMark('')).toBeNull();
+    for (const bad of ['A-', '5/0', '-3', '88/', '/50', '200', '1/2/3', 'n/a']) expect(parseMark(bad)).toBeUndefined();
   });
 
   it('projects a term GPA on the McGill scale, weighted by credits', () => {
@@ -524,6 +536,11 @@ COMP 251 Tutorial`;
       { subject: 'MATH', number: '240', section: '002' },
       { subject: 'ECSE', number: '202', section: '003' },
       { subject: 'PHYS', number: '142', section: null },
+    ]);
+    // Minerva's own headings.
+    expect(parseSchedule('Algorithms and Data Structures - COMP 251 - 001\nDiscrete Structures - MATH 240 - 002')).toEqual([
+      { subject: 'COMP', number: '251', section: '001' },
+      { subject: 'MATH', number: '240', section: '002' },
     ]);
     // A year or a CRN after the code isn't a section.
     expect(parseSchedule('COMP 251 2026\nMATH 240 12345')).toEqual([

@@ -149,3 +149,15 @@ export function cgpaWith(past: { gpa: number | null; credits: number }, term: { 
   if (past.gpa == null || !past.credits) return term.gpa;
   return round2((past.gpa * past.credits + term.gpa * term.credits) / (past.credits + term.credits));
 }
+
+// A mark as a student would type it: "88", "88%" or "44/50". null for an empty box (no mark
+// yet), undefined for something that can't be read as a mark.
+export function parseMark(text: string): number | null | undefined {
+  const input = text.trim().replace(/,/g, '.').replace(/\s+/g, '');
+  if (!input) return null;
+  const fraction = input.match(/^(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)$/);
+  const percent = input.match(/^(\d+(?:\.\d+)?)%?$/);
+  const value = fraction && Number(fraction[2]) > 0 ? (Number(fraction[1]) / Number(fraction[2])) * 100 : percent ? Number(percent[1]) : NaN;
+  // Bonus marks can go over 100, up to what the service accepts.
+  return Number.isNaN(value) || value > 150 ? undefined : Math.round(value * 100) / 100;
+}

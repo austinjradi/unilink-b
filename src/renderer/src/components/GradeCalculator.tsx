@@ -19,9 +19,10 @@ import {
 import { DateTimePicker } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { modals } from '@mantine/modals';
+import { notifications } from '@mantine/notifications';
 import { IconCopy, IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { finalIfRemainingAverages, hasSecondScheme, letterFor, MCGILL_SCALE, minimumFor, summarize } from '@shared/grades';
+import { finalIfRemainingAverages, hasSecondScheme, letterFor, MCGILL_SCALE, minimumFor, parseMark, summarize } from '@shared/grades';
 import { toDate } from '../lib/format';
 import { t } from '../lib/i18n';
 import { useAction } from '../lib/hooks';
@@ -129,7 +130,14 @@ export function GradeCalculator({ classId }: { classId: number }) {
                   <Table.Th>{t('Component')}</Table.Th>
                   <Table.Th w={120}>{two ? t('Scheme 1 (%)') : t('Weight (%)')}</Table.Th>
                   {two && <Table.Th w={120}>{t('Scheme 2 (%)')}</Table.Th>}
-                  {!teaching && <Table.Th w={170}>{t('Your grade (%)')}</Table.Th>}
+                  {!teaching && (
+                    <Table.Th w={170}>
+                      {t('Your grade (%)')}
+                      <Text size="xs" c="dimmed" fw={400}>
+                        {t('or a fraction, like 44/50')}
+                      </Text>
+                    </Table.Th>
+                  )}
                   {!teaching && <Table.Th w={200}>{t('Weighted contribution (%)')}</Table.Th>}
                   <Table.Th w={140}>{t('Added by')}</Table.Th>
                   {canEdit && <Table.Th w={90} />}
@@ -143,22 +151,22 @@ export function GradeCalculator({ classId }: { classId: number }) {
                     {two && <Table.Td>{a.altWeight ?? 0}</Table.Td>}
                     {!teaching && (
                     <Table.Td>
-                      <NumberInput
+                      <TextInput
                         key={`${a.id}-${a.score}`}
                         radius="xl"
                         size="sm"
                         w={120}
-                        min={0}
-                        max={150}
-                        decimalScale={2}
-                        hideControls
                         placeholder="—"
+                        inputMode="text"
                         defaultValue={a.score ?? ''}
-                        aria-label={t('Your grade for {{name}}', { name: a.name })}
+                        aria-label={t('Your grade for {{name}}, as a percentage or a fraction like 44/50', { name: a.name })}
+                        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
                         onBlur={(e) => {
-                          const raw = e.currentTarget.value.trim();
-                          const score = raw === '' ? null : Number(raw);
-                          if (score !== a.score && (score == null || !Number.isNaN(score))) setScore.mutate({ id: a.id, score });
+                          const score = parseMark(e.currentTarget.value);
+                          if (score === undefined) {
+                            notifications.show({ color: 'red', message: t('Enter a percentage or a fraction like 44/50.') });
+                            e.currentTarget.value = a.score == null ? '' : String(a.score);
+                          } else if (score !== a.score) setScore.mutate({ id: a.id, score });
                         }}
                       />
                     </Table.Td>
