@@ -797,7 +797,7 @@ function PostForm({
             {form.values.visibility === 'selected' && (
               <TagsInput
                 label={t('Who can see it')}
-                description={t('McGill emails of classmates in this class. Press Enter after each.')}
+                description={t('Classmates who have posted or replied in this class. Press Enter after each.')}
                 data={classmates.data?.map((c) => ({ value: c.email, label: `${c.name} (${c.email})` })) ?? []}
                 {...form.getInputProps('audienceEmails')}
               />

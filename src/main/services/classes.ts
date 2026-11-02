@@ -237,17 +237,17 @@ export const classesRouter = {
   }),
 };
 
-// Resolves classmates picked by email (S4 selected audiences).
-export function enrolledUsersByEmail(db: DB, classId: number, emails: string[]) {
-  const wanted = [...new Set(emails.map((e) => e.trim().toLowerCase()))];
+// Resolves classmates picked by email (S4 selected audiences). Only classmates you can see
+// (who have posted or replied where you can see it) can be picked, so typing emails can't
+// reveal who else is in the class: anyone else gets the same answer.
+export function visibleClassmatesByEmail(db: DB, userId: number, classId: number, emails: string[]) {
+  const me = db.select({ email: users.email }).from(users).where(eq(users.id, userId)).get()?.email;
+  const wanted = [...new Set(emails.map((e) => e.trim().toLowerCase()))].filter((e) => e !== me);
   if (!wanted.length) return [];
-  const found = db
-    .select({ id: users.id, email: users.email })
-    .from(users)
-    .innerJoin(enrollments, and(eq(enrollments.userId, users.id), eq(enrollments.classId, classId)))
-    .where(inArray(users.email, wanted))
-    .all();
-  const missing = wanted.filter((e) => !found.some((f) => f.email === e));
-  if (missing.length) throw new AppError('Not in this class: {{emails}}', 'NOT_FOUND', { emails: missing.join(', ') });
-  return found;
+  const visible = visibleClassmates(db, userId, classId);
+  const unknown = wanted.filter((e) => !visible.some((c) => c.email === e));
+  if (unknown.length) {
+    throw new AppError('You can only pick classmates who have posted or replied in this class: {{emails}}', 'BAD_INPUT', { emails: unknown.join(', ') });
+  }
+  return visible.filter((c) => wanted.includes(c.email));
 }

@@ -516,22 +516,18 @@ describe('S4 discussion board', () => {
   it('shows selected-audience posts only to that audience', async () => {
     const { classId, people } = await classmates('Maya', 'Leo', 'Ana');
     const [maya, leo, ana] = people;
-    const { id: postId } = await maya.api.board.create({
-      classId,
-      kind: 'question',
-      topic: 'Assignments',
-      title: 'Group for A2?',
-      body: 'Want to pair up?',
-      visibility: 'selected',
-      audienceEmails: [leo.email],
-    });
+    const pick = (audienceEmails: string[]) =>
+      maya.api.board.create({ classId, kind: 'question', topic: 'Assignments', title: 'Group for A2?', body: 'Want to pair up?', visibility: 'selected', audienceEmails });
+    // Nobody has posted yet, so nobody can be picked. A classmate and a stranger get the same
+    // answer, so typing emails can't reveal who's in the class (S1).
+    await expect(pick([leo.email])).rejects.toThrow(`in this class: ${leo.email}`);
+    await expect(pick(['nobody@mail.mcgill.ca'])).rejects.toThrow('in this class: nobody@mail.mcgill.ca');
+
+    await leo.api.board.create({ classId, kind: 'note', topic: 'Logistics', title: 'Hi', body: 'Hello!', visibility: 'class', audienceEmails: [] });
+    const { id: postId } = await pick([leo.email, maya.email]);
     expect((await leo.api.board.get({ postId })).audience.map((a) => a.name)).toEqual(['Leo']);
     await expectCode(ana.api.board.get({ postId }), 'NOT_FOUND');
-    expect(await ana.api.board.feed({ classIds: null, topics: [], since: null, search: '' })).toEqual([]);
-    await expectCode(
-      maya.api.board.create({ classId, kind: 'question', topic: 'Assignments', title: 'x', body: 'y', visibility: 'selected', audienceEmails: ['nobody@mail.mcgill.ca'] }),
-      'NOT_FOUND',
-    );
+    expect((await ana.api.board.feed({ classIds: null, topics: [], since: null, search: '' })).map((p) => p.title)).toEqual(['Hi']);
   });
 
   it('files posts under fixed topics and resolves questions with an accepted answer', async () => {
@@ -654,6 +650,7 @@ describe('S4 similar posts', () => {
   it('suggests posts in the class like the one being written, if you can see them', async () => {
     const { classId, people } = await classmates('Maya', 'Leo', 'Ana');
     const [maya, leo, ana] = people;
+    await ana.api.board.create({ classId, kind: 'note', topic: 'Logistics', title: 'Hello', body: 'Hi all', visibility: 'class', audienceEmails: [] });
     const post = (title: string, extra = {}) =>
       maya.api.board.create({ classId, kind: 'question', topic: 'Exams', title, body: 'Anyone know?', visibility: 'class', audienceEmails: [], ...extra });
     const { id: open } = await post('Is the midterm cumulative up to graphs?');

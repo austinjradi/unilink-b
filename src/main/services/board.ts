@@ -6,7 +6,7 @@ import type { DB } from '../db/client';
 import { boardVisits, classes, courses, enrollments, postAudience, postFollows, postReactions, posts, replies, replyReactions, users } from '../db/schema';
 import { AppError, idSchema, nonEmpty, procedure } from '../rpc/core';
 import { FORMER_STUDENT_EMAIL, notFound, requireMember, sectionCode } from './access';
-import { enrolledUsersByEmail } from './classes';
+import { visibleClassmatesByEmail } from './classes';
 import { m, notify, raw } from './notifications';
 
 // S4 in version B: Ed-style, closer to a Q&A site. A post is a question or a note, filed
@@ -312,7 +312,7 @@ export const boardRouter = {
       requireMember(ctx.db, ctx.userId, classId);
       const audience =
         fields.visibility === 'selected'
-          ? enrolledUsersByEmail(ctx.db, classId, audienceEmails).filter((u) => u.id !== ctx.userId)
+          ? visibleClassmatesByEmail(ctx.db, ctx.userId, classId, audienceEmails)
           : [];
       if (fields.visibility === 'selected' && !audience.length) {
         throw new AppError('Pick at least one classmate who can see this post.');
