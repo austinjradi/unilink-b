@@ -24,6 +24,9 @@ export function minimumFor(letter: string): number {
 export interface GradedItem {
   weight: number;
   score: number | null;
+  // Version B: a section can have a second grading scheme ("whichever is higher"), with its
+  // own weight for each component (0 if it doesn't count there). null when there's only one.
+  altWeight?: number | null;
 }
 
 export interface Requirement {
@@ -31,6 +34,8 @@ export interface Requirement {
   // Average needed on everything not yet graded, in %.
   needed: number | null;
   status: 'secured' | 'possible' | 'out-of-reach';
+  // Which grading scheme gets there (0 = the main one, 1 = the second one).
+  scheme: number;
 }
 
 export interface GradeSummary {
@@ -47,6 +52,8 @@ export interface GradeSummary {
   worstFinal: number;
   bestFinal: number;
   requirements: Requirement[];
+  // With two schemes, each one's own summary; the fields above take the better of the two.
+  schemes: GradeSummary[];
 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
@@ -59,21 +66,34 @@ function totals(items: GradedItem[]) {
   return { totalWeight, gradedWeight, earned, remainingWeight: Math.max(0, 100 - gradedWeight) };
 }
 
-// "Explore different scenarios": the final grade if everything left averages `average`%.
-export function finalIfRemainingAverages(items: GradedItem[], average: number): number {
-  const { earned, remainingWeight } = totals(items);
-  return round1(earned + (remainingWeight * average) / 100);
+export const hasSecondScheme = (items: GradedItem[]) => items.some((i) => i.altWeight != null);
+
+// The components under each scheme: one, or two when the section has a second scheme.
+function schemesOf(items: GradedItem[]): GradedItem[][] {
+  const main = items.map(({ weight, score }) => ({ weight, score }));
+  return hasSecondScheme(items) ? [main, items.map((i) => ({ weight: i.altWeight ?? 0, score: i.score }))] : [main];
 }
 
-export function summarize(items: GradedItem[]): GradeSummary {
+// "Explore different scenarios": the final grade if everything left averages `average`%,
+// under whichever scheme gives more.
+export function finalIfRemainingAverages(items: GradedItem[], average: number): { final: number; scheme: number } {
+  return schemesOf(items)
+    .map((scheme, index) => {
+      const { earned, remainingWeight } = totals(scheme);
+      return { final: round1(earned + (remainingWeight * average) / 100), scheme: index };
+    })
+    .reduce((best, s) => (s.final > best.final ? s : best));
+}
+
+function summarizeScheme(items: GradedItem[], scheme: number): GradeSummary {
   const { totalWeight, gradedWeight, earned, remainingWeight } = totals(items);
 
   const requirements = MCGILL_SCALE.filter((g) => g.min > 0).map((g): Requirement => {
     const pointsNeeded = g.min - earned;
-    if (pointsNeeded <= 0) return { letter: g.letter, needed: 0, status: 'secured' };
-    if (remainingWeight <= 0) return { letter: g.letter, needed: null, status: 'out-of-reach' };
+    if (pointsNeeded <= 0) return { letter: g.letter, needed: 0, status: 'secured', scheme };
+    if (remainingWeight <= 0) return { letter: g.letter, needed: null, status: 'out-of-reach', scheme };
     const needed = (pointsNeeded / remainingWeight) * 100;
-    return { letter: g.letter, needed: round1(needed), status: needed > 100 ? 'out-of-reach' : 'possible' };
+    return { letter: g.letter, needed: round1(needed), status: needed > 100 ? 'out-of-reach' : 'possible', scheme };
   });
 
   return {
@@ -85,5 +105,29 @@ export function summarize(items: GradedItem[]): GradeSummary {
     worstFinal: round1(earned),
     bestFinal: round1(earned + remainingWeight),
     requirements,
+    schemes: [],
+  };
+}
+
+const RANK = { secured: 0, possible: 1, 'out-of-reach': 2 } as const;
+
+// With two schemes the grade is whichever is higher, so each target takes the scheme that
+// needs the least; the weights shown are the main scheme's.
+export function summarize(items: GradedItem[]): GradeSummary {
+  const schemes = schemesOf(items).map(summarizeScheme);
+  if (schemes.length === 1) return schemes[0];
+  const [main, alt] = schemes;
+  const higher = (a: number | null, b: number | null) => (a == null ? b : b == null ? a : Math.max(a, b));
+  return {
+    ...main,
+    currentAverage: higher(main.currentAverage, alt.currentAverage),
+    worstFinal: Math.max(main.worstFinal, alt.worstFinal),
+    bestFinal: Math.max(main.bestFinal, alt.bestFinal),
+    requirements: main.requirements.map((r, i) => {
+      const other = alt.requirements[i];
+      const better = RANK[other.status] < RANK[r.status] || (other.status === 'possible' && r.status === 'possible' && other.needed! < r.needed!);
+      return better ? other : r;
+    }),
+    schemes,
   };
 }

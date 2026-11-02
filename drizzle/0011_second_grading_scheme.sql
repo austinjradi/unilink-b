@@ -1,0 +1,1 @@
+ALTER TABLE `assessments` ADD `alt_weight` real;

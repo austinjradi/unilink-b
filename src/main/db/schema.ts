@@ -290,6 +290,8 @@ export const assessments = sqliteTable(
     classId: classRef(),
     name: text('name').notNull(),
     weight: real('weight').notNull(), // % of the final grade
+    // Its weight under the section's second scheme ("whichever is higher"); null when there's none.
+    altWeight: real('alt_weight'),
     dueAt: timestamp('due_at'),
     position: integer('position').notNull().default(0),
   },

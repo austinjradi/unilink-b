@@ -225,6 +225,7 @@ both versions.
 | A3 | Whose class times and deadlines? | Personal: each student enters their own | **Shared with the section**: one person enters the lecture times or a class deadline and everyone sees it. Deadlines with no class stay private; each student checks deadlines off separately; only whoever added a deadline can edit it |
 | A5 | Whose course details? | Personal ("only you see these") | Professor, email, office hours and room are **shared, wiki-style** (anyone in the section edits; "edited by Priya 2 days ago"). Notes stay private |
 | A4/A5 | Whose grading scheme? | Personal, with your scores | The scheme is **shared by the section**; **marks are private**. A component can't be removed once a classmate has a mark on it, and the scheme can't add up to more than 100% |
+| A4/A5 | Courses graded on two schemes ("the final replaces the midterm if higher")? | Not supported | The section can add a **second scheme**, with its own weight per component; your grade is **whichever is higher**, and "what you need" and the scenarios use the better scheme for each target |
 | A4 | Weights that don't add up to 100% | Grades are scaled up to the listed total | The missing weight counts as **work still to come** (not scaled), so "what you need" covers it too |
 | G4.1 | Password requirements? | 8+ characters with a letter and a number | **Passphrases:** 12+ characters, no character rules, but **not a common password** and **not your own name** from your email |
 | G4.1/5 | Which profile info? | Name, email (read-only), program, year, daily study time | Name, **pronouns** (optional), **faculty**, **expected graduation**. The McGill email stays the one you signed up with |
@@ -249,14 +250,14 @@ hidden links and failed sign-ins instead of invitations and individual reports; 
 | Invite codes, waitlist, hand-off | `services/studySessions.ts` |
 | Questions, accepted answers, topics, deleted posts, following threads | `services/board.ts`, `components/Feed.tsx` |
 | Shared section info and private marks | `services/courses.ts`, `services/calendar.ts` (`visibleDeadlines`), `db/schema.ts` (`class_details`, `assessment_scores`, `deadline_done`) |
-| Unlisted weight | `shared/grades.ts` |
+| Unlisted weight, a second scheme | `shared/grades.ts`, `services/courses.ts` (`setSecondScheme`) |
 | Passphrases, recovery codes, sign-in pauses, deletion | `shared/validation.ts`, `services/auth.ts`, `services/access.ts` (`formerStudentId`) |
 | Free time per weekday, front-loaded plans | `shared/planner.ts`, `services/planner.ts` |
 | Tasks from the assignment file | `shared/assignment.ts`, `web/platform.ts` (`readText`) |
 | Plans that follow a class deadline | `services/planner.ts` (`followMovedDeadlines`), `services/calendar.ts` (`collect`) |
 
 The database changes are migrations `0004_version_b` (new tables and columns), `0005_version_b_cleanup`
-(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows` and `0010_sign_in_limits`.
+(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows`, `0010_sign_in_limits` and `0011_second_grading_scheme`.
 
 ## Not built yet
 

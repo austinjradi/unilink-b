@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { letterFor, summarize } from '@shared/grades';
+import { finalIfRemainingAverages, letterFor, summarize } from '@shared/grades';
 import { buildCalendar, parseCalendar } from '@shared/ics';
 import { isHidden, parseChatLink } from '@shared/links';
 import { DEFAULT_WEEKLY_MINUTES, minutesOn, planTasks, type PlannableTask, weeklyMinutes } from '@shared/planner';
@@ -30,7 +30,7 @@ describe('grades (A4)', () => {
     expect(s.currentAverage).toBe(84);
     expect(s.remainingWeight).toBe(50);
     expect([s.worstFinal, s.bestFinal]).toEqual([42, 92]);
-    expect(s.requirements.find((r) => r.letter === 'A')).toEqual({ letter: 'A', needed: 86, status: 'possible' });
+    expect(s.requirements.find((r) => r.letter === 'A')).toEqual({ letter: 'A', needed: 86, status: 'possible', scheme: 0 });
     expect(s.requirements.find((r) => r.letter === 'D')?.needed).toBe(16);
   });
 
@@ -41,7 +41,7 @@ describe('grades (A4)', () => {
     ]);
     // 57 points banked: a C (55) is guaranteed even with 0% on the rest.
     expect(s.requirements.find((r) => r.letter === 'C')?.status).toBe('secured');
-    expect(s.requirements.find((r) => r.letter === 'B')).toEqual({ letter: 'B', needed: 32.5, status: 'possible' });
+    expect(s.requirements.find((r) => r.letter === 'B')).toEqual({ letter: 'B', needed: 32.5, status: 'possible', scheme: 0 });
     const low = summarize([
       { weight: 80, score: 40 },
       { weight: 20, score: null },
@@ -55,7 +55,26 @@ describe('grades (A4)', () => {
     expect(s.unlistedWeight).toBe(50);
     expect(s.remainingWeight).toBe(50);
     expect([s.worstFinal, s.bestFinal]).toEqual([40, 90]);
-    expect(s.requirements.find((r) => r.letter === 'A')).toEqual({ letter: 'A', needed: 90, status: 'possible' });
+    expect(s.requirements.find((r) => r.letter === 'A')).toEqual({ letter: 'A', needed: 90, status: 'possible', scheme: 0 });
+  });
+
+  it('takes whichever of two schemes is higher', () => {
+    // Scheme 1: assignments 30%, midterm 20%, final 50%. Scheme 2: the final replaces the midterm.
+    const items = [
+      { weight: 30, altWeight: 30, score: 90 },
+      { weight: 20, altWeight: 0, score: 50 },
+      { weight: 50, altWeight: 70, score: null },
+    ];
+    const s = summarize(items);
+    expect(s.schemes.map((x) => x.worstFinal)).toEqual([37, 27]);
+    expect([s.worstFinal, s.bestFinal, s.currentAverage]).toEqual([37, 97, 90]);
+    // An A needs 96% on the final under scheme 1 but 82.9% under scheme 2; a D is easier under scheme 1.
+    expect(s.requirements.find((r) => r.letter === 'A')).toEqual({ letter: 'A', needed: 82.9, status: 'possible', scheme: 1 });
+    expect(s.requirements.find((r) => r.letter === 'D')).toEqual({ letter: 'D', needed: 26, status: 'possible', scheme: 0 });
+    expect(finalIfRemainingAverages(items, 100)).toEqual({ final: 97, scheme: 1 });
+    expect(finalIfRemainingAverages(items, 0)).toEqual({ final: 37, scheme: 0 });
+    // One scheme: nothing changes.
+    expect(summarize(items.map(({ altWeight: _, ...i }) => i)).schemes).toEqual([]);
   });
 });
 

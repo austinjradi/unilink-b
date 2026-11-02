@@ -1,4 +1,4 @@
-import { and, asc, eq, max, ne, sum } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull, max, ne, sql, sum } from 'drizzle-orm';
 import { z } from 'zod';
 import { MCGILL_SCALE } from '@shared/grades';
 import type { DB } from '../db/client';
@@ -23,6 +23,8 @@ const detailFields = {
 const assessmentFields = {
   name: nonEmpty('Name', 100),
   weight: z.number().gt(0, 'Weight must be above 0%').max(100, 'Weight can be at most 100%'),
+  // Only used when the section has a second scheme; 0 if the component doesn't count there.
+  altWeight: z.number().min(0).max(100, 'Weight can be at most 100%').nullable().default(null),
   dueAt: z.date().nullable(),
 };
 
@@ -40,18 +42,36 @@ const editorOf = (db: DB, userId: number | null) => {
 };
 
 // The scheme can't promise more than the whole course.
-function assertWeightFits(db: DB, classId: number, weight: number, exceptId?: number) {
+function assertWeightFits(db: DB, classId: number, weight: number, altWeight: number | null, exceptId?: number) {
   const others = db
-    .select({ total: sum(assessments.weight) })
+    .select({ total: sum(assessments.weight), alt: sum(assessments.altWeight) })
     .from(assessments)
     .where(and(eq(assessments.classId, classId), exceptId ? ne(assessments.id, exceptId) : undefined))
     .get();
   const total = Number(others?.total ?? 0) + weight;
-  if (total > 100.001) {
-    throw new AppError('The grading scheme would add up to {{total}}%. It can be at most 100%.', 'BAD_INPUT', {
-      total: Math.round(total * 10) / 10,
-    });
+  const altTotal = Number(others?.alt ?? 0) + (altWeight ?? 0);
+  for (const t of [total, altTotal]) {
+    if (t > 100.001) {
+      throw new AppError('The grading scheme would add up to {{total}}%. It can be at most 100%.', 'BAD_INPUT', {
+        total: Math.round(t * 10) / 10,
+      });
+    }
   }
+}
+
+// Whether the section's scheme has a second version ("whichever is higher").
+function hasAltScheme(db: DB, classId: number) {
+  return !!db
+    .select({ id: assessments.id })
+    .from(assessments)
+    .where(and(eq(assessments.classId, classId), isNotNull(assessments.altWeight)))
+    .get();
+}
+
+// A new or changed component gets a second-scheme weight only when the section has one
+// (the same as its main weight unless given).
+function withAltWeight<T extends { weight: number; altWeight: number | null }>(db: DB, classId: number, fields: T): T {
+  return { ...fields, altWeight: hasAltScheme(db, classId) ? (fields.altWeight ?? fields.weight) : null };
 }
 
 // The section's grading scheme with this student's marks, for A4 and A1.
@@ -62,6 +82,7 @@ export function gradedItems(db: DB, userId: number, classId: number) {
       classId: assessments.classId,
       name: assessments.name,
       weight: assessments.weight,
+      altWeight: assessments.altWeight,
       dueAt: assessments.dueAt,
       position: assessments.position,
       addedById: assessments.userId,
@@ -166,9 +187,10 @@ export const coursesRouter = {
     return gradedItems(ctx.db, ctx.userId, classId).map((a) => ({ ...a, addedBy: editorOf(ctx.db, a.addedById) }));
   }),
 
-  addAssessment: procedure(z.object({ classId: idSchema, ...assessmentFields }), ({ classId, ...fields }, ctx) => {
+  addAssessment: procedure(z.object({ classId: idSchema, ...assessmentFields }), ({ classId, ...input }, ctx) => {
     requireMember(ctx.db, ctx.userId, classId);
-    assertWeightFits(ctx.db, classId, fields.weight);
+    const fields = withAltWeight(ctx.db, classId, input);
+    assertWeightFits(ctx.db, classId, fields.weight, fields.altWeight);
     const last = ctx.db
       .select({ position: max(assessments.position) })
       .from(assessments)
@@ -181,10 +203,22 @@ export const coursesRouter = {
   }),
 
   // Anyone in the section can fix a name, weight or date.
-  updateAssessment: procedure(z.object({ id: idSchema, ...assessmentFields }), ({ id, ...fields }, ctx) => {
+  updateAssessment: procedure(z.object({ id: idSchema, ...assessmentFields }), ({ id, ...input }, ctx) => {
     const row = sharedAssessment(ctx.db, ctx.userId, id);
-    assertWeightFits(ctx.db, row.classId, fields.weight, id);
+    const fields = withAltWeight(ctx.db, row.classId, input);
+    assertWeightFits(ctx.db, row.classId, fields.weight, fields.altWeight, id);
     ctx.db.update(assessments).set(fields).where(eq(assessments.id, id)).run();
+  }),
+
+  // A second grading scheme for the section, "whichever is higher" (e.g. the final replacing
+  // the midterm). It starts as a copy of the main weights; turning it off drops it.
+  setSecondScheme: procedure(z.object({ classId: idSchema, on: z.boolean() }), ({ classId, on }, ctx) => {
+    requireMember(ctx.db, ctx.userId, classId);
+    ctx.db
+      .update(assessments)
+      .set({ altWeight: on ? sql`${assessments.weight}` : null })
+      .where(and(eq(assessments.classId, classId), on ? isNull(assessments.altWeight) : undefined))
+      .run();
   }),
 
   // Your mark on a component, or null to clear it.

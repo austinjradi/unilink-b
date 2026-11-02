@@ -700,6 +700,28 @@ describe('A3–A5 shared section info', () => {
     expect(await maya.api.courses.assessments({ classId })).toEqual([]);
   });
 
+  it('adds a second grading scheme, whichever is higher, for the whole section', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    await maya.api.courses.addAssessment({ classId, name: 'Midterm', weight: 25, dueAt: null });
+    await maya.api.courses.addAssessment({ classId, name: 'Final', weight: 70, dueAt: null });
+    const weights = async () => (await leo.api.courses.assessments({ classId })).map((a) => [a.name, a.weight, a.altWeight]);
+
+    // Turning it on copies the main weights; then the final replaces the midterm in scheme 2.
+    await leo.api.courses.setSecondScheme({ classId, on: true });
+    const [midterm, final] = await leo.api.courses.assessments({ classId });
+    await leo.api.courses.updateAssessment({ id: midterm.id, name: 'Midterm', weight: 25, altWeight: 0, dueAt: null });
+    await expectCode(leo.api.courses.updateAssessment({ id: final.id, name: 'Final', weight: 70, altWeight: 110, dueAt: null }), 'BAD_INPUT');
+    await leo.api.courses.updateAssessment({ id: final.id, name: 'Final', weight: 70, altWeight: 100, dueAt: null });
+    expect(await weights()).toEqual([['Midterm', 25, 0], ['Final', 70, 100]]);
+    // A 5% quiz fits scheme 1 but not a full scheme 2, unless it doesn't count there.
+    await expectCode(maya.api.courses.addAssessment({ classId, name: 'Quiz', weight: 5, altWeight: 5, dueAt: null }), 'BAD_INPUT');
+    await maya.api.courses.addAssessment({ classId, name: 'Quiz', weight: 5, altWeight: 0, dueAt: null });
+
+    await maya.api.courses.setSecondScheme({ classId, on: false });
+    expect(await weights()).toEqual([['Midterm', 25, null], ['Final', 70, null], ['Quiz', 5, null]]);
+  });
+
   it('shares class deadlines, checked off by each student', async () => {
     const { classId, people } = await classmates('Maya', 'Leo');
     const [maya, leo] = people;
