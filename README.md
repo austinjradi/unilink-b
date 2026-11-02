@@ -228,6 +228,7 @@ both versions.
 | A4 | Weights that don't add up to 100% | Grades are scaled up to the listed total | The missing weight counts as **work still to come** (not scaled), so "what you need" covers it too |
 | G4.1 | Password requirements? | 8+ characters with a letter and a number | **Passphrases:** 12+ characters, no character rules, but **not a common password** and **not your own name** from your email |
 | G4.1/5 | Which profile info? | Name, email (read-only), program, year, daily study time | Name, **pronouns** (optional), **faculty**, **expected graduation**. The McGill email stays the one you signed up with |
+| G4.2 | What does "log in securely" mean beyond a hashed password? | Nothing more | **Five wrong passwords or recovery codes in a row pause sign-in for 15 minutes** (with a warning two tries before), and the next sign-in tells you how many attempts failed |
 | G4.4 | How does password reset work? | 6-digit code by email (shown on screen in the demo), valid 15 minutes | A **recovery code** shown once at sign-up, and replaced with a new one after each reset. No reset emails |
 | G4.7 | What happens to shared things when you delete your account? | Everything you created is deleted | Your data is deleted; you can choose to **leave your posts and replies up without your name** ("Former student"). Class times, deadlines and schemes you added to a section stay with it. Sessions you host pass to the next person going |
 | ST2 | What is "free time"? | One daily study budget (default 120 min) minus other tasks and sessions | **Free minutes per weekday** (default 90 Mon–Thu, 60 Fri, 180 weekends) minus other tasks and sessions you're going to |
@@ -236,8 +237,8 @@ both versions.
 | ST2 | "If a deadline moves, the plan adjusts": which deadline? | The plan's own due date, changed by hand | A plan can **start from a class deadline or graded item** and then **follows it**: when a classmate moves the shared date, the plan takes it, re-plans and notifies you. Picking your own date stops following. A plan due the same day as its class deadline is listed once |
 
 The yellow features (A1, A2, G3, ST1, ST3) keep version A's decisions, adjusted where they touch the above:
-notifications cover waitlist spots, host hand-offs, session changes, accepted answers and hidden links instead of
-invitations and individual reports; study mode follows the section's shared class times.
+notifications cover waitlist spots, host hand-offs, session changes, replies in followed threads, accepted answers,
+hidden links and failed sign-ins instead of invitations and individual reports; study mode follows the section's shared class times.
 
 ### Where the decisions live
 
@@ -249,13 +250,13 @@ invitations and individual reports; study mode follows the section's shared clas
 | Questions, accepted answers, topics, deleted posts, following threads | `services/board.ts`, `components/Feed.tsx` |
 | Shared section info and private marks | `services/courses.ts`, `services/calendar.ts` (`visibleDeadlines`), `db/schema.ts` (`class_details`, `assessment_scores`, `deadline_done`) |
 | Unlisted weight | `shared/grades.ts` |
-| Passphrases, recovery codes, deletion | `shared/validation.ts`, `services/auth.ts`, `services/access.ts` (`formerStudentId`) |
+| Passphrases, recovery codes, sign-in pauses, deletion | `shared/validation.ts`, `services/auth.ts`, `services/access.ts` (`formerStudentId`) |
 | Free time per weekday, front-loaded plans | `shared/planner.ts`, `services/planner.ts` |
 | Tasks from the assignment file | `shared/assignment.ts`, `web/platform.ts` (`readText`) |
 | Plans that follow a class deadline | `services/planner.ts` (`followMovedDeadlines`), `services/calendar.ts` (`collect`) |
 
 The database changes are migrations `0004_version_b` (new tables and columns), `0005_version_b_cleanup`
-(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits` and `0009_thread_follows`.
+(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows` and `0010_sign_in_limits`.
 
 ## Not built yet
 

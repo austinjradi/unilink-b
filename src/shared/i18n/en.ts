@@ -20,6 +20,10 @@ export const EN: Record<string, string> = {
   ),
   ...plural('Filters ({{count}})', 'Filters ({{count}})'),
   ...plural('Finished or past due ({{count}})', 'Finished or past due ({{count}})'),
+  ...plural(
+    'Email or password is incorrect. {{count}} more tries before sign-in pauses for 15 minutes.',
+    'Email or password is incorrect. {{count}} more try before sign-in pauses for 15 minutes.',
+  ),
   ...plural('Found {{count}} courses', 'Found {{count}} course'),
   ...plural('Found {{count}} dates', 'Found {{count}} date'),
   ...plural('Found {{count}} problems in the file', 'Found {{count}} problem in the file'),
@@ -64,10 +68,16 @@ export const EN: Record<string, string> = {
   ...plural('{{count}} students from {{code}} are on UniLink.', '{{count}} student from {{code}} is on UniLink.'),
   ...plural('{{count}} students on UniLink', '{{count}} student on UniLink'),
   ...plural('{{count}} tasks', '{{count}} task'),
+  ...plural('{{count}} failed sign-in attempts since you last signed in', '{{count}} failed sign-in attempt since you last signed in'),
   ...plural('{{count}} pts', '{{count}} pt'),
   ...plural('{{count}} unanswered questions', '{{count}} unanswered question'),
   ...plural('{{count}} went', '{{count}} went'),
   ...plural('{{count}} working days before the deadline', '{{count}} working day before the deadline'),
+  ...plural(
+    "That email and recovery code don't match. {{count}} more tries before sign-in pauses for 15 minutes.",
+    "That email and recovery code don't match. {{count}} more try before sign-in pauses for 15 minutes.",
+  ),
+  ...plural('Too many failed attempts. Try again in {{count}} minutes.', 'Too many failed attempts. Try again in {{count}} minute.'),
   ...plural('{{done}} of {{count}} courses', '{{done}} of {{count}} course'),
   ...plural('{{done}} of {{count}} credits', '{{done}} of {{count}} credit'),
 };

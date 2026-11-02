@@ -154,7 +154,29 @@ describe('G4 accounts', () => {
     expect(next).not.toBe(recoveryCode);
     await expectCode(api.auth.resetPassword({ email, recoveryCode, password: 'another new phrase' }), 'BAD_INPUT');
     await api.auth.signIn({ email, password: 'brand new phrase' });
-    expect(await api.notifications.outbox()).toEqual([]); // nothing was emailed
+    // No reset emails; only alerts about the wrong and used-up codes tried along the way.
+    expect((await api.notifications.outbox()).map((e) => e.subject)).toEqual(Array(2).fill('UniLink: 1 failed sign-in attempt since you last signed in'));
+  });
+
+  it('pauses sign-in after five wrong passwords and says so at the next sign-in', async () => {
+    const { api, email } = await student('Maya');
+    await api.auth.signOut();
+    const wrong = () => api.auth.signIn({ email, password: 'wrong pass phrase' });
+    for (let i = 0; i < 2; i++) await expect(wrong()).rejects.toThrow('Email or password is incorrect.');
+    await expect(wrong()).rejects.toThrow('2 more tries before sign-in pauses for 15 minutes.');
+    await expect(wrong()).rejects.toThrow('1 more try before');
+    await expect(wrong()).rejects.toThrow('Too many failed attempts. Try again in 15 minutes.');
+    // Paused: even the right password (or a recovery code) waits.
+    await expect(api.auth.signIn({ email, password: PASSWORD })).rejects.toThrow('Try again in 15 minutes.');
+    clock = new Date(clock.getTime() + 14 * 60_000 + 30_000);
+    await expect(api.auth.signIn({ email, password: PASSWORD })).rejects.toThrow('Try again in 1 minute.');
+
+    clock = new Date(clock.getTime() + 60_000);
+    await api.auth.signIn({ email, password: PASSWORD });
+    expect(await titles({ api })).toEqual(['5 failed sign-in attempts since you last signed in']);
+    // The count starts over.
+    await api.auth.signOut();
+    await expect(wrong()).rejects.toThrow(/^Email or password is incorrect\.$/);
   });
 
   it('downloads a copy of your data, without passwords', async () => {

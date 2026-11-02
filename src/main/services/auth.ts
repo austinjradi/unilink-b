@@ -24,6 +24,7 @@ import { AppError, type AuthedContext, type Context, nonEmpty, procedure, public
 import { formerStudentId } from './access';
 import { collectMyData } from './myData';
 import { deleteUserFiles } from './planner';
+import { m, notify } from './notifications';
 import { leaveClassSessions } from './studySessions';
 
 // G4 in version B:
@@ -32,6 +33,8 @@ import { leaveClassSessions } from './studySessions';
 // - Sign-up asks for your name, pronouns (optional), faculty and expected graduation year.
 // - There's no email reset. Sign-up shows a one-time recovery code; with it you can set a
 //   new password, and you get a fresh code each time it's used.
+// - Five wrong passwords or recovery codes in a row pause sign-in and resets for 15 minutes,
+//   and the next sign-in tells you how many attempts failed.
 // - You can change your McGill email, with your password.
 // - Deleting your account deletes your data. You can choose to leave your posts and replies
 //   up without your name, so classmates keep the answers. What you added to a section's
@@ -71,6 +74,47 @@ const profileFields = {
   faculty: z.union([z.literal(''), z.enum(FACULTIES)]),
   gradYear: z.number().int().min(2020).max(2040).nullable(),
 };
+
+const MAX_ATTEMPTS = 5;
+const PAUSE_MINUTES = 15;
+
+type UserRow = typeof users.$inferSelect;
+
+function checkNotPaused(ctx: Context, user: UserRow) {
+  const left = (user.lockedUntil?.getTime() ?? 0) - ctx.now().getTime();
+  if (left > 0) {
+    throw new AppError('Too many failed attempts. Try again in {{count}} minutes.', 'UNAUTHORIZED', { count: Math.ceil(left / 60_000) });
+  }
+}
+
+// Counts a wrong password or recovery code; every fifth in a row pauses sign-in. `error`
+// gets the tries left when there are two or fewer, so it can warn.
+function failedAttempt(ctx: Context, user: UserRow, error: (triesLeft: number | null) => AppError): never {
+  const failed = user.failedSignIns + 1;
+  const left = MAX_ATTEMPTS - (failed % MAX_ATTEMPTS);
+  const pause = left === MAX_ATTEMPTS;
+  ctx.db
+    .update(users)
+    .set({ failedSignIns: failed, ...(pause ? { lockedUntil: new Date(ctx.now().getTime() + PAUSE_MINUTES * 60_000) } : {}) })
+    .where(eq(users.id, user.id))
+    .run();
+  if (pause) throw new AppError('Too many failed attempts. Try again in {{count}} minutes.', 'UNAUTHORIZED', { count: PAUSE_MINUTES });
+  throw error(left <= 2 ? left : null);
+}
+
+// A successful sign-in or reset starts the count over, and says if anyone got it wrong before.
+function clearAttempts(ctx: Context, user: UserRow) {
+  if (!user.failedSignIns && !user.lockedUntil) return;
+  ctx.db.update(users).set({ failedSignIns: 0, lockedUntil: null }).where(eq(users.id, user.id)).run();
+  if (user.failedSignIns) {
+    notify(ctx.db, user.id, {
+      type: 'sign-in-attempts',
+      title: m('{{count}} failed sign-in attempts since you last signed in', { count: user.failedSignIns }),
+      body: m("If that wasn't you, change your password under Settings → Account."),
+      link: '/settings/account',
+    });
+  }
+}
 
 function checkPassword(password: string, address: string) {
   if (passwordProblems(password, address).length) {
@@ -191,9 +235,16 @@ export const authRouter = {
     z.object({ email: z.string().trim().toLowerCase(), password: z.string() }),
     async ({ email, password }, ctx) => {
       const user = ctx.db.select().from(users).where(eq(users.email, email)).get();
-      if (!user || !(await verifyPassword(password, user.passwordHash))) {
-        throw new AppError('Email or password is incorrect.', 'UNAUTHORIZED');
+      if (!user) throw new AppError('Email or password is incorrect.', 'UNAUTHORIZED');
+      checkNotPaused(ctx, user);
+      if (!(await verifyPassword(password, user.passwordHash))) {
+        failedAttempt(ctx, user, (left) =>
+          left
+            ? new AppError('Email or password is incorrect. {{count}} more tries before sign-in pauses for 15 minutes.', 'UNAUTHORIZED', { count: left })
+            : new AppError('Email or password is incorrect.', 'UNAUTHORIZED'),
+        );
       }
+      clearAttempts(ctx, user);
       startSession(ctx, user.id);
       return publicUser(user);
     },
@@ -206,10 +257,17 @@ export const authRouter = {
     z.object({ email: z.string().trim().toLowerCase(), recoveryCode: z.string().trim(), password: z.string() }),
     async ({ email, recoveryCode, password }, ctx) => {
       const user = ctx.db.select().from(users).where(eq(users.email, email)).get();
-      if (!user?.recoveryCodeHash || user.recoveryCodeHash !== hashRecoveryCode(recoveryCode)) {
-        throw new AppError("That email and recovery code don't match.");
+      if (!user?.recoveryCodeHash) throw new AppError("That email and recovery code don't match.");
+      checkNotPaused(ctx, user);
+      if (user.recoveryCodeHash !== hashRecoveryCode(recoveryCode)) {
+        failedAttempt(ctx, user, (left) =>
+          left
+            ? new AppError("That email and recovery code don't match. {{count}} more tries before sign-in pauses for 15 minutes.", 'BAD_INPUT', { count: left })
+            : new AppError("That email and recovery code don't match."),
+        );
       }
       checkPassword(password, email);
+      clearAttempts(ctx, user);
       const passwordHash = await hashPassword(password);
       ctx.db.transaction((tx) => {
         tx.update(users).set({ passwordHash }).where(eq(users.id, user.id)).run();

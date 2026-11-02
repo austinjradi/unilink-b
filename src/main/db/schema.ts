@@ -34,6 +34,10 @@ export const users = sqliteTable('users', {
   gradYear: integer('grad_year'),
   // G4: the one-time recovery code shown at sign-up (and after each reset) replaces emailed reset codes.
   recoveryCodeHash: text('recovery_code_hash'),
+  // G4 "log in securely": wrong passwords or recovery codes since the last sign-in. Every
+  // fifth one pauses sign-in and resets until `lockedUntil`.
+  failedSignIns: integer('failed_sign_ins').notNull().default(0),
+  lockedUntil: timestamp('locked_until'),
   // ST2: free study minutes for each weekday, Sunday first; null uses DEFAULT_WEEKLY_MINUTES.
   weeklyStudyMinutes: text('weekly_study_minutes', { mode: 'json' }).$type<number[]>(),
   // Language for the UI, notifications and emails.
