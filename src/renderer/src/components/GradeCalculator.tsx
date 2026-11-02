@@ -23,9 +23,9 @@ import { DateTimePicker } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconCopy, IconFileImport, IconFileText, IconListNumbers, IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
+import { IconClipboardText, IconCopy, IconFileImport, IconFileText, IconListNumbers, IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { bestFromName, finalIfRemainingAverages, hasSecondScheme, letterFor, markFromParts, MCGILL_SCALE, minimumFor, parseMark, parseMarks, summarize } from '@shared/grades';
+import { bestFromName, finalIfRemainingAverages, hasSecondScheme, matchComponent, parsePastedGrades, letterFor, markFromParts, MCGILL_SCALE, minimumFor, parseMark, parseMarks, summarize } from '@shared/grades';
 import { CURRENT_TERM } from '@shared/dates';
 import { parseScheme } from '@shared/syllabus';
 import { toDate } from '../lib/format';
@@ -49,6 +49,7 @@ export function GradeCalculator({ classId }: { classId: number }) {
   const [editing, setEditing] = useState<Assessment | 'new' | null>(null);
   const [severalId, setSeveralId] = useState<number | null>(null);
   const [importing, setImporting] = useState(false);
+  const [pasting, setPasting] = useState(false);
   const remove = useAction((id: number) => rpc.courses.removeAssessment({ id }));
   const setScore = useAction((a: { id: number; score: number | null }) => rpc.courses.setScore(a));
   const setTarget = useAction((targetGrade: string) => rpc.courses.setTarget({ classId, targetGrade }));
@@ -230,6 +231,11 @@ export function GradeCalculator({ classId }: { classId: number }) {
         {list.length > 0 && (
           <Group mt="sm" gap="lg">
             {!teaching && (
+              <Button size="compact-sm" variant="subtle" leftSection={<IconClipboardText size={14} />} onClick={() => setPasting(true)}>
+                {t('Paste marks from myCourses')}
+              </Button>
+            )}
+            {!teaching && (
               <Text size="sm" c="dimmed">
                 {t('Average so far:')}{' '}
                 <b>{summary.currentAverage == null ? '—' : `${summary.currentAverage}% (${letterFor(summary.currentAverage).letter})`}</b>
@@ -331,6 +337,9 @@ export function GradeCalculator({ classId }: { classId: number }) {
             onDone={() => setEditing(null)}
           />
         )}
+      </Modal>
+      <Modal opened={pasting} onClose={() => setPasting(false)} title={t('Marks from myCourses')} size="lg">
+        {pasting && <GradesPaste scheme={list} onDone={() => setPasting(false)} />}
       </Modal>
       <Modal opened={importing} onClose={() => setImporting(false)} title={t('Grading scheme from a syllabus')} size="lg">
         {importing && <SchemeImport classId={classId} scheme={list} outlineName={info.data.outlineName} onDone={() => setImporting(false)} />}
@@ -589,6 +598,79 @@ function SchemeImport({ classId, scheme, outlineName, onDone }: { classId: numbe
           </Text>
           <Button onClick={() => add.mutate()} disabled={!picked.length || total > 100} loading={add.isPending}>
             {t('Add {{count}} components', { count: picked.length })}
+          </Button>
+        </Group>
+      )}
+    </Stack>
+  );
+}
+
+// G2 ← myCourses: marks from a copied grades page, matched to this section's components by name.
+// They stay private like any other mark, and nothing changes until they're reviewed.
+function GradesPaste({ scheme, onDone }: { scheme: Assessment[]; onDone: () => void }) {
+  const [text, setText] = useState('');
+  const [unchecked, setUnchecked] = useState<Set<number>>(new Set());
+  const found = parsePastedGrades(text).map((grade) => ({ ...grade, component: matchComponent(grade.name, scheme) }));
+  const picked = found.filter((g, n) => g.component && !unchecked.has(n));
+  const save = useAction(
+    async () => {
+      for (const g of picked) await rpc.courses.setScore({ id: g.component!.id, score: g.score });
+      return picked.length;
+    },
+    { success: (count) => t('Saved {{count}} marks', { count }), onSuccess: onDone },
+  );
+  return (
+    <Stack>
+      <Text size="sm" c="dimmed">
+        {t('On myCourses, open Grades for this course, select the page and paste it here. Only you see your marks.')}
+      </Text>
+      <Textarea
+        label={t('Your grades page')}
+        placeholder={'Assignment 1  18 / 20  90 %\nMidterm  41 / 50  82 %'}
+        autosize
+        minRows={4}
+        maxRows={10}
+        data-autofocus
+        value={text}
+        onChange={(e) => {
+          setText(e.currentTarget.value);
+          setUnchecked(new Set());
+        }}
+      />
+      {text.trim() && !found.length && (
+        <Text size="sm" c="dimmed">
+          {t('No marks found yet. Lines need a name and a mark, like "Midterm 41 / 50".')}
+        </Text>
+      )}
+      {found.map((g, n) => (
+        <Checkbox
+          key={g.name}
+          disabled={!g.component}
+          checked={!!g.component && !unchecked.has(n)}
+          onChange={(e) =>
+            setUnchecked((u) => {
+              const next = new Set(u);
+              if (e.currentTarget.checked) next.delete(n);
+              else next.add(n);
+              return next;
+            })
+          }
+          label={g.component ? `${g.component.name}, ${g.score}%` : `${g.name}, ${g.score}%`}
+          description={
+            !g.component
+              ? t('Not in this section’s grading scheme')
+              : g.component.score != null && g.component.score !== g.score
+                ? t('Replaces your {{mark}}%', { mark: g.component.score })
+                : g.component.name !== g.name
+                  ? t('From “{{name}}”', { name: g.name })
+                  : undefined
+          }
+        />
+      ))}
+      {found.length > 0 && (
+        <Group justify="flex-end">
+          <Button onClick={() => save.mutate()} disabled={!picked.length} loading={save.isPending}>
+            {t('Save {{count}} marks', { count: picked.length })}
           </Button>
         </Group>
       )}

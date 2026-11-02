@@ -168,6 +168,48 @@ export function isBusyWeek(due: { weight?: number }[]): boolean {
   return due.length >= 4 || due.reduce((sum, d) => sum + (d.weight ?? 0), 0) >= 30;
 }
 
+// G2 ← myCourses: the marks in a pasted grades page, with the name on the same line as the mark
+// ("Assignment 1  18 / 20  90 %") or the line before it. Only the first mark on a line counts:
+// the others are the same one in other columns. A mark with no grade yet ("- / 20") is skipped.
+const PASTED_FRACTION = /(\d+(?:[.,]\d+)?)\s*\/\s*(\d+(?:[.,]\d+)?)/;
+const PASTED_PERCENT = /(\d+(?:[.,]\d+)?)\s*%/;
+
+export function parsePastedGrades(text: string): { name: string; score: number }[] {
+  const number = (found: string) => Number(found.replace(',', '.'));
+  const grades: { name: string; score: number }[] = [];
+  let heading: string | null = null;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const fraction = line.match(PASTED_FRACTION);
+    const percent = line.match(PASTED_PERCENT);
+    const found = fraction && (!percent || fraction.index! <= percent.index!) ? fraction : percent;
+    if (!found) {
+      if (/\p{L}{2}/u.test(line) && !/^[-–—]\s*\/\s*\d/.test(line) && line.length <= 80) heading = line;
+      continue;
+    }
+    const before = line.slice(0, found.index).replace(/[\s:|\t–—-]+$/, '').trim();
+    const name: string | null = /\p{L}{2}/u.test(before) ? before : heading;
+    heading = null;
+    if (!name) continue;
+    const score = found === fraction ? (number(found[1]) / number(found[2])) * 100 : number(found[1]);
+    if (!Number.isFinite(score) || score < 0 || score > 150) continue;
+    if (!grades.some((g) => g.name.toLowerCase() === name.toLowerCase())) grades.push({ name, score: round2(score) });
+  }
+  return grades;
+}
+
+// Which component of the scheme a pasted name means: the same name, or else one that contains the other
+// ("Midterm Exam" and "Midterm"). Not if that could be more than one.
+export function matchComponent<T extends { name: string }>(name: string, components: T[]): T | null {
+  const clean = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const wanted = clean(name);
+  const exact = components.find((c) => clean(c.name) === wanted);
+  if (exact) return exact;
+  const close = components.filter((c) => clean(c.name).includes(wanted) || wanted.includes(clean(c.name)));
+  return close.length === 1 ? close[0] : null;
+}
+
 // What a component's name says about it, like "Homework (best 5 of 6)".
 export function bestFromName(name: string): number | null {
   const found = name.match(/\bbest\s+(\d{1,2})\s+(?:of|out of)\s+\d|\b(\d{1,2})\s+meilleure?s?\s+(?:sur|de)\s+\d/i);

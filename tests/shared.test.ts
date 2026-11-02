@@ -1,6 +1,6 @@
 import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { bestFromName, cgpaWith, finalIfRemainingAverages, isBusyWeek, letterFor, markFromParts, parseMark, parseMarks, summarize, termGpa } from '@shared/grades';
+import { bestFromName, cgpaWith, finalIfRemainingAverages, isBusyWeek, matchComponent, parsePastedGrades, letterFor, markFromParts, parseMark, parseMarks, summarize, termGpa } from '@shared/grades';
 import { buildCalendar, parseCalendar } from '@shared/ics';
 import { examConflicts, noClassesOn } from '@shared/keyDates';
 import { isHidden, parseChatLink } from '@shared/links';
@@ -920,5 +920,35 @@ describe('ST1 focus time', () => {
     expect(focusSummary([entry(7, 30), entry(6, 50)], new Date(2026, 9, 7, 12)).streak).toBe(2);
     expect(focusSummary([entry(5, 50)], now).streak).toBe(0);
     expect(focusSummary([], now)).toEqual({ thisWeek: 0, sessions: 0, lastWeek: 0, streak: 0 });
+  });
+});
+
+describe('G2 marks pasted from myCourses', () => {
+  it('reads a mark on the same line as its name, or the line after', () => {
+    expect(parsePastedGrades('Assignment 1  18 / 20  90 %\nMidterm\t41/50')).toEqual([{ name: 'Assignment 1', score: 90 }, { name: 'Midterm', score: 82 }]);
+    expect(parsePastedGrades('Assignment 1\n18 / 20\n10 / 10\n90 %\nQuiz 2\n75 %')).toEqual([{ name: 'Assignment 1', score: 90 }, { name: 'Quiz 2', score: 75 }]);
+    expect(parsePastedGrades('Midterm: 82,5 %')).toEqual([{ name: 'Midterm', score: 82.5 }]);
+  });
+
+  it('takes the first mark on a line, and rounds it', () => {
+    expect(parsePastedGrades('Lab 1  7 / 9  7.78 / 10  77.78 %')).toEqual([{ name: 'Lab 1', score: 77.78 }]);
+  });
+
+  it('skips what has no mark yet, and what makes no sense', () => {
+    expect(parsePastedGrades('Final exam\n- / 100\nAssignments\nFeedback: well done')).toEqual([]);
+    expect(parsePastedGrades('Quiz 1  5 / 0')).toEqual([]);
+    expect(parsePastedGrades('Quiz 1  200 / 100')).toEqual([]);
+    expect(parsePastedGrades('18 / 20')).toEqual([]);
+    expect(parsePastedGrades('Quiz 1 8/10\nQuiz 1 9/10')).toEqual([{ name: 'Quiz 1', score: 80 }]);
+  });
+
+  it('matches names to the scheme, but not when it could mean more than one', () => {
+    const scheme = [{ name: 'Midterm' }, { name: 'Assignment 1' }, { name: 'Assignment 2' }, { name: 'Final exam' }];
+    expect(matchComponent('midterm', scheme)?.name).toBe('Midterm');
+    expect(matchComponent('Midterm Exam', scheme)?.name).toBe('Midterm');
+    expect(matchComponent('ASSIGNMENT 2', scheme)?.name).toBe('Assignment 2');
+    expect(matchComponent('Final', scheme)?.name).toBe('Final exam');
+    expect(matchComponent('Assignment', scheme)).toBeNull();
+    expect(matchComponent('Bonus', scheme)).toBeNull();
   });
 });
