@@ -1,5 +1,6 @@
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
+import { groupMeetings, type MeetingTime } from '@shared/meetings';
 import { t } from './i18n';
 
 dayjs.extend(relativeTime);
@@ -21,3 +22,8 @@ export function dayLabel(day: string, today: string) {
   return fmtDate(day);
 }
 
+// Weekly class times: "Mon, Wed 10:05–11:25 · Fri 13:35–14:25".
+export const fmtMeetings = (meetings: MeetingTime[]) =>
+  groupMeetings(meetings)
+    .map((g) => `${g.weekdays.map((d) => dayjs().day(d).format('ddd')).join(', ')} ${g.startTime}–${g.endTime}`)
+    .join(' · ');

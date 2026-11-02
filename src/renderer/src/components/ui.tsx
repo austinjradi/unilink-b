@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { Anchor, Badge, Breadcrumbs, Card, Center, Group, Loader, Stack, Text, ThemeIcon, Title } from '@mantine/core';
-import { IconMoodEmpty } from '@tabler/icons-react';
+import { IconAlertTriangle, IconMoodEmpty } from '@tabler/icons-react';
 import { Link } from 'react-router';
 import { t, tx } from '../lib/i18n';
 import { KIND_COLORS } from '../theme';
@@ -129,5 +129,18 @@ export function KindBadge({ kind }: { kind: string }) {
     <Badge variant="light" color={kindColor(kind)} size="sm">
       {t(KIND_LABELS[kind] ?? kind)}
     </Badge>
+  );
+}
+
+// S1: a section whose shared class times overlap classes the student is already in.
+export function ClashNote({ codes }: { codes: string[] }) {
+  if (!codes.length) return null;
+  return (
+    <Group gap={4} wrap="nowrap" c="orange.7">
+      <IconAlertTriangle size={12} style={{ flexShrink: 0 }} />
+      <Text size="xs" inherit>
+        {t('Clashes with {{codes}}', { codes: codes.join(', ') })}
+      </Text>
+    </Group>
   );
 }

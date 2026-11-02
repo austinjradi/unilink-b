@@ -1,9 +1,10 @@
 import { and, asc, count, eq, inArray, isNull, like, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { parseCourseQuery } from '@shared/courseQuery';
+import { clashes, type MeetingTime } from '@shared/meetings';
 import { TERMS } from '@shared/dates';
 import type { DB } from '../db/client';
-import { classes, courses, enrollments, postAudience, posts, replies, users } from '../db/schema';
+import { classMeetings, classes, courses, enrollments, postAudience, posts, replies, users } from '../db/schema';
 import { AppError, type AuthedContext, idSchema, procedure } from '../rpc/core';
 import { isMember, notFound, requireMember, sectionCode } from './access';
 import { leaveClassSessions } from './studySessions';
@@ -92,6 +93,44 @@ function sameCourseSection(db: DB, userId: number, classId: number) {
   return { target, current: current ?? null };
 }
 
+// Each section's class times (shared by its classmates), and which of the student's other
+// classes that term they clash with. Another section of the same course doesn't count:
+// switching to this one replaces it.
+function schedules(db: DB, userId: number, sections: { id: number; courseId: number; term: string }[]) {
+  const terms = [...new Set(sections.map((s) => s.term))];
+  const mine = terms.length
+    ? db
+        .select({ id: classes.id, courseId: classes.courseId, term: classes.term, code: sectionCode })
+        .from(enrollments)
+        .innerJoin(classes, eq(enrollments.classId, classes.id))
+        .innerJoin(courses, eq(classes.courseId, courses.id))
+        .where(and(eq(enrollments.userId, userId), inArray(classes.term, terms)))
+        .all()
+    : [];
+  const ids = [...new Set([...sections.map((s) => s.id), ...mine.map((c) => c.id)])];
+  const times = new Map<number, MeetingTime[]>();
+  if (ids.length) {
+    for (const m of db
+      .select({ classId: classMeetings.classId, weekday: classMeetings.weekday, startTime: classMeetings.startTime, endTime: classMeetings.endTime })
+      .from(classMeetings)
+      .where(inArray(classMeetings.classId, ids))
+      .orderBy(asc(classMeetings.weekday), asc(classMeetings.startTime))
+      .all()) {
+      const { classId, ...time } = m;
+      times.set(classId, [...(times.get(classId) ?? []), time]);
+    }
+  }
+  return (s: { id: number; courseId: number; term: string }) => {
+    const own = times.get(s.id) ?? [];
+    return {
+      times: own,
+      clashesWith: mine
+        .filter((c) => c.term === s.term && c.courseId !== s.courseId && clashes(own, times.get(c.id) ?? []))
+        .map((c) => c.code),
+    };
+  };
+}
+
 // S1.3: your own notes, grades and private deadlines are kept in case you rejoin. What you
 // added to the section's shared info (class times, deadlines, grading scheme) stays with it.
 function leaveClass(ctx: AuthedContext, classId: number) {
@@ -134,15 +173,16 @@ export const catalogueRouter = {
                 and(...parsed.words.map((w) => sql`lower(${courses.title}) like ${`%${w}%`}`)),
               )
             : undefined;
-      return classRows(ctx.db)
+      const rows = classRows(ctx.db)
         .where(and(eq(classes.term, term), level ? like(courses.number, `${String(level)[0]}__`) : undefined, match))
         .orderBy(courses.subject, courses.number, classes.section)
         .limit(80)
-        .all()
-        .map((c) => {
-          const inCourse = mine.get(`${c.courseId}|${c.term}`) ?? null;
-          return { ...c, joined: inCourse === c.id, otherSectionId: inCourse !== c.id ? inCourse : null };
-        });
+        .all();
+      const schedule = schedules(ctx.db, ctx.userId, rows);
+      return rows.map((c) => {
+        const inCourse = mine.get(`${c.courseId}|${c.term}`) ?? null;
+        return { ...c, ...schedule(c), joined: inCourse === c.id, otherSectionId: inCourse !== c.id ? inCourse : null };
+      });
     },
   ),
 };
@@ -159,12 +199,13 @@ export const classesRouter = {
   get: procedure(z.object({ classId: idSchema }), ({ classId }, ctx) => {
     const row = classRows(ctx.db).where(eq(classes.id, classId)).get() ?? notFound('class');
     const otherSection = sameCourseSection(ctx.db, ctx.userId, classId).current;
-    const sections = classRows(ctx.db)
+    const sectionRows = classRows(ctx.db)
       .where(and(eq(classes.courseId, row.courseId), eq(classes.term, row.term)))
       .orderBy(classes.section)
-      .all()
-      .map((s) => ({ id: s.id, section: s.section, memberCount: s.memberCount }));
-    return { ...row, joined: isMember(ctx.db, ctx.userId, classId), otherSection, sections };
+      .all();
+    const schedule = schedules(ctx.db, ctx.userId, sectionRows);
+    const sections = sectionRows.map((s) => ({ id: s.id, section: s.section, memberCount: s.memberCount, ...schedule(s) }));
+    return { ...row, ...schedule(row), joined: isMember(ctx.db, ctx.userId, classId), otherSection, sections };
   }),
 
   // S1.2: many classes, each once, and only one section of a course per term.

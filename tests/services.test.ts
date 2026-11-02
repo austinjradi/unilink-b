@@ -237,6 +237,28 @@ describe('S1 classes', () => {
     expect(await api.classes.mine()).toEqual([]);
   });
 
+  it('shows the class times of each section and which of your classes they clash with', async () => {
+    const { api } = await student('Maya');
+    const leo = await student('Leo');
+    const [comp001, comp002] = [await comp251(api, '001'), await comp251(api, '002')];
+    const [math] = await api.catalogue.search({ query: 'MATH 240', term: 'Fall 2026', level: null });
+    const lecture = (weekday: number, startTime: string, endTime: string) => ({ weekday, startTime, endTime, location: '' });
+    await api.classes.join({ classId: math.id });
+    await api.courses.saveMeetings({ classId: math.id, meetings: [lecture(1, '10:05', '11:25'), lecture(3, '10:05', '11:25')] });
+    // Leo fills in both COMP 251 sections' times: 001 overlaps Maya's MATH 240, 002 doesn't.
+    for (const [classId, start, end] of [[comp001, '11:05', '12:25'], [comp002, '14:35', '15:55']] as const) {
+      await leo.api.classes.join({ classId });
+      await leo.api.courses.saveMeetings({ classId, meetings: [lecture(2, start, end), lecture(3, start, end)] });
+      await leo.api.classes.leave({ classId });
+    }
+    const found = await api.catalogue.search({ query: 'COMP 251', term: 'Fall 2026', level: null });
+    expect(found.map((c) => [c.section, c.times.length, c.clashesWith])).toEqual([
+      ['001', 2, ['MATH 240-001']],
+      ['002', 2, []],
+    ]);
+    expect((await api.classes.get({ classId: comp001 })).clashesWith).toEqual(['MATH 240-001']);
+  });
+
   it('keeps classmates anonymous until they post or reply, not when they join a session', async () => {
     const maya = await student('Maya', { pronouns: 'she/her' });
     const leo = await student('Leo');

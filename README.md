@@ -204,6 +204,7 @@ both versions.
 | --- | --- | --- | --- |
 | S1.2 | Is "COMP 251" one class, or one per term/section? | One class per course per term; sections share it | **One class per section** ("COMP 251-001"). You can be in one section of a course per term; *Switch section* moves you. Each section has its own board, chats, sessions and shared info |
 | S1.1 | Search by code, name, other filters? | Code or title, plus term and subject filters | **Code wildcards** like the board's "COMP 2XX" (X, \* or ? = any digit), title words, plus term and **course level** filters |
+| S1.1 | Anything about when a section meets? | No | Search and the section's page show its **class times** (as its classmates entered them) and **warn when they clash** with your other classes that term. Joining is still allowed |
 | S1 note | When do classmates become visible, and what's shown? | Name and email, once they post, reply or join a study session | **Only posting or replying** reveals someone (joining a session doesn't). Shown: name, email, **pronouns and faculty**. The class page lists the classmates you can see |
 | S2.1 | What's shown per link? | Platform, name, who added it, when | Platform, name, who added it, **what it's for** (whole course, this section, project team, study group), and **how many classmates say it works** and when it was last checked |
 | S2.2 | Private first, then public? | Yes: private to whoever adds it until they share it | **No:** links are shared with the section as soon as they're added |
@@ -242,7 +243,7 @@ invitations and individual reports; study mode follows the section's shared clas
 
 | Decision | Code |
 | --- | --- |
-| Sections, wildcard search, classmate visibility | `db/catalogue.ts` (`sectionsFor`), `services/classes.ts`, `shared/courseQuery.ts` |
+| Sections, wildcard search, classmate visibility, time clashes | `db/catalogue.ts` (`sectionsFor`), `services/classes.ts`, `shared/courseQuery.ts`, `shared/meetings.ts` |
 | Link identity, purposes, hiding rule | `shared/links.ts`, `services/links.ts` |
 | Invite codes, waitlist, hand-off | `services/studySessions.ts` |
 | Questions, accepted answers, topics, deleted posts, following threads | `services/board.ts`, `components/Feed.tsx` |

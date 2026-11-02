@@ -7,7 +7,8 @@ import dayjs from 'dayjs';
 import { Link, useNavigate, useParams } from 'react-router';
 import { LEVELS } from '@shared/courseQuery';
 import { addDays, CURRENT_TERM, ymd } from '@shared/dates';
-import { Empty, Loading, PageHeader, SectionCard, Tag } from '../components/ui';
+import { ClashNote, Empty, Loading, PageHeader, SectionCard, Tag } from '../components/ui';
+import { fmtMeetings } from '../lib/format';
 import { useAction } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
 import { AcademicsPanel } from './Academics';
@@ -208,7 +209,15 @@ function FindCourses() {
                   <Table.Td fw={700} style={{ whiteSpace: 'nowrap' }}>
                     {c.code}
                   </Table.Td>
-                  <Table.Td>{c.title}</Table.Td>
+                  <Table.Td>
+                    {c.title}
+                    {c.times.length > 0 && (
+                      <Text size="xs" c="dimmed">
+                        {fmtMeetings(c.times)}
+                      </Text>
+                    )}
+                    {!c.joined && <ClashNote codes={c.clashesWith} />}
+                  </Table.Td>
                   <Table.Td>{c.credits}</Table.Td>
                   <Table.Td>{c.memberCount}</Table.Td>
                   <Table.Td ta="right">
@@ -242,3 +251,4 @@ function FindCourses() {
     </SectionCard>
   );
 }
+

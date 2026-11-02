@@ -1,8 +1,9 @@
-import { Button, Card, Group, Tabs, Text } from '@mantine/core';
+import { Button, Card, Group, Stack, Tabs, Text } from '@mantine/core';
 import { IconBrandWhatsapp, IconInfoCircle, IconMessages, IconPercentage, IconUsersGroup } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router';
-import { Loading, PageHeader, Tag } from '../components/ui';
+import { ClashNote, Loading, PageHeader, Tag } from '../components/ui';
+import { fmtMeetings } from '../lib/format';
 import { useAction } from '../lib/hooks';
 import { t, term, tx } from '../lib/i18n';
 import { rpc } from '../lib/rpc';
@@ -50,6 +51,12 @@ export function ClassPage() {
 
       {!c.joined ? (
         <Card padding="xl">
+          {(c.times.length > 0 || c.clashesWith.length > 0) && (
+            <Stack gap={2} mb="md">
+              {c.times.length > 0 && <Text size="sm">{t('Class times: {{times}}', { times: fmtMeetings(c.times) })}</Text>}
+              <ClashNote codes={c.clashesWith} />
+            </Stack>
+          )}
           {c.otherSection ? (
             <>
               <Text mb="md">
@@ -85,7 +92,8 @@ export function ClassPage() {
                       {s.section}
                     </Text>
                   )}{' '}
-                  ({t('{{count}} students on UniLink', { count: s.memberCount })})
+                  ({s.times.length > 0 && `${fmtMeetings(s.times)}, `}
+                  {t('{{count}} students on UniLink', { count: s.memberCount })})
                 </span>
               ))}
             </Text>

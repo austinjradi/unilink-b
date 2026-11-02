@@ -10,6 +10,7 @@ import { evaluateDegree, type Program } from '@shared/degree';
 import { type FocusWindow, studyModeStatus } from '@shared/studyMode';
 import { parseSyllabus } from '@shared/syllabus';
 import { findParts, minutesForParts } from '@shared/assignment';
+import { clashes, groupMeetings } from '@shared/meetings';
 import { parseTranscript } from '@shared/transcript';
 
 describe('grades (A4)', () => {
@@ -388,5 +389,25 @@ Question 1: Recurrences`;
   it('shares time out by points when every part has them', () => {
     expect(minutesForParts(findParts(handout), 60)).toEqual([45, 75, 60, 60]);
     expect(minutesForParts([{ title: 'Q1', points: 10 }, { title: 'Q2', points: null }], 60)).toEqual([60, 60]);
+  });
+});
+
+describe('class time clashes (S1)', () => {
+  const at = (weekday: number, startTime: string, endTime: string) => ({ weekday, startTime, endTime });
+
+  it('clashes only on the same day with overlapping times', () => {
+    expect(clashes([at(1, '10:05', '11:25')], [at(1, '11:00', '12:00')])).toBe(true);
+    // Back to back isn't a clash.
+    expect(clashes([at(1, '10:05', '11:25')], [at(1, '11:25', '12:00')])).toBe(false);
+    expect(clashes([at(1, '10:05', '11:25')], [at(2, '10:05', '11:25')])).toBe(false);
+    expect(clashes([], [at(2, '10:05', '11:25')])).toBe(false);
+  });
+
+  it('groups days that share a time, Monday first', () => {
+    expect(groupMeetings([at(3, '10:05', '11:25'), at(5, '13:35', '14:25'), at(1, '10:05', '11:25'), at(0, '9:00', '10:00')])).toEqual([
+      { weekdays: [1, 3], startTime: '10:05', endTime: '11:25' },
+      { weekdays: [5], startTime: '13:35', endTime: '14:25' },
+      { weekdays: [0], startTime: '9:00', endTime: '10:00' },
+    ]);
   });
 });
