@@ -458,7 +458,8 @@ describe('S4 discussion board', () => {
       ['Thanks both!', false],
     ]);
     expect(await unresolved()).toEqual([]);
-    expect(await titles(ana)).toEqual(['Your answer to "Q3 hint?" was accepted']);
+    // Replying followed the thread, so Ana also heard about Maya's thanks.
+    expect(await titles(ana)).toEqual(['Your answer to "Q3 hint?" was accepted', 'Maya replied in "Q3 hint?"']);
 
     // Notes don't have answers; deleting the accepted reply reopens the question.
     const { id: noteId } = await maya.api.board.create({ ...post, kind: 'note', topic: 'Logistics' });
@@ -544,6 +545,47 @@ describe('S4 discussion board', () => {
     expect((await feed({ topics: ['Assignments'] }))[0]).toMatchObject({ goats: 1, goated: true, kind: 'question' });
     await maya.api.board.react({ postId: first });
     expect((await feed({ topics: ['Assignments'] }))[0].goats).toBe(0);
+  });
+});
+
+describe('S4 following threads', () => {
+  it('tells everyone following a thread about new replies, until they unfollow', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo', 'Ana', 'Sam');
+    const [maya, leo, ana, sam] = people;
+    const { id: postId } = await maya.api.board.create({
+      classId,
+      kind: 'question',
+      topic: 'Exams',
+      title: 'Is the midterm cumulative?',
+      body: 'Up to graphs?',
+      visibility: 'class',
+      audienceEmails: [],
+    });
+    expect((await maya.api.board.get({ postId })).following).toBe(true);
+
+    // Leo replies (and so follows); Sam follows without replying; Ana does neither.
+    await leo.api.board.reply({ postId, body: 'I think so' });
+    await sam.api.board.follow({ postId, following: true });
+    await ana.api.board.reply({ postId, body: 'The prof said yes in lecture' });
+    expect(await titles(maya)).toEqual(['Ana replied to "Is the midterm cumulative?"', 'Leo replied to "Is the midterm cumulative?"']);
+    expect(await titles(leo)).toEqual(['Ana replied in "Is the midterm cumulative?"']);
+    expect(await titles(sam)).toEqual(['Ana replied in "Is the midterm cumulative?"']);
+
+    // Unfollowing sticks, even after replying again; the feed can show only followed threads.
+    const followed = (s: typeof leo) => s.api.board.feed({ classIds: [classId], topics: [], since: null, search: '', following: true });
+    expect((await followed(leo)).map((p) => p.id)).toEqual([postId]);
+    await leo.api.board.follow({ postId, following: false });
+    await leo.api.board.reply({ postId, body: 'Thanks Ana' });
+    expect((await leo.api.board.get({ postId })).following).toBe(false);
+    expect(await followed(leo)).toEqual([]);
+    await sam.api.board.reply({ postId, body: 'Same question for the final' });
+    expect(await titles(leo)).toHaveLength(1);
+    expect(await titles(ana)).toEqual(['Sam replied in "Is the midterm cumulative?"', 'Leo replied in "Is the midterm cumulative?"']);
+
+    // Leaving the class stops them too.
+    await ana.api.classes.leave({ classId });
+    await maya.api.board.reply({ postId, body: 'Thanks all!' });
+    expect(await titles(ana)).toHaveLength(2);
   });
 });
 

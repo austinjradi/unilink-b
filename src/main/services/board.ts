@@ -2,7 +2,7 @@ import { and, asc, count, desc, eq, gte, inArray, isNull, like, or, sql } from '
 import { z } from 'zod';
 import { goatFor } from '@shared/goat';
 import type { DB } from '../db/client';
-import { boardVisits, classes, courses, enrollments, postAudience, postReactions, posts, replies, replyReactions, users } from '../db/schema';
+import { boardVisits, classes, courses, enrollments, postAudience, postFollows, postReactions, posts, replies, replyReactions, users } from '../db/schema';
 import { AppError, idSchema, nonEmpty, procedure } from '../rpc/core';
 import { FORMER_STUDENT_EMAIL, notFound, requireMember, sectionCode } from './access';
 import { enrolledUsersByEmail } from './classes';
@@ -13,6 +13,7 @@ import { m, notify, raw } from './notifications';
 // can accept one reply as the answer, which resolves it and shows that answer first.
 // Deleting a post that has replies keeps the thread and blanks the post.
 // Posts are visible to the whole class or only to selected classmates; 🐐 reactions stay.
+// Students follow the threads they post or reply in (or pick to), and hear about new replies.
 
 export const SUGGESTED_TOPICS = ['Lectures', 'Assignments', 'Exams', 'Labs and tutorials', 'Logistics', 'Off-topic'];
 
@@ -69,6 +70,36 @@ function ownPost(db: DB, userId: number, postId: number) {
   return post;
 }
 
+// Posting or replying follows a thread, unless the student unfollowed it before.
+function follow(db: DB, postId: number, userId: number) {
+  db.insert(postFollows).values({ postId, userId, following: true }).onConflictDoNothing().run();
+}
+
+const followsSql = (userId: number) =>
+  sql`(select count(*) from ${postFollows} where ${postFollows.postId} = ${posts.id} and ${postFollows.userId} = ${userId} and ${postFollows.following} = 1)`;
+
+// Who to tell about a new reply: followers still in the class who can still see the post.
+function followersOf(db: DB, post: typeof posts.$inferSelect) {
+  return db
+    .select({ id: postFollows.userId })
+    .from(postFollows)
+    .innerJoin(enrollments, and(eq(enrollments.userId, postFollows.userId), eq(enrollments.classId, post.classId)))
+    .where(
+      and(
+        eq(postFollows.postId, post.id),
+        eq(postFollows.following, true),
+        post.visibility === 'class'
+          ? undefined
+          : or(
+              eq(postFollows.userId, post.authorId),
+              inArray(postFollows.userId, sql`(select ${postAudience.userId} from ${postAudience} where ${postAudience.postId} = ${post.id})`),
+            ),
+      ),
+    )
+    .all()
+    .map((r) => r.id);
+}
+
 function audienceOf(db: DB, postId: number) {
   return db
     .select({ id: users.id, name: users.name, email: users.email })
@@ -121,8 +152,10 @@ export const boardRouter = {
       unresolved: z.boolean().default(false),
       // Newest first, or the posts with the most 🐐 first.
       sort: z.enum(['new', 'top']).default('new'),
+      // Only threads the student follows.
+      following: z.boolean().default(false),
     }),
-    ({ classIds, topics, since, search, unresolved, sort }, ctx) => {
+    ({ classIds, topics, since, search, unresolved, sort, following }, ctx) => {
       const mine = myClassIds(ctx.db, ctx.userId);
       const ids = classIds ? classIds.filter((id) => mine.includes(id)) : mine;
       if (classIds?.length === 1 && !ids.length) requireMember(ctx.db, ctx.userId, classIds[0]);
@@ -170,6 +203,7 @@ export const boardRouter = {
             from ? gte(posts.createdAt, from) : undefined,
             search ? or(like(posts.title, term), like(posts.body, term)) : undefined,
             unresolved ? and(eq(posts.kind, 'question'), isNull(posts.acceptedReplyId), isNull(posts.deletedAt)) : undefined,
+            following ? sql`${followsSql(ctx.userId)} > 0` : undefined,
           ),
         )
         .orderBy(...(sort === 'top' ? [desc(goats)] : []), desc(posts.createdAt), desc(posts.id))
@@ -247,6 +281,11 @@ export const boardRouter = {
       mine: post.authorId === ctx.userId,
       goats: reactions.length,
       goated: reactions.some((r) => r.userId === ctx.userId),
+      following: !!ctx.db
+        .select()
+        .from(postFollows)
+        .where(and(eq(postFollows.postId, postId), eq(postFollows.userId, ctx.userId), eq(postFollows.following, true)))
+        .get(),
       audience: post.visibility === 'selected' ? audienceOf(ctx.db, postId) : [],
       // The accepted answer comes first, then everything else in order.
       replies: replyRows
@@ -284,6 +323,7 @@ export const boardRouter = {
           .returning({ id: posts.id })
           .get();
         if (audience.length) tx.insert(postAudience).values(audience.map((u) => ({ postId: post.id, userId: u.id }))).run();
+        follow(tx, post.id, ctx.userId);
         return post;
       });
     },
@@ -326,18 +366,37 @@ export const boardRouter = {
     else ctx.db.insert(replyReactions).values({ replyId, userId: ctx.userId }).run();
   }),
 
-  // Replies are one flat list under the post.
+  // Follow a thread to hear about every new reply, or stop following it.
+  follow: procedure(z.object({ postId: idSchema, following: z.boolean() }), ({ postId, following }, ctx) => {
+    visiblePost(ctx.db, ctx.userId, postId);
+    ctx.db
+      .insert(postFollows)
+      .values({ postId, userId: ctx.userId, following })
+      .onConflictDoUpdate({ target: [postFollows.postId, postFollows.userId], set: { following } })
+      .run();
+  }),
+
+  // Replies are one flat list under the post. Everyone following the thread hears about it.
   reply: procedure(z.object({ postId: idSchema, body: nonEmpty('Reply', 5000) }), ({ postId, body }, ctx) => {
     const post = visiblePost(ctx.db, ctx.userId, postId);
     ctx.db.insert(replies).values({ postId, body, authorId: ctx.userId }).run();
-    if (post.authorId === ctx.userId || post.deletedAt) return;
+    follow(ctx.db, postId, ctx.userId);
+    if (post.deletedAt) return;
     const replierName = ctx.db.select({ name: users.name }).from(users).where(eq(users.id, ctx.userId)).get()?.name;
-    notify(ctx.db, post.authorId, {
-      type: 'reply',
-      title: m('{{name}} replied to "{{title}}"', { name: replierName ?? { t: 'A classmate' }, title: post.title }),
-      body: raw(body.length > 140 ? `${body.slice(0, 140)}…` : body),
-      link: `/classes/${post.classId}/discussion?post=${postId}`,
-    });
+    const name = replierName ?? { t: 'A classmate' };
+    const title = post.title;
+    for (const userId of followersOf(ctx.db, post)) {
+      if (userId === ctx.userId) continue;
+      notify(ctx.db, userId, {
+        type: 'reply',
+        title:
+          userId === post.authorId
+            ? m('{{name}} replied to "{{title}}"', { name, title })
+            : m('{{name}} replied in "{{title}}"', { name, title }),
+        body: raw(body.length > 140 ? `${body.slice(0, 140)}…` : body),
+        link: `/classes/${post.classId}/discussion?post=${postId}`,
+      });
+    }
   }),
 
   // Whoever asked picks the answer that solved it (or takes it back with replyId null).

@@ -48,7 +48,7 @@ The interface follows the team's wireframes in `A2Team.pdf`:
 - **Goat mascot:** customizable under Settings → Goat (`components/Goat.tsx`, `shared/goat.ts`).
 - **Home:** today's tasks and deadline countdowns on the left, a cross-class discussion feed with 🐐
   reactions in the middle, and filters on the right.
-- **Threads:** one list of replies, with the accepted answer pinned first. A classmate's name opens their
+- **Threads:** one list of replies, with the accepted answer pinned first, and a Follow button for reply notifications. A classmate's name opens their
   profile card; the feed sorts by newest or most 🐐, and posts since your last visit to a class are marked New
   (counted on its course card).
 - **Grade Calculator:** a "You need at least X%" bubble and a scenarios table.
@@ -217,6 +217,7 @@ both versions.
 | S3.5 | Host leaves; session changes | Hosts can't leave, only cancel. Edits don't notify | Leaving **hands the session to the next person going** (cancelled only if nobody's left). Moving the time or place **notifies everyone in it** |
 | S4 | Post types and topics | Free-form "type" with suggestions (Assignment, Midterm, Just yapping…) | Posts are a **question or a note**, under a **fixed topic list** (Lectures, Assignments, Exams, Labs and tutorials, Logistics, Off-topic) |
 | S4 | Replies | Threaded, one level of replies to replies | **One flat list.** Whoever asked can **accept an answer**: it's pinned first, the question shows as answered, and the feed can filter to unanswered questions |
+| S4 | Who hears about new replies? | The post's author | **Everyone following the thread**: posting or replying follows it, anyone who can see it can follow or unfollow (unfollowing sticks), and the feed can show only followed threads |
 | S4 | Deleting a post | Deletes its replies too | A post **with replies is blanked** and the thread stays; one without replies is removed |
 | A3 | Term key dates and final exams? | Not included | **Built in** (`shared/keyDates.ts`): McGill's 2026–27 key dates (classes start and end, add/drop, withdrawal with and without refund, reading breaks, exam period) on everyone's calendar, deadlines among them on Home; a **sample final exam schedule** per course, with your own finals on your calendar and each class page |
 | A3 | "Imported from my syllabus in a later version" | Not built | **Paste the syllabus schedule**: lines with a date and something to hand in or write are found (English or French dates, times, weights) and reviewed before adding. Weighted ones join the section's grading scheme; the rest become class deadlines |
@@ -244,7 +245,7 @@ invitations and individual reports; study mode follows the section's shared clas
 | Sections, wildcard search, classmate visibility | `db/catalogue.ts` (`sectionsFor`), `services/classes.ts`, `shared/courseQuery.ts` |
 | Link identity, purposes, hiding rule | `shared/links.ts`, `services/links.ts` |
 | Invite codes, waitlist, hand-off | `services/studySessions.ts` |
-| Questions, accepted answers, topics, deleted posts | `services/board.ts`, `components/Feed.tsx` |
+| Questions, accepted answers, topics, deleted posts, following threads | `services/board.ts`, `components/Feed.tsx` |
 | Shared section info and private marks | `services/courses.ts`, `services/calendar.ts` (`visibleDeadlines`), `db/schema.ts` (`class_details`, `assessment_scores`, `deadline_done`) |
 | Unlisted weight | `shared/grades.ts` |
 | Passphrases, recovery codes, deletion | `shared/validation.ts`, `services/auth.ts`, `services/access.ts` (`formerStudentId`) |
@@ -253,7 +254,7 @@ invitations and individual reports; study mode follows the section's shared clas
 | Plans that follow a class deadline | `services/planner.ts` (`followMovedDeadlines`), `services/calendar.ts` (`collect`) |
 
 The database changes are migrations `0004_version_b` (new tables and columns), `0005_version_b_cleanup`
-(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit) and `0008_reply_edits`.
+(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits` and `0009_thread_follows`.
 
 ## Not built yet
 

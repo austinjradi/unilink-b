@@ -64,6 +64,13 @@
       "when": 1793578257723,
       "tag": "0008_reply_edits",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1793579299214,
+      "tag": "0009_thread_follows",
+      "breakpoints": true
     }
   ]
 }

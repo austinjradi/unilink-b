@@ -449,6 +449,20 @@ export const boardVisits = sqliteTable(
   (t) => [primaryKey({ columns: [t.userId, t.classId] })],
 );
 
+// S4: threads a student follows, to hear about every new reply. Posting or replying follows
+// a thread; unfollowing is remembered (following = false), so replying again doesn't undo it.
+export const postFollows = sqliteTable(
+  'post_follows',
+  {
+    postId: integer('post_id')
+      .notNull()
+      .references(() => posts.id, { onDelete: 'cascade' }),
+    userId: userRef(),
+    following: integer('following', { mode: 'boolean' }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.postId, t.userId] })],
+);
+
 // --- 🐐 reactions on discussion posts and replies (UI design, A2Team.pdf) --------------
 
 export const postReactions = sqliteTable(

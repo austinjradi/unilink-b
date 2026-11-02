@@ -29,6 +29,8 @@ import { useForm } from '@mantine/form';
 import { useDebouncedValue } from '@mantine/hooks';
 import { modals } from '@mantine/modals';
 import {
+  IconBell,
+  IconBellRinging,
   IconCheck,
   IconCircleCheck,
   IconFilter,
@@ -284,16 +286,17 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
   const [topics, setTopics] = useState<string[]>([]);
   const [since, setSince] = useState<Since>(null);
   const [unresolved, setUnresolved] = useState(false);
+  const [following, setFollowing] = useState(false);
   const [sort, setSort] = useState<'new' | 'top'>('new');
   // Below the wide layout the filters would sit under every post, so they open in a drawer.
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const activeFilters = classIds.length + topics.length + (since ? 1 : 0) + (unresolved ? 1 : 0) + (search.trim() ? 1 : 0);
+  const activeFilters = classIds.length + topics.length + (since ? 1 : 0) + (unresolved ? 1 : 0) + (following ? 1 : 0) + (search.trim() ? 1 : 0);
   const [composing, setComposing] = useState<PostDetail | 'new' | null>(null);
 
   const classes = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
   const allTopics = useQuery({ queryKey: ['board', 'topics', classId ?? null], queryFn: () => rpc.board.topics({ classId: classId ?? null }) });
   const feed = useQuery({
-    queryKey: ['board', 'feed', classId ?? null, classIds, topics, since, debounced, unresolved, sort],
+    queryKey: ['board', 'feed', classId ?? null, classIds, topics, since, debounced, unresolved, following, sort],
     queryFn: () =>
       rpc.board.feed({
         classIds: classId ? [classId] : classIds.length ? classIds.map(Number) : null,
@@ -301,6 +304,7 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
         since,
         search: debounced,
         unresolved,
+        following,
         sort,
       }),
     placeholderData: keepPreviousData,
@@ -344,6 +348,11 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
       <ChipSection title={t('Questions')}>
         <Chip size="sm" variant="outline" checked={unresolved} onChange={setUnresolved}>
           {t('Unanswered only')}
+        </Chip>
+      </ChipSection>
+      <ChipSection title={t('Threads')}>
+        <Chip size="sm" variant="outline" checked={following} onChange={setFollowing}>
+          {t('Ones I follow')}
         </Chip>
       </ChipSection>
       <ChipSection title={t('Topic')}>
@@ -409,7 +418,7 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
           ) : (
             <Card>
               <Empty icon={<IconMessages size={22} />}>
-                {search || topics.length || classIds.length || since || unresolved
+                {search || topics.length || classIds.length || since || unresolved || following
                   ? t('No posts match these filters.')
                   : classes.data?.length
                     ? t('No posts yet. Ask a question or start a discussion!')
@@ -558,6 +567,9 @@ function ReplyItem({ reply, postId, canAccept }: { reply: Reply; postId: number;
 function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p: PostDetail) => void; onDeleted: () => void }) {
   const post = useQuery({ queryKey: ['board', 'post', postId], queryFn: () => rpc.board.get({ postId }) });
   const react = useAction(() => rpc.board.react({ postId }));
+  const follow = useAction((following: boolean) => rpc.board.follow({ postId, following }), {
+    success: (_r, following) => (following ? t('You’ll be notified of new replies') : t('You won’t be notified of new replies')),
+  });
   const remove = useAction(() => rpc.board.remove({ postId }), {
     success: (r) => (r.kept ? t('Post deleted. Its replies stay up.') : t('Post deleted')),
     onSuccess: (r) => !r.kept && onDeleted(),
@@ -624,8 +636,19 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
           <Text mt="xs" style={{ whiteSpace: 'pre-wrap' }}>
             <Body text={p.body} />
           </Text>
-          <Group mt="sm">
+          <Group mt="sm" justify="space-between">
             <ReactionBar goats={p.goats} goated={p.goated} comments={p.replies.length} onGoat={() => react.mutate()} />
+            <Tooltip label={p.following ? t('Stop getting notified of new replies') : t('Get notified of new replies')}>
+              <Button
+                size="xs"
+                variant={p.following ? 'light' : 'default'}
+                leftSection={p.following ? <IconBellRinging size={14} /> : <IconBell size={14} />}
+                onClick={() => follow.mutate(!p.following)}
+                loading={follow.isPending}
+              >
+                {p.following ? t('Following') : t('Follow')}
+              </Button>
+            </Tooltip>
           </Group>
         </div>
       </Group>

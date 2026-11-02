@@ -1,4 +1,4 @@
-import { and, count, eq, inArray, isNull, lt } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { addDays, atTime, CURRENT_TERM, TERMS, ymd } from '@shared/dates';
 import { GOAT_OPTIONS, type GoatConfig, type GoatPart } from '@shared/goat';
 import { type Message, render } from '@shared/i18n';
@@ -130,6 +130,7 @@ export function seedDemoData(db: DB) {
     const passwordHash = hash(DEMO_PASSWORD);
     if (fresh) seedFirstClassmates(db, passwordHash);
     seedSections(db, passwordHash);
+    followSeededThreads(db);
   }
   db.insert(appState)
     .values({ key: SEED_KEY, value: SEED_VERSION })
@@ -340,6 +341,14 @@ export function quietClassmates(): ClassmateSeed[] {
     quiet.push({ key: `quiet-${quiet.length}`, name, pronouns: rand() < 0.6 ? pick(PRONOUNS.slice(0, 3)) : '', faculty, gradYear: 2027 + Math.floor(rand() * 4), track });
   }
   return quiet;
+}
+
+// S4: classmates follow the threads they started or replied in, as they would in the app.
+function followSeededThreads(db: DB) {
+  db.run(sql`
+    insert or ignore into post_follows (post_id, user_id, following)
+    select id, author_id, 1 from posts where deleted_at is null
+    union select post_id, author_id, 1 from replies`);
 }
 
 // Version 2 of the demo seeded the sign-in accounts' plans without saying which graded item
