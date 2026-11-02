@@ -54,10 +54,10 @@ sections of a course. The demo has **Daniel Ouellet**, a made-up professor teach
 | Make announcements | New post → Announcement | A note from a professor to the whole section notifies everyone |
 | Correct class deadlines | Calendar | They can edit or remove a class deadline a student added, not private ones |
 
-What stays private: **students' marks and private posts**. Professors don't see them unless a student picks them as
-a post's audience, and only they and classmates who've posted are visible, as for anyone (S1). Group chat links stay
-editable only by whoever added them, as S2.5 requires. Planner, Calculator, Study Mode, the course record and the
-degree plan are hidden for professors.
+What stays private: **students' marks**, which professors never see, and **private posts**, which they see only if a
+student picks them as the audience. There's no class list for them either: students appear once they post or reply,
+as they do for each other (S1). Group chat links stay editable only by whoever added them, as S2.5 requires. Planner,
+Calculator, Study Mode, the course record and the degree plan are hidden for professors.
 
 **Limits:** nothing checks that someone is really a professor, since there's no mail server to verify a `@mcgill.ca`
 address and no McGill login, so a real deployment needs one of those first. A handout lives in the browser that
