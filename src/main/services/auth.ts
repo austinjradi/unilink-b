@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises';
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { GOAT_OPTIONS, type GoatPart, isGoatConfig } from '@shared/goat';
@@ -21,6 +22,7 @@ import {
 } from '../db/schema';
 import { AppError, type AuthedContext, type Context, nonEmpty, procedure, publicProcedure } from '../rpc/core';
 import { formerStudentId } from './access';
+import { collectMyData } from './myData';
 import { deleteUserFiles } from './planner';
 import { leaveClassSessions } from './studySessions';
 
@@ -252,6 +254,18 @@ export const profileRouter = {
   ),
 
   // G4.7: cascades remove the rest (enrollments, marks, plans, to-dos, notifications…).
+  // G4: a copy of everything UniLink keeps about you, as JSON, before (or instead of) deleting it.
+  exportData: procedure(z.void(), async (_input, ctx) => {
+    const target = await ctx.platform.chooseSaveLocation({
+      title: 'Download my data',
+      defaultPath: 'unilink-my-data.json',
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (!target) return null;
+    await writeFile(target, JSON.stringify(collectMyData(ctx.db, ctx.userId), null, 2), 'utf8');
+    return { path: target };
+  }),
+
   deleteAccount: procedure(z.object({ password: z.string(), keepPosts: z.boolean() }), async ({ password, keepPosts }, ctx) => {
     await requirePassword(ctx.db, ctx.userId, password);
     await deleteUserFiles(ctx.db, ctx.userId);

@@ -17,7 +17,7 @@ import {
   TextInput,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { IconAlertTriangle, IconEye, IconMail } from '@tabler/icons-react';
+import { IconAlertTriangle, IconDownload, IconEye, IconMail } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { FACULTIES, passwordProblems, PRONOUNS } from '@shared/validation';
 import { SectionCard } from '../components/ui';
@@ -29,12 +29,24 @@ import { t } from '../lib/i18n';
 // G4 account settings and G3 notification settings, shown as Settings tabs.
 
 export function PrivacyPanel() {
+  const download = useAction(() => rpc.profile.exportData(), { success: (r) => (r ? t('Saved a copy of your data.') : '') });
   return (
-    <SectionCard title={t('What classmates see')}>
-      <Alert variant="light" icon={<IconEye size={18} />}>
-        {t("Your name, McGill email, pronouns, faculty and goat are shown to classmates only once you post or reply on a discussion board. Joining a study session doesn't reveal you: only the other people going see who's there. Group chat links you share show your name. There's no member list for your classes. Your grades, notes, course record and planner are private to you.")}
-      </Alert>
-    </SectionCard>
+    <Stack gap="lg">
+      <SectionCard title={t('What classmates see')}>
+        <Alert variant="light" icon={<IconEye size={18} />}>
+          {t("Your name, McGill email, pronouns, faculty and goat are shown to classmates only once you post or reply on a discussion board. Joining a study session doesn't reveal you: only the other people going see who's there. Group chat links you share show your name. There's no member list for your classes. Your grades, notes, course record and planner are private to you.")}
+        </Alert>
+      </SectionCard>
+      {/* G4: alongside deleting your account and data (Settings → Account). */}
+      <SectionCard title={t('Your data')}>
+        <Text size="sm" c="dimmed" mb="sm">
+          {t('Download a copy of everything UniLink keeps about you: your profile, classes, course record, marks, notes, plans, to-dos, posts, replies, links and study sessions.')}
+        </Text>
+        <Button variant="default" w="fit-content" leftSection={<IconDownload size={16} />} onClick={() => download.mutate()} loading={download.isPending}>
+          {t('Download my data')}
+        </Button>
+      </SectionCard>
+    </Stack>
   );
 }
 

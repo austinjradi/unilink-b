@@ -156,6 +156,25 @@ describe('G4 accounts', () => {
     expect(await api.notifications.outbox()).toEqual([]); // nothing was emailed
   });
 
+  it('downloads a copy of your data, without passwords', async () => {
+    const {
+      classId,
+      people: [maya],
+    } = await classmates('Maya');
+    await maya.api.board.create({ classId, kind: 'question', topic: 'Exams', title: 'Final format?', body: 'Anyone know?', visibility: 'class', audienceEmails: [] });
+    await maya.api.todos.add({ title: 'Print notes', dueDate: null, classId: null });
+    const file = join(tmpdir(), `unilink-data-${maya.user.id}.json`);
+    maya.ctx.platform.chooseSaveLocation = async () => file;
+    await maya.api.profile.exportData();
+    const text = await readFile(file, 'utf8');
+    const data = JSON.parse(text);
+    expect(data.profile.email).toBe(maya.email);
+    expect(data.classes).toMatchObject([{ class: 'COMP 251-001' }]);
+    expect(data.posts).toMatchObject([{ class: 'COMP 251-001', title: 'Final format?' }]);
+    expect(data.todos).toMatchObject([{ title: 'Print notes' }]);
+    expect(text).not.toContain('scrypt');
+  });
+
   it('deletes the account, optionally leaving answers up without a name', async () => {
     const { classId, people } = await classmates('Maya', 'Leo', 'Ana');
     const [maya, leo, ana] = people;
