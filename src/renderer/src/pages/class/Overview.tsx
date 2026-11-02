@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { ActionIcon, Box, Button, Grid, Group, Modal, Select, Stack, Text, Textarea, TextInput, UnstyledButton } from '@mantine/core';
+import { ActionIcon, Box, Button, Grid, Group, Modal, Select, Stack, Text, Textarea, TextInput, UnstyledButton, CopyButton, Tooltip } from '@mantine/core';
 import { TimeInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { modals } from '@mantine/modals';
-import { IconFileImport, IconPlus, IconTrash, IconUsers, IconPaperclip } from '@tabler/icons-react';
+import { IconFileImport, IconPlus, IconTrash, IconUsers, IconPaperclip, IconLink } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
 import dayjs from 'dayjs';
@@ -358,6 +358,17 @@ function MembershipCard({ cls }: { cls: Out<typeof rpc.classes.get> }) {
         <Empty icon={<IconUsers size={22} />}>{t('Nobody has posted yet.')}</Empty>
       )}
       <Group>
+        {cls.teaching && (
+          <CopyButton value={`${window.location.href.split('#')[0]}#/classes/${cls.id}`}>
+            {({ copied, copy }) => (
+              <Tooltip label={t('Put it on your syllabus: it opens this section, with a button to join.')}>
+                <Button variant="default" leftSection={<IconLink size={16} />} onClick={copy}>
+                  {copied ? t('Copied') : t('Copy a link for students')}
+                </Button>
+              </Tooltip>
+            )}
+          </CopyButton>
+        )}
         <Button variant="light" color="red" onClick={confirmLeave}>
           {cls.teaching ? t('Stop teaching') : t('Leave class')}
         </Button>

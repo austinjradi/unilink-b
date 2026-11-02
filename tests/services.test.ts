@@ -1251,8 +1251,10 @@ describe('Professors', () => {
 
   it('tags what a professor shares', async () => {
     const { classId, prof, maya } = await taught();
-    await prof.api.links.add({ classId, url: 'https://discord.gg/official251', label: 'Official', purpose: 'course' });
-    expect((await maya.api.links.list({ classId })).map((l) => [l.ownerName, l.ownerRole])).toEqual([['Ouellet', 'professor']]);
+    await maya.api.links.add({ classId, url: 'https://discord.gg/ourown251', label: 'Ours', purpose: 'course' });
+    await prof.api.links.add({ classId, url: 'https://discord.gg/official251', label: 'Official', purpose: 'other' });
+    // First in the list, even though it was added later and sorts later by purpose.
+    expect((await maya.api.links.list({ classId })).map((l) => [l.ownerName, l.ownerRole])).toEqual([['Ouellet', 'professor'], ['Maya', 'student']]);
     await prof.api.studySessions.create({ classId, weeks: 2, ...session({ title: 'Office hours', tag: 'Office hours', startsAt: new Date(2026, 9, 6, 14), endsAt: new Date(2026, 9, 6, 15) }) });
     expect((await maya.api.studySessions.list({ classId })).map((s) => [s.title, s.hostIsProfessor, s.seriesId != null])).toEqual([['Office hours', true, true], ['Office hours', true, true]]);
   });

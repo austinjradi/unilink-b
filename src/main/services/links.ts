@@ -107,7 +107,8 @@ export const linksRouter = {
       .from(chatLinks)
       .innerJoin(users, eq(chatLinks.ownerId, users.id))
       .where(eq(chatLinks.classId, classId))
-      .orderBy(chatLinks.purpose, chatLinks.createdAt)
+      // What the professor shared comes first: it's the one most people are looking for.
+      .orderBy(sql`${users.role} = 'professor' desc`, chatLinks.purpose, chatLinks.createdAt)
       .all()
       .map(({ lastWorked, ...l }) => ({
         ...l,
