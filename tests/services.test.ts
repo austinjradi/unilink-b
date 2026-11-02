@@ -1337,6 +1337,48 @@ describe('Professors', () => {
     return { classId, prof, maya: people[0], leo: people[1] };
   }
 
+  it('holds an assignment back until its time, telling nobody until then', async () => {
+    const { classId, prof, maya, leo } = await taught();
+    const base = { classId, title: 'Assignment 4', dueAt: new Date(2026, 9, 20, 23, 59), notes: '', weight: null, attachmentPath: null };
+    const releaseAt = new Date(2026, 9, 8, 9);
+    // Clock: 5 October.
+    await expectCode(prof.api.assignments.post({ ...base, releaseAt: new Date(2026, 8, 1) }), 'BAD_INPUT');
+    await expectCode(prof.api.assignments.post({ ...base, releaseAt: new Date(2026, 9, 21) }), 'BAD_INPUT');
+    const { id } = await prof.api.assignments.post({ ...base, releaseAt });
+
+    // Nothing for students, however they look.
+    expect(await maya.api.assignments.list({ classId })).toEqual([]);
+    expect(await maya.api.calendar.deadlines()).toEqual([]);
+    expect(await maya.api.search.everything({ query: 'Assignment 4' })).toEqual([]);
+    expect(await titles(maya)).toEqual([]);
+    await expectCode(maya.api.assignments.openFile({ id }), 'NOT_FOUND');
+    expect(await maya.api.assignments.handout({ deadlineId: id })).toBeNull();
+    await expectCode(maya.api.planner.create({ title: 'Peek', classId, dueAt: base.dueAt, notes: '', tasks: [{ title: 'One', minutes: 30 }], attachmentPath: null, deadlineId: id }), 'NOT_FOUND');
+
+    // Its professor sees it, and changing it still tells nobody.
+    expect(await prof.api.assignments.list({ classId })).toMatchObject([{ id, releaseAt }]);
+    await prof.api.assignments.update({ id, title: 'Assignment 4', dueAt: new Date(2026, 9, 22, 23, 59), notes: '', releaseAt, attachmentPath: null });
+    expect(await titles(leo)).toEqual([]);
+
+    // Its time comes: once, whoever has the app open.
+    clock = new Date(2026, 9, 8, 9, 1);
+    sweepReminders({ ...maya.ctx, userId: maya.user.id });
+    sweepReminders({ ...leo.ctx, userId: leo.user.id });
+    expect(await leo.api.assignments.list({ classId })).toMatchObject([{ id, releaseAt: null }]);
+    expect(await titles(maya)).toEqual(['New assignment: Assignment 4']);
+    expect(await titles(leo)).toEqual(['New assignment: Assignment 4']);
+
+    // Sent out early by hand.
+    const second = await prof.api.assignments.post({ ...base, title: 'Assignment 5', releaseAt: new Date(2026, 9, 15, 9) });
+    expect(await titles(leo)).toHaveLength(1);
+    await prof.api.assignments.update({ id: second.id, title: 'Assignment 5', dueAt: base.dueAt, notes: '', releaseAt: null, attachmentPath: null });
+    expect((await titles(leo))[0]).toBe('New assignment: Assignment 5');
+
+    // What's out stays out.
+    await prof.api.assignments.update({ id, title: 'Assignment 4', dueAt: new Date(2026, 9, 22, 23, 59), notes: '', releaseAt: new Date(2026, 9, 15, 9), attachmentPath: null });
+    expect((await leo.api.assignments.list({ classId })).map((a) => a.id)).toContain(id);
+  });
+
   const question = { kind: 'question' as const, topic: 'Exams', title: 'Is it open book?', body: 'Anyone know?', visibility: 'class' as const, audienceEmails: [] };
 
   it('signs professors up with a @mcgill.ca email, and they can teach several sections', async () => {

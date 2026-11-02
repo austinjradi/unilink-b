@@ -230,6 +230,7 @@ function checkSource(db: DB, userId: number, { deadlineId, assessmentId }: { dea
   if (deadlineId) {
     const d = db.select().from(deadlines).where(eq(deadlines.id, deadlineId)).get() ?? notFound('deadline');
     if (d.classId ? !isMember(db, userId, d.classId) : d.userId !== userId) notFound('deadline');
+    if (d.releaseAt) notFound('deadline');
   }
   if (assessmentId) {
     const a = db.select().from(assessments).where(eq(assessments.id, assessmentId)).get() ?? notFound('assessment');

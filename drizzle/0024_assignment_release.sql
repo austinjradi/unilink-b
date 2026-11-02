@@ -1,0 +1,1 @@
+ALTER TABLE `deadlines` ADD `release_at` integer;

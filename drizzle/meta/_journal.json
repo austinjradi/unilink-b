@@ -169,6 +169,13 @@
       "when": 1793617087086,
       "tag": "0023_weekly_todos",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1793618256812,
+      "tag": "0024_assignment_release",
+      "breakpoints": true
     }
   ]
 }

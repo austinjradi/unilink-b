@@ -9,6 +9,7 @@ import {
   appState,
   classes,
   courses,
+  deadlines,
   enrollments,
   notifications,
   outbox,
@@ -20,7 +21,7 @@ import {
   users,
 } from '../db/schema';
 import { type AuthedContext, idSchema, procedure } from '../rpc/core';
-import { classLabel, isProfessor } from './access';
+import { classLabel, isProfessor, studentsOf } from './access';
 import { visibleDeadlines } from './calendar';
 import { gradedItems } from './courses';
 
@@ -179,6 +180,28 @@ function keyDateReminders(ctx: AuthedContext, locale: Locale) {
   }
 }
 
+// Assignments whose time has come go out, and the section hears about them. With a server this would
+// be a scheduled job; here it runs with whoever has the app open.
+function releaseAssignments(ctx: AuthedContext) {
+  const { db } = ctx;
+  const now = ctx.now();
+  for (const d of db.select().from(deadlines).where(lte(deadlines.releaseAt, now)).all()) {
+    db.update(deadlines).set({ releaseAt: null }).where(eq(deadlines.id, d.id)).run();
+    if (d.classId != null) tellOfNewAssignment(db, d.classId, d.title, d.dueAt);
+  }
+}
+
+export function tellOfNewAssignment(db: DB, classId: number, title: string, dueAt: Date) {
+  for (const student of studentsOf(db, classId)) {
+    notify(db, student.id, {
+      type: 'assignment-posted',
+      title: m('New assignment: {{title}}', { title }),
+      body: m('{{class}} · due {{when}}', { class: classLabel(db, classId) ?? '', when: { date: dueAt.getTime() } }),
+      link: `/classes/${classId}/assignments`,
+    });
+  }
+}
+
 // Everything is saved only in this browser, so a backup is the only copy anyone has. A month after
 // the first visit or the last backup, once a month.
 const FIRST_SEEN_KEY = 'first_seen';
@@ -207,6 +230,7 @@ function backupReminder(ctx: AuthedContext) {
 // Time-based reminders for the signed-in user; run every tick by the main process.
 export function sweepReminders(ctx: AuthedContext) {
   const { db, userId } = ctx;
+  releaseAssignments(ctx);
   const now = ctx.now();
   const in24h = new Date(now.getTime() + 24 * 3_600_000);
   const in30m = new Date(now.getTime() + 30 * 60_000);

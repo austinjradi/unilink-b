@@ -58,6 +58,9 @@ function AssignmentCard({ assignment: a, teaching, onEdit }: { assignment: Assig
   const open = useAction(() => rpc.assignments.openFile({ id: a.id }));
   const setDone = useAction((done: boolean) => rpc.calendar.setDeadlineDone({ id: a.id, done }));
   const remove = useAction(() => rpc.assignments.remove({ id: a.id }), { success: 'Assignment removed' });
+  const sendNow = useAction(() => rpc.assignments.update({ id: a.id, title: a.title, dueAt: a.dueAt, notes: a.notes ?? '', releaseAt: null, attachmentPath: null }), {
+    success: 'Posted. Everyone in the section has been notified.',
+  });
   const past = a.dueAt < new Date();
 
   const confirmRemove = () =>
@@ -81,6 +84,7 @@ function AssignmentCard({ assignment: a, teaching, onEdit }: { assignment: Assig
               {t('Due {{when}}', { when: fmtDateTime(a.dueAt) })} · {fromNow(a.dueAt)}
             </Text>
             {past && <Tag color="gray">{t('Past due')}</Tag>}
+            {a.releaseAt && <Tag color="grape">{t('Goes out {{when}}', { when: fmtDateTime(a.releaseAt) })}</Tag>}
           </Group>
         </div>
         {teaching ? (
@@ -114,7 +118,12 @@ function AssignmentCard({ assignment: a, teaching, onEdit }: { assignment: Assig
             {a.planned ? t('See my plan') : t('Plan it')}
           </Button>
         )}
-        {a.progress && (
+        {teaching && a.releaseAt && (
+          <Button size="xs" variant="light" onClick={() => sendNow.mutate()} loading={sendNow.isPending}>
+            {t('Send it out now')}
+          </Button>
+        )}
+        {a.progress && !a.releaseAt && (
           <Text size="sm" c="dimmed">
             {t('{{done}} of {{count}} students checked it off', { done: a.progress.done, count: a.progress.total })}
           </Text>
@@ -136,6 +145,7 @@ function AssignmentForm({ classId, existing, onDone }: { classId: number; existi
       dueAt: (existing?.dueAt ?? dayjs().add(14, 'day').hour(23).minute(59).second(0).toDate()) as Date | string | null,
       notes: existing?.notes ?? '',
       weight: '' as number | string,
+      releaseAt: (existing?.releaseAt ?? null) as Date | string | null,
     },
     validate: {
       title: (v) => (v.trim() ? null : t('Name the assignment')),
@@ -145,7 +155,7 @@ function AssignmentForm({ classId, existing, onDone }: { classId: number; existi
   const choose = useAction(() => rpc.planner.chooseAttachment(), { onSuccess: (picked) => picked && setFile(picked) });
   const save = useAction(
     async (v: typeof form.values) => {
-      const fields = { title: v.title, dueAt: toDate(v.dueAt)!, notes: v.notes, attachmentPath: file?.path ?? null };
+      const fields = { title: v.title, dueAt: toDate(v.dueAt)!, notes: v.notes, releaseAt: toDate(v.releaseAt), attachmentPath: file?.path ?? null };
       if (existing) {
         await rpc.assignments.update({ id: existing.id, ...fields });
         return [];
@@ -163,7 +173,7 @@ function AssignmentForm({ classId, existing, onDone }: { classId: number; existi
       success: (failed) =>
         existing
           ? t('Assignment saved. Students are told if the due date moved.')
-          : [t('Posted. Everyone in the section has been notified.'), failed.length ? t('Not added: {{titles}}', { titles: failed.join(', ') }) : ''].filter(Boolean).join(' '),
+          : [toDate(form.values.releaseAt) ? t('Scheduled. Students see nothing until then.') : t('Posted. Everyone in the section has been notified.'), failed.length ? t('Not added: {{titles}}', { titles: failed.join(', ') }) : ''].filter(Boolean).join(' '),
       onSuccess: onDone,
     },
   );
@@ -188,6 +198,17 @@ function AssignmentForm({ classId, existing, onDone }: { classId: number; existi
           )}
         </Group>
         <Textarea label={t('Instructions')} autosize minRows={3} {...form.getInputProps('notes')} />
+        {(!existing || existing.releaseAt) && (
+          <DateTimePicker
+            label={t('Send it out later')}
+            description={t('Leave this empty to send it out now. Until then, students see nothing and get no notification.')}
+            placeholder={t('Now')}
+            valueFormat="ddd D MMM YYYY, HH:mm"
+            minDate={new Date()}
+            clearable
+            {...form.getInputProps('releaseAt')}
+          />
+        )}
         {!existing && others.length > 0 && (
           <MultiSelect label={t('Also post to')} placeholder={t('Optional')} data={others.map((c) => ({ value: String(c.id), label: c.code }))} value={also} onChange={setAlso} clearable />
         )}

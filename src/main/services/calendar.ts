@@ -20,7 +20,7 @@ import {
   users,
 } from '../db/schema';
 import { AppError, idSchema, nonEmpty, procedure } from '../rpc/core';
-import { classLabels, FORMER_STUDENT_EMAIL, notFound, requireMember, teaches } from './access';
+import { classLabels, FORMER_STUDENT_EMAIL, isProfessor, notFound, requireMember, teaches } from './access';
 import { gradedItems } from './courses';
 
 // A3: one calendar for class times, deadlines, exams, study sessions and planned work.
@@ -107,6 +107,8 @@ export function busyChecker(db: DB, userId: number) {
 // Your private deadlines plus the shared deadlines of every class you're in, with whether
 // you've checked each one off.
 export function visibleDeadlines(db: DB, userId: number, from?: Date, to?: Date) {
+  // Whoever teaches a section sees what's waiting to go out; nobody else does until it has.
+  const teaching = isProfessor(db, userId);
   return db
     .select({
       deadline: deadlines,
@@ -120,6 +122,7 @@ export function visibleDeadlines(db: DB, userId: number, from?: Date, to?: Date)
     .where(
       and(
         or(and(isNull(deadlines.classId), eq(deadlines.userId, userId)), inArray(deadlines.classId, myClassIds(db, userId))),
+        teaching ? undefined : isNull(deadlines.releaseAt),
         from ? gte(deadlines.dueAt, from) : undefined,
         to ? lt(deadlines.dueAt, to) : undefined,
       ),

@@ -298,6 +298,8 @@ export const deadlines = sqliteTable(
     notes: text('notes').notNull().default(''),
     // An assignment posted by the section's professor, with its handout if there is one.
     official: integer('official', { mode: 'boolean' }).notNull().default(false),
+    // A professor's assignment that hasn't gone out yet; students see nothing until then.
+    releaseAt: timestamp('release_at'),
     attachmentName: text('attachment_name'),
     attachmentPath: text('attachment_path'),
     createdAt: createdAt(),

@@ -57,6 +57,7 @@ posted assignment, a pinned announcement and a reported thread waiting in COMP 2
 | Correct class deadlines | Calendar | They can edit or remove a class deadline a student added, not private ones |
 | See how an assignment is going | Class page → Assignments | How many students checked it off, as a count only, and only in sections of 5 or more so it can't point at anyone |
 | Hold office hours | Study Sessions | A session with the Office hours type, weekly if they like. It and any group chat link they add are tagged as theirs |
+| Send an assignment out later | Assignments | Written now, it stays hidden from students, with no notification, until the time set or **Send it out now** |
 | Teach several sections at once | Assignments, New post, Grading scheme | An assignment or announcement can **also post to** their other sections, and a scheme can be **copied to a section** that has none (never over one with marks) |
 
 What stays private: **students' marks**, which professors never see, and **private posts**, which they see only if a
@@ -315,7 +316,7 @@ the next seven days (nothing if nothing is due; it can be turned off for desktop
 | Professors: who can change what, assignments, moderation | `services/access.ts` (`canEditShared`, `requireTeacher`), `services/assignments.ts`, `services/board.ts` |
 
 The database changes are migrations `0004_version_b` (new tables and columns), `0005_version_b_cleanup`
-(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows`, `0010_sign_in_limits`, `0011_second_grading_scheme`, `0012_weekly_sessions`, `0013_professors`, `0014_board_images`, `0015_mute_replies`, `0016_days_off`, `0017_post_reports`, `0018_course_outline`, `0019_cgpa_goal`, `0020_focus_on_task`, `0021_time_polls`, `0022_several_marks` and `0023_weekly_todos`.
+(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows`, `0010_sign_in_limits`, `0011_second_grading_scheme`, `0012_weekly_sessions`, `0013_professors`, `0014_board_images`, `0015_mute_replies`, `0016_days_off`, `0017_post_reports`, `0018_course_outline`, `0019_cgpa_goal`, `0020_focus_on_task`, `0021_time_polls`, `0022_several_marks`, `0023_weekly_todos` and `0024_assignment_release`.
 
 ## Not built yet
 

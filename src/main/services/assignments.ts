@@ -6,7 +6,7 @@ import { AppError, type AuthedContext, idSchema, nonEmpty, procedure } from '../
 import { classLabel, notFound, requireMember, requireTeacher, studentsOf, teaches } from './access';
 import { visibleDeadlines } from './calendar';
 import { addComponent } from './courses';
-import { m, type NotifyInput, notify, raw } from './notifications';
+import { m, type NotifyInput, notify, raw, tellOfNewAssignment } from './notifications';
 import { storeAttachment } from './planner';
 
 // Professors post assignments to a section. Each one is a class deadline with instructions
@@ -16,7 +16,15 @@ const fields = {
   title: nonEmpty('Title', 200),
   dueAt: z.date(),
   notes: z.string().trim().max(5000),
+  // When it goes out to students, if not right away.
+  releaseAt: z.date().nullable().default(null),
 };
+
+function checkRelease(ctx: AuthedContext, releaseAt: Date | null, dueAt: Date) {
+  if (!releaseAt) return;
+  if (releaseAt <= ctx.now()) throw new AppError('Pick a time in the future to send it out.');
+  if (releaseAt >= dueAt) throw new AppError('It has to go out before it’s due.');
+}
 
 // Below this many students, a count could point at someone, so professors don't see one.
 const MIN_STUDENTS_FOR_COUNT = 5;
@@ -72,6 +80,7 @@ export const assignmentsRouter = {
     async ({ classId, weight, attachmentPath, ...input }, ctx) => {
       requireTeacher(ctx.db, ctx.userId, classId);
       if (input.dueAt <= ctx.now()) throw new AppError('Pick a due date in the future');
+      checkRelease(ctx, input.releaseAt, input.dueAt);
       if (weight != null) addComponent(ctx, classId, { name: input.title, weight, altWeight: null, dueAt: null });
       const attachment = attachmentPath ? await storeAttachment(ctx, attachmentPath) : {};
       const row = ctx.db
@@ -79,12 +88,7 @@ export const assignmentsRouter = {
         .values({ ...input, ...attachment, classId, kind: 'assignment', official: true, userId: ctx.userId })
         .returning({ id: deadlines.id })
         .get();
-      tellStudents(ctx, classId, {
-        type: 'assignment-posted',
-        title: m('New assignment: {{title}}', { title: input.title }),
-        body: m('{{class}} · due {{when}}', { class: classLabel(ctx.db, classId) ?? '', when: { date: input.dueAt.getTime() } }),
-        link: `/classes/${classId}/assignments`,
-      });
+      if (!input.releaseAt) tellOfNewAssignment(ctx.db, classId, input.title, input.dueAt);
       return row;
     },
   ),
@@ -94,9 +98,17 @@ export const assignmentsRouter = {
   update: procedure(z.object({ id: idSchema, ...fields, attachmentPath: z.string().nullable() }), async ({ id, attachmentPath, ...input }, ctx) => {
     const row = posted(ctx, id);
     requireTeacher(ctx.db, ctx.userId, row.classId);
+    // Only what hasn't gone out can be scheduled. Students don't hear about changes to it, and they
+    // hear it's new when it goes out.
+    const waiting = row.releaseAt != null;
+    checkRelease(ctx, waiting ? input.releaseAt : null, input.dueAt);
     const attachment = attachmentPath ? await storeAttachment(ctx, attachmentPath) : {};
     if (attachmentPath && row.attachmentPath) await rm(row.attachmentPath, { force: true });
-    ctx.db.update(deadlines).set({ ...input, ...attachment }).where(eq(deadlines.id, id)).run();
+    ctx.db.update(deadlines).set({ ...input, ...attachment, releaseAt: waiting ? input.releaseAt : null }).where(eq(deadlines.id, id)).run();
+    if (waiting) {
+      if (!input.releaseAt) tellOfNewAssignment(ctx.db, row.classId, input.title, input.dueAt);
+      return;
+    }
     // A new handout matters as much as a new date: someone may have started on the old one.
     if (attachmentPath) {
       tellStudents(ctx, row.classId, {
@@ -126,6 +138,7 @@ export const assignmentsRouter = {
   openFile: procedure(z.object({ id: idSchema }), async ({ id }, ctx) => {
     const row = posted(ctx, id);
     requireMember(ctx.db, ctx.userId, row.classId);
+    if (row.releaseAt && !teaches(ctx.db, ctx.userId, row.classId)) notFound('assignment');
     if (!row.attachmentPath) notFound('handout');
     await ctx.platform.openPath(row.attachmentPath);
   }),
@@ -135,6 +148,7 @@ export const assignmentsRouter = {
     const row = ctx.db.select().from(deadlines).where(eq(deadlines.id, deadlineId)).get();
     if (!row?.official || row.classId == null || !row.attachmentPath) return null;
     requireMember(ctx.db, ctx.userId, row.classId);
+    if (row.releaseAt && !teaches(ctx.db, ctx.userId, row.classId)) return null;
     return { path: row.attachmentPath, name: row.attachmentName ?? 'handout' };
   }),
 };
