@@ -11,6 +11,7 @@ import { type FocusWindow, studyModeStatus } from '@shared/studyMode';
 import { parseSyllabus } from '@shared/syllabus';
 import { findParts, minutesForParts } from '@shared/assignment';
 import { clashes, groupMeetings } from '@shared/meetings';
+import { keywords, similarity } from '@shared/similar';
 import { parseTranscript } from '@shared/transcript';
 
 describe('grades (A4)', () => {
@@ -428,5 +429,24 @@ describe('class time clashes (S1)', () => {
       { weekdays: [5], startTime: '13:35', endTime: '14:25' },
       { weekdays: [0], startTime: '9:00', endTime: '10:00' },
     ]);
+  });
+});
+
+describe('similar posts (S4)', () => {
+  const query = (title: string) => keywords(title);
+
+  it('reads keywords without stopwords, accents or plurals', () => {
+    expect([...keywords('Can we assume the edge weights are distinct? (A2 Q3)')]).toEqual(['assume', 'edge', 'weight', 'distinct', 'a2', 'q3']);
+    expect([...keywords('Est-ce que l’examen est cumulatif?')]).toEqual(['examen', 'cumulatif']);
+  });
+
+  it('matches posts that cover most of a new title', () => {
+    const q = query('A2 Q3 distinct edge weights?');
+    expect(similarity(q, 'A2 Q3: can we assume edge weights are distinct?', '')).toBe(1);
+    // Words only in the body count half.
+    expect(similarity(q, 'Question about A2', 'For Q3, are the edge weights distinct?')).toBe(0.6);
+    expect(similarity(q, 'Midterm room?', 'Which room is the midterm in?')).toBe(0);
+    // A single shared word isn't enough.
+    expect(similarity(query('midterm room'), 'Midterm grades out?', '')).toBe(0);
   });
 });

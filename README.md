@@ -218,6 +218,7 @@ both versions.
 | S3.5 | Host leaves; session changes | Hosts can't leave, only cancel. Edits don't notify | Leaving **hands the session to the next person going** (cancelled only if nobody's left). Moving the time or place **notifies everyone in it** |
 | S4 | Post types and topics | Free-form "type" with suggestions (Assignment, Midterm, Just yapping…) | Posts are a **question or a note**, under a **fixed topic list** (Lectures, Assignments, Exams, Labs and tutorials, Logistics, Off-topic) |
 | S4 | Replies | Threaded, one level of replies to replies | **One flat list.** Whoever asked can **accept an answer**: it's pinned first, the question shows as answered, and the feed can filter to unanswered questions |
+| S4 | Repeated questions | Nothing | While you write a title, the composer lists up to three **similar posts** in the class you can see (answered ones marked), so you can open the existing thread instead |
 | S4 | Who hears about new replies? | The post's author | **Everyone following the thread**: posting or replying follows it, anyone who can see it can follow or unfollow (unfollowing sticks), and the feed can show only followed threads |
 | S4 | Deleting a post | Deletes its replies too | A post **with replies is blanked** and the thread stays; one without replies is removed |
 | A3 | Term key dates and final exams? | Not included | **Built in** (`shared/keyDates.ts`): McGill's 2026–27 key dates (classes start and end, add/drop, withdrawal with and without refund, reading breaks, exam period) on everyone's calendar, deadlines among them on Home; a **sample final exam schedule** per course, with your own finals on your calendar and each class page |
@@ -248,7 +249,7 @@ hidden links and failed sign-ins instead of invitations and individual reports; 
 | Sections, wildcard search, classmate visibility, time clashes | `db/catalogue.ts` (`sectionsFor`), `services/classes.ts`, `shared/courseQuery.ts`, `shared/meetings.ts` |
 | Link identity, purposes, hiding rule | `shared/links.ts`, `services/links.ts` |
 | Invite codes, waitlist, hand-off | `services/studySessions.ts` |
-| Questions, accepted answers, topics, deleted posts, following threads | `services/board.ts`, `components/Feed.tsx` |
+| Questions, accepted answers, topics, deleted posts, following threads, similar posts | `services/board.ts`, `components/Feed.tsx`, `shared/similar.ts` |
 | Shared section info and private marks | `services/courses.ts`, `services/calendar.ts` (`visibleDeadlines`), `db/schema.ts` (`class_details`, `assessment_scores`, `deadline_done`) |
 | Unlisted weight, a second scheme | `shared/grades.ts`, `services/courses.ts` (`setSecondScheme`) |
 | Passphrases, recovery codes, sign-in pauses, deletion | `shared/validation.ts`, `services/auth.ts`, `services/access.ts` (`formerStudentId`) |

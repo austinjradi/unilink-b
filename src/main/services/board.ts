@@ -1,6 +1,7 @@
 import { and, asc, count, desc, eq, gte, inArray, isNull, like, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { goatFor } from '@shared/goat';
+import { keywords, similarity } from '@shared/similar';
 import type { DB } from '../db/client';
 import { boardVisits, classes, courses, enrollments, postAudience, postFollows, postReactions, posts, replies, replyReactions, users } from '../db/schema';
 import { AppError, idSchema, nonEmpty, procedure } from '../rpc/core';
@@ -364,6 +365,23 @@ export const boardRouter = {
     const key = and(eq(replyReactions.replyId, replyId), eq(replyReactions.userId, ctx.userId));
     if (ctx.db.select().from(replyReactions).where(key).get()) ctx.db.delete(replyReactions).where(key).run();
     else ctx.db.insert(replyReactions).values({ replyId, userId: ctx.userId }).run();
+  }),
+
+  // "Already asked?": up to three posts in the class like the one being written.
+  similar: procedure(z.object({ classId: idSchema, title: z.string().trim().max(200) }), ({ classId, title }, ctx) => {
+    requireMember(ctx.db, ctx.userId, classId);
+    const query = keywords(title);
+    if (query.size < 2) return [];
+    return ctx.db
+      .select({ id: posts.id, title: posts.title, body: posts.body, kind: posts.kind, acceptedReplyId: posts.acceptedReplyId })
+      .from(posts)
+      .where(and(eq(posts.classId, classId), canSee(ctx.userId), isNull(posts.deletedAt)))
+      .all()
+      .map(({ body, ...p }) => ({ ...p, score: similarity(query, p.title, body) }))
+      .filter((p) => p.score > 0)
+      .sort((a, b) => b.score - a.score || b.id - a.id)
+      .slice(0, 3)
+      .map(({ score: _, ...p }) => p);
   }),
 
   // Follow a thread to hear about every new reply, or stop following it.

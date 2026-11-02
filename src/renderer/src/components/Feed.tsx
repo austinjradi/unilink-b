@@ -460,6 +460,10 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
               setComposing(null);
               setOpenPost(postId);
             }}
+            onOpenPost={(postId) => {
+              setComposing(null);
+              setOpenPost(postId);
+            }}
           />
         )}
       </Modal>
@@ -672,11 +676,13 @@ function PostForm({
   topics,
   existing,
   onDone,
+  onOpenPost,
 }: {
   classId: number | null;
   topics: string[];
   existing: PostDetail | null;
   onDone: (postId: number) => void;
+  onOpenPost: (postId: number) => void;
 }) {
   const myClasses = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
   const form = useForm({
@@ -701,6 +707,13 @@ function PostForm({
     queryKey: ['classes', 'classmates', form.values.classId],
     queryFn: () => rpc.classes.classmates({ classId: Number(form.values.classId) }),
     enabled: !!form.values.classId,
+  });
+  // "Already asked?" while writing a new post's title.
+  const [title] = useDebouncedValue(form.values.title, 300);
+  const similar = useQuery({
+    queryKey: ['board', 'similar', form.values.classId, title],
+    queryFn: () => rpc.board.similar({ classId: Number(form.values.classId), title }),
+    enabled: !existing && !!form.values.classId && title.trim().length >= 6,
   });
   const save = useAction(
     async (v: typeof form.values) => {
@@ -745,6 +758,32 @@ function PostForm({
           />
         </Group>
         <TextInput label={t('Title')} data-autofocus {...form.getInputProps('title')} />
+        {!existing && !!similar.data?.length && (
+          <Card padding="sm" mt={-6} style={{ background: 'var(--ul-soft)' }}>
+            <Text size="sm" fw={700} mb={4}>
+              {t('Already asked? Similar posts in this class:')}
+            </Text>
+            <Stack gap={4}>
+              {similar.data.map((p) => (
+                <Group key={p.id} gap={6} wrap="nowrap">
+                  {p.acceptedReplyId ? (
+                    <IconCircleCheck size={14} color="var(--mantine-color-teal-6)" style={{ flexShrink: 0 }} />
+                  ) : (
+                    <IconMessageCircle size={14} style={{ flexShrink: 0 }} />
+                  )}
+                  <Anchor component="button" type="button" size="sm" ta="left" lineClamp={1} onClick={() => onOpenPost(p.id)}>
+                    {p.title}
+                  </Anchor>
+                  {p.acceptedReplyId != null && (
+                    <Text size="xs" c="teal" style={{ flexShrink: 0 }}>
+                      {t('Answered')}
+                    </Text>
+                  )}
+                </Group>
+              ))}
+            </Stack>
+          </Card>
+        )}
         <Textarea label={t('Post')} description={t('Put code between `backticks`.')} autosize minRows={5} {...form.getInputProps('body')} />
         {!existing && (
           <>

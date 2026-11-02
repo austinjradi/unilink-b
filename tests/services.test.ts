@@ -598,6 +598,23 @@ describe('S4 discussion board', () => {
   });
 });
 
+describe('S4 similar posts', () => {
+  it('suggests posts in the class like the one being written, if you can see them', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo', 'Ana');
+    const [maya, leo, ana] = people;
+    const post = (title: string, extra = {}) =>
+      maya.api.board.create({ classId, kind: 'question', topic: 'Exams', title, body: 'Anyone know?', visibility: 'class', audienceEmails: [], ...extra });
+    const { id: open } = await post('Is the midterm cumulative up to graphs?');
+    await post('Midterm cheat sheet allowed?');
+    await post('Is the midterm cumulative? Asking for Ana', { visibility: 'selected', audienceEmails: [ana.email] });
+    const titles = async (s: typeof leo, title: string) => (await s.api.board.similar({ classId, title })).map((p) => p.title);
+    expect(await titles(leo, 'cumulative midterm?')).toEqual(['Is the midterm cumulative up to graphs?']);
+    expect(await titles(ana, 'cumulative midterm?')).toEqual(['Is the midterm cumulative? Asking for Ana', 'Is the midterm cumulative up to graphs?']);
+    expect(await titles(leo, 'midterm')).toEqual([]);
+    expect((await leo.api.board.similar({ classId, title: 'graphs on the midterm' }))[0]).toMatchObject({ id: open, acceptedReplyId: null });
+  });
+});
+
 describe('S4 following threads', () => {
   it('tells everyone following a thread about new replies, until they unfollow', async () => {
     const { classId, people } = await classmates('Maya', 'Leo', 'Ana', 'Sam');
