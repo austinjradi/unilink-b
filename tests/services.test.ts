@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
@@ -48,6 +48,7 @@ function newContext(): Context {
       chooseFile: async () => null,
       chooseSaveLocation: async () => null,
       openPath: async () => {},
+      readText: async (path) => readFile(path, 'utf8'),
       showNotification: (n) => shown.push(n.title),
       systemDndSupported: () => true,
       setSystemDnd: async (on) => {
@@ -707,6 +708,19 @@ describe('ST2 assignment planner', () => {
     const [plan] = await maya.api.planner.list();
     expect(plan.tasks.map((t) => t.scheduledFor)).toEqual(['2026-10-05', '2026-10-05', '2026-10-07']);
     expect(plan.overloaded).toBe(false);
+  });
+
+  it('finds the problems in an attached handout', async () => {
+    const { api, ctx } = await student('Maya');
+    const file = join(tmpdir(), 'unilink-test-handout.txt');
+    await writeFile(file, 'Assignment 2\nQuestion 1 (10 points)\nQuestion 2 (20 points)\n');
+    expect(await api.planner.readParts({ path: file })).toEqual([
+      { title: 'Question 1', points: 10 },
+      { title: 'Question 2', points: 20 },
+    ]);
+    // Files it can't read (a Word document here) aren't an error, just nothing found.
+    ctx.platform.readText = async () => null;
+    expect(await api.planner.readParts({ path: file })).toBeNull();
   });
 });
 

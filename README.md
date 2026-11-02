@@ -28,7 +28,7 @@ It implements the ten in-scope ("green") features from the UniLink requirements 
 | A5  | Course info and grading scheme          | Class page → Overview and Grades                  | `services/courses.ts`                         |
 | G2  | Integrations                            | Integrations page; Calendar → Sync                | `shared/ics.ts`, `db/catalogue.ts`            |
 | G4  | Account sign-up and login               | Sign-in screens; Settings → Account               | `services/auth.ts`, `shared/validation.ts`    |
-| ST2 | Assignment planner                      | Planner; Home                                     | `shared/planner.ts`, `services/planner.ts`    |
+| ST2 | Assignment planner                      | Planner (attach the handout to split it by question); Home | `shared/planner.ts`, `shared/assignment.ts`, `services/planner.ts` |
 
 The yellow features, with what couldn't be fully built:
 
@@ -121,6 +121,7 @@ HTTP, e.g. from a phone on the same network with `npm run dev -- --host`.
 - **Mantine 9** UI components, **TanStack Query** for data fetching, **React Router** (hash routing)
 - **Drizzle ORM** on **SQLite compiled to WebAssembly** (sql.js), with the same SQL migrations in `drizzle/`
 - **IndexedDB** for saving the database file and attachments between visits
+- **pdf.js** reads attached assignment PDFs (loaded only when one is attached)
 - **zod** validates every call; **Vitest** for tests; **@noble/hashes** for scrypt password hashing
 
 ## How it fits together
@@ -228,6 +229,7 @@ both versions.
 | G4.4 | How does password reset work? | 6-digit code by email (shown on screen in the demo), valid 15 minutes | A **recovery code** shown once at sign-up, and replaced with a new one after each reset. No reset emails |
 | G4.7 | What happens to shared things when you delete your account? | Everything you created is deleted | Your data is deleted; you can choose to **leave your posts and replies up without your name** ("Former student"). Class times, deadlines and schemes you added to a section stay with it. Sessions you host pass to the next person going |
 | ST2 | What is "free time"? | One daily study budget (default 120 min) minus other tasks and sessions | **Free minutes per weekday** (default 90 Mon–Thu, 60 Fri, 180 weekends) minus other tasks and sessions you're going to |
+| ST2 | "Upload the file": what's done with it? | Kept with the plan, to open later | Kept, and **read** (PDF or text): its numbered questions or problems are offered as tasks, with time shared out by their points |
 | ST2 | How is work spread? | Evenly over the days before the deadline, 1 buffer day | **As early as possible** (each task on the first day with room), **2 buffer days** by default. Missed tasks move to the next free time |
 | ST2 | "If a deadline moves, the plan adjusts": which deadline? | The plan's own due date, changed by hand | A plan can **start from a class deadline or graded item** and then **follows it**: when a classmate moves the shared date, the plan takes it, re-plans and notifies you. Picking your own date stops following. A plan due the same day as its class deadline is listed once |
 
@@ -247,6 +249,7 @@ invitations and individual reports; study mode follows the section's shared clas
 | Unlisted weight | `shared/grades.ts` |
 | Passphrases, recovery codes, deletion | `shared/validation.ts`, `services/auth.ts`, `services/access.ts` (`formerStudentId`) |
 | Free time per weekday, front-loaded plans | `shared/planner.ts`, `services/planner.ts` |
+| Tasks from the assignment file | `shared/assignment.ts`, `web/platform.ts` (`readText`) |
 | Plans that follow a class deadline | `services/planner.ts` (`followMovedDeadlines`), `services/calendar.ts` (`collect`) |
 
 The database changes are migrations `0004_version_b` (new tables and columns), `0005_version_b_cleanup`

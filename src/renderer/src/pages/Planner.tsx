@@ -30,6 +30,7 @@ import {
   IconChecklist,
   IconDots,
   IconLink,
+  IconListNumbers,
   IconPaperclip,
   IconPencil,
   IconPin,
@@ -37,9 +38,10 @@ import {
   IconRefresh,
   IconTrash,
 } from '@tabler/icons-react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useSearchParams } from 'react-router';
+import { type AssignmentPart, minutesForParts } from '@shared/assignment';
 import { addDays, ymd } from '@shared/dates';
 import { DEFAULT_BUFFER_DAYS, weeklyMinutes } from '@shared/planner';
 import { Empty, Loading, PageHeader } from '../components/ui';
@@ -384,7 +386,22 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
     if (fromReady) startFrom(from);
   }, [fromReady]);
 
-  const choose = useAction(() => rpc.planner.chooseAttachment(), { onSuccess: (file) => file && setAttachment(file) });
+  // Problems found in the attached file, offered as tasks until the student uses or dismisses them.
+  const [found, setFound] = useState<AssignmentPart[] | null>(null);
+  const read = useMutation({ mutationFn: (path: string) => rpc.planner.readParts({ path }), onSuccess: setFound });
+  const choose = useAction(() => rpc.planner.chooseAttachment(), {
+    onSuccess: (file) => {
+      if (!file) return;
+      setAttachment(file);
+      setFound(null);
+      read.mutate(file.path);
+    },
+  });
+  const applyFound = (parts: AssignmentPart[]) => {
+    const minutes = minutesForParts(parts, v.partMinutes);
+    form.setValues({ mode: 'custom', custom: parts.map((p, i) => ({ title: p.title, minutes: minutes[i] })) });
+    setFound(null);
+  };
   const create = useAction(
     () =>
       rpc.planner.create({
@@ -435,6 +452,49 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
         />
 
         <div>
+          <Group gap="xs">
+            <Button variant="default" size="xs" leftSection={<IconPaperclip size={14} />} onClick={() => choose.mutate()}>
+              {attachment ? t('Change file') : t('Attach the assignment file')}
+            </Button>
+            {attachment && (
+              <Text size="sm" c="dimmed">
+                {attachment.name}
+              </Text>
+            )}
+          </Group>
+          {read.isPending && (
+            <Text size="xs" c="dimmed" mt={6}>
+              {t('Looking for problems in the file…')}
+            </Text>
+          )}
+          {found?.length === 0 && (
+            <Text size="xs" c="dimmed" mt={6}>
+              {t('No numbered questions or problems in this file. Split it below.')}
+            </Text>
+          )}
+          {read.data === null && (
+            <Text size="xs" c="dimmed" mt={6}>
+              {t('UniLink can find the problems in PDF and text files. Split this one below.')}
+            </Text>
+          )}
+          {found && found.length > 0 && (
+            <Alert color="teal" variant="light" icon={<IconListNumbers size={18} />} mt="xs" p="xs" title={t('Found {{count}} problems in the file', { count: found.length })}>
+              <Text size="sm" lineClamp={3}>
+                {found.map((p) => (p.points ? `${p.title} (${t('{{count}} pts', { count: p.points })})` : p.title)).join(' · ')}
+              </Text>
+              <Group gap="xs" mt="xs">
+                <Button size="xs" onClick={() => applyFound(found)}>
+                  {t('Use them as tasks')}
+                </Button>
+                <Button size="xs" variant="subtle" color="gray" onClick={() => setFound(null)}>
+                  {t('Dismiss')}
+                </Button>
+              </Group>
+            </Alert>
+          )}
+        </div>
+
+        <div>
           <Text size="sm" fw={500} mb={6}>
             {t('How should it be split?')}
           </Text>
@@ -474,16 +534,6 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
           </Text>
         </div>
 
-        <Group gap="xs">
-          <Button variant="default" size="xs" leftSection={<IconPaperclip size={14} />} onClick={() => choose.mutate()}>
-            {attachment ? t('Change file') : t('Attach the assignment file')}
-          </Button>
-          {attachment && (
-            <Text size="sm" c="dimmed">
-              {attachment.name}
-            </Text>
-          )}
-        </Group>
         <Textarea label={t('Notes')} autosize minRows={2} {...form.getInputProps('notes')} />
         <Group justify="flex-end">
           <Button type="submit" loading={create.isPending} disabled={!tasks.length}>

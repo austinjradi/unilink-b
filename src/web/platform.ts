@@ -19,6 +19,28 @@ const originalName = (path: string) => basename(path).replace(/^[0-9a-f]{8}(-[0-
 // Types a browser tab can show itself; anything else is downloaded.
 const VIEWABLE = /^(image\/|text\/plain$|application\/pdf$)/;
 
+// Plain-text handouts that browsers don't always give a text/* type.
+const TEXT_FILE = /\.(txt|md|markdown|tex|rst)$/i;
+
+// One line of text per line in the PDF, so headings like "Question 2" start a line.
+async function pdfText(blob: Blob) {
+  const [pdfjs, worker] = await Promise.all([import('pdfjs-dist'), import('pdfjs-dist/build/pdf.worker.min.mjs?url')]);
+  pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
+  const task = pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) });
+  const pdf = await task.promise;
+  try {
+    let text = '';
+    for (let n = 1; n <= pdf.numPages; n++) {
+      const { items } = await (await pdf.getPage(n)).getTextContent();
+      for (const item of items) if ('str' in item) text += item.str + (item.hasEOL ? '\n' : '');
+      text += '\n';
+    }
+    return text;
+  } finally {
+    await task.destroy();
+  }
+}
+
 export const platform: Platform = {
   // The RPC call starts from a click, and the browser still counts the user's
   // activation when this runs a moment later, so the picker is allowed to open.
@@ -45,6 +67,13 @@ export const platform: Platform = {
     const blob = await readBlob(path);
     const tab = VIEWABLE.test(blob.type) ? window.open(URL.createObjectURL(blob), '_blank') : null;
     if (!tab) download(blob, originalName(path));
+  },
+
+  // PDFs are read with pdf.js, loaded the first time one is attached.
+  async readText(path) {
+    const blob = await readBlob(path);
+    if (blob.type === 'application/pdf' || /\.pdf$/i.test(path)) return pdfText(blob);
+    return blob.type.startsWith('text/') || TEXT_FILE.test(path) ? blob.text() : null;
   },
 
   // A system notification while the tab is in the background (if the site has been

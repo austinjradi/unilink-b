@@ -2,6 +2,7 @@ import { copyFile, mkdir, rm, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { and, asc, eq, gte, isNotNull, isNull, lt, lte, max, ne, or } from 'drizzle-orm';
 import { z } from 'zod';
+import { findParts } from '@shared/assignment';
 import { addDays, parseYmd, ymd } from '@shared/dates';
 import { DEFAULT_BUFFER_DAYS, minutesOn, planTasks, weeklyMinutes } from '@shared/planner';
 import { randomUUID } from '../crypto';
@@ -307,6 +308,13 @@ export const plannerRouter = {
   chooseAttachment: procedure(z.void(), async (_input, ctx) => {
     const path = await ctx.platform.chooseFile({ title: 'Attach the assignment' });
     return path ? { path, name: basename(path) } : null;
+  }),
+
+  // The problems in a file the student just picked, to offer as tasks. null when it isn't a
+  // kind of file UniLink can read (PDFs and plain text are).
+  readParts: procedure(z.object({ path: z.string() }), async ({ path }, ctx) => {
+    const text = await ctx.platform.readText(path).catch(() => null);
+    return text == null ? null : findParts(text);
   }),
 
   openAttachment: procedure(z.object({ assignmentId: idSchema }), async ({ assignmentId }, ctx) => {

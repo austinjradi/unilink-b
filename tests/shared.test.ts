@@ -9,6 +9,7 @@ import { summarizeRecord, termOrder } from '@shared/academics';
 import { evaluateDegree, type Program } from '@shared/degree';
 import { type FocusWindow, studyModeStatus } from '@shared/studyMode';
 import { parseSyllabus } from '@shared/syllabus';
+import { findParts, minutesForParts } from '@shared/assignment';
 import { parseTranscript } from '@shared/transcript';
 
 describe('grades (A4)', () => {
@@ -352,5 +353,40 @@ Final exam: during the exam period (40%)`;
   it('puts January to May of a fall syllabus in the next year', () => {
     expect(parseSyllabus('Take-home exam due January 8', 'Fall 2026')[0].dueAt).toEqual(new Date(2027, 0, 8, 23, 59));
     expect(parseSyllabus('Lab 4 due Feb 30', 'Winter 2027')).toEqual([]);
+  });
+});
+
+describe('problems in an assignment file (ST2)', () => {
+  const handout = `COMP 251 Assignment 3
+Due Friday. Answer every question; see Question 2 of Assignment 1 for the notation.
+
+Question 1: Recurrences (20 points)
+Solve the recurrences below.
+Question 2 [30 pts]
+1.2 Prove that the greedy choice is safe. Problem 1.2 in the textbook is similar.
+**Question 3.** Give an O(n log n) algorithm that finds the closest pair of points in the plane and prove it correct (25 marks)
+Question 4 - Dynamic programming (25 points)
+
+Solutions
+Question 1: Recurrences`;
+
+  it('finds each numbered question once, with its name and points', () => {
+    expect(findParts(handout)).toEqual([
+      { title: 'Question 1: Recurrences', points: 20 },
+      { title: 'Question 2', points: 30 },
+      { title: 'Question 3', points: 25 },
+      { title: 'Question 4: Dynamic programming', points: 25 },
+    ]);
+  });
+
+  it('reads other headings, in French too, and ignores sub-parts', () => {
+    expect(findParts('Q1) warm-up\nQ2. graphs\nProblem 2.1 sub-part').map((p) => p.title)).toEqual(['Q1: warm-up', 'Q2: graphs']);
+    expect(findParts('Exercice 1 (10 pts)\nExercice 2 (5 pts)').map((p) => [p.title, p.points])).toEqual([['Exercice 1', 10], ['Exercice 2', 5]]);
+    expect(findParts('Read chapter 3 and write a one-page summary.')).toEqual([]);
+  });
+
+  it('shares time out by points when every part has them', () => {
+    expect(minutesForParts(findParts(handout), 60)).toEqual([45, 75, 60, 60]);
+    expect(minutesForParts([{ title: 'Q1', points: 10 }, { title: 'Q2', points: null }], 60)).toEqual([60, 60]);
   });
 });
