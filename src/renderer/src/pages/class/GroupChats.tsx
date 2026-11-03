@@ -29,6 +29,7 @@ import { fromNow } from '../../lib/format';
 import { useAction } from '../../lib/hooks';
 import { type Out, rpc } from '../../lib/rpc';
 import { t } from '../../lib/i18n';
+import { ReqInfo, WithInfo } from '../../components/ReqInfo';
 
 type ChatLink = Out<typeof rpc.links.list>[number];
 
@@ -62,14 +63,18 @@ export function GroupChats({ classId, classLabel }: { classId: number; classLabe
     <>
       <Group justify="space-between" align="flex-start" mb="lg">
         <div>
-          <Title order={2}>{t('Group Chat Links')}</Title>
+          <Title order={2}>
+            {t('Group Chat Links')} <ReqInfo id="chats-header" />
+          </Title>
           <Text c="dimmed" maw={560}>
             {t('Find and join the course group chats. Links are shared with the whole section as soon as they’re added. Say which ones still work, and report the ones that don’t.')}
           </Text>
         </div>
-        <Button size="md" variant="default" leftSection={<IconPlus size={18} />} onClick={() => setEditing('new')}>
-          {t('Add a group link')}
-        </Button>
+        <WithInfo id="chat-add">
+          <Button size="md" variant="default" leftSection={<IconPlus size={18} />} onClick={() => setEditing('new')}>
+            {t('Add a group link')}
+          </Button>
+        </WithInfo>
       </Group>
 
       {links.isPending ? (
@@ -81,15 +86,17 @@ export function GroupChats({ classId, classLabel }: { classId: number; classLabe
           ))}
           {hidden.length > 0 && (
             <>
-              <Button
-                variant="subtle"
-                color="gray"
-                w="fit-content"
-                leftSection={showHidden ? <IconChevronUp size={16} /> : <IconChevronDown size={16} />}
-                onClick={() => setShowHidden((s) => !s)}
-              >
-                {t('Hidden after reports ({{count}})', { count: hidden.length })}
-              </Button>
+              <WithInfo id="chat-hidden">
+                <Button
+                  variant="subtle"
+                  color="gray"
+                  w="fit-content"
+                  leftSection={showHidden ? <IconChevronUp size={16} /> : <IconChevronDown size={16} />}
+                  onClick={() => setShowHidden((s) => !s)}
+                >
+                  {t('Hidden after reports ({{count}})', { count: hidden.length })}
+                </Button>
+              </WithInfo>
               <Collapse expanded={showHidden}>
                 <Stack gap="lg">
                   {hidden.map((l) => (
@@ -115,9 +122,10 @@ export function GroupChats({ classId, classLabel }: { classId: number; classLabe
         <Button size="md" color="yellow" variant="light" component={Link} to="/courses/find">
           {t("Can't find your class?")}
         </Button>
+        <ReqInfo id="chats-browse" />
       </Group>
 
-      <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing === 'new' ? t('Add a group link') : t('Edit link')}>
+      <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing === 'new' ? <WithInfo id="chat-add">{t('Add a group link')}</WithInfo> : <WithInfo id="chat-manage">{t('Edit link')}</WithInfo>}>
         {editing && (
           <LinkForm key={editing === 'new' ? 'new' : editing.id} classId={classId} existing={editing === 'new' ? null : editing} onDone={() => setEditing(null)} />
         )}
@@ -140,7 +148,7 @@ function LinkCard({ link, classLabel, onEdit }: { link: ChatLink; classLabel: st
 
   const confirmRemove = () =>
     modals.openConfirmModal({
-      title: t('Remove this link?'),
+      title: <WithInfo id="chat-manage">{t('Remove this link?')}</WithInfo>,
       labels: { confirm: t('Remove'), cancel: t('Keep') },
       confirmProps: { color: 'red' },
       onConfirm: () => remove.mutate(),
@@ -163,25 +171,38 @@ function LinkCard({ link, classLabel, onEdit }: { link: ChatLink; classLabel: st
             <Text fz={28} fw={600} className="display" truncate>
               {link.platform} - {classLabel}
             </Text>
-            <Badge size="lg" color={status.color} variant="light">
-              {status.label}
-            </Badge>
+            <ReqInfo id="chat-platform" />
+            <WithInfo id="chat-status">
+              <Badge size="lg" color={status.color} variant="light">
+                {status.label}
+              </Badge>
+            </WithInfo>
           </Group>
           <Group gap="xs">
-            <Text fw={700}>{link.label || t('{{platform}} group', { platform: link.platform })}</Text>
-            <Tag color={PURPOSE_COLORS[link.purpose]}>{t(LINK_PURPOSES[link.purpose])}</Tag>
-            {link.ownerRole === 'professor' && <Tag color="periwinkle">{t('From the professor')}</Tag>}
+            <WithInfo id="chat-label">
+              <Text fw={700}>{link.label || t('{{platform}} group', { platform: link.platform })}</Text>
+            </WithInfo>
+            <WithInfo id="chat-purpose">
+              <Tag color={PURPOSE_COLORS[link.purpose]}>{t(LINK_PURPOSES[link.purpose])}</Tag>
+            </WithInfo>
+            {link.ownerRole === 'professor' && (
+              <WithInfo id="chat-from-prof">
+                <Tag color="periwinkle">{t('From the professor')}</Tag>
+              </WithInfo>
+            )}
           </Group>
-          <Text size="sm" c="dimmed" truncate>
-            {t('Added by {{name}} {{when}}', { name: link.mine ? t('you') : link.ownerName, when: fromNow(link.createdAt) })} · {link.url}
-          </Text>
+          <WithInfo id="chat-added-by">
+            <Text size="sm" c="dimmed" truncate>
+              {t('Added by {{name}} {{when}}', { name: link.mine ? t('you') : link.ownerName, when: fromNow(link.createdAt) })} · {link.url}
+            </Text>
+          </WithInfo>
           <Group gap="md" mt={4}>
             {link.works > 0 && (
               <Group gap={4} c="teal">
                 <IconCircleCheck size={14} />
                 <Text size="xs" fw={700}>
                   {t('{{count}} classmates say it works', { count: link.works })}
-                  {link.lastWorkedAt && ` · ${t('last checked {{when}}', { when: fromNow(link.lastWorkedAt) })}`}
+                  {link.lastWorkedAt && ` · ${t('last checked {{when}}', { when: fromNow(link.lastWorkedAt) })}`} <ReqInfo id="chat-works" />
                 </Text>
               </Group>
             )}
@@ -191,70 +212,82 @@ function LinkCard({ link, classLabel, onEdit }: { link: ChatLink; classLabel: st
                 <Text size="xs" fw={700}>
                   {t('Reported by {{count}} classmates', { count: link.reports })}
                   {link.myVote === 'report' && link.myReason ? ` ${t('(including you: {{reason}})', { reason: t(link.myReason).toLowerCase() })}` : ''}
-                  {link.mine && `. ${t('Fix the link, or mark it fixed if it works.')}`}
+                  {link.mine && `. ${t('Fix the link, or mark it fixed if it works.')}`} <ReqInfo id="chat-report" />
                 </Text>
               </Group>
             )}
           </Group>
         </div>
         <Divider orientation="vertical" />
-        <Stack gap="sm" w={170}>
-          <Button component="a" href={link.url} target="_blank" color="periwinkle" variant="light" leftSection={<IconExternalLink size={16} />}>
-            {t('Open link')}
-          </Button>
-          {/* To pass the chat on to a classmate outside UniLink. */}
-          <CopyButton value={link.url}>
-            {({ copied, copy }) => (
-              <Button variant="default" color={copied ? 'teal' : undefined} leftSection={copied ? <IconCircleCheck size={16} /> : <IconCopy size={16} />} onClick={copy}>
-                {copied ? t('Copied') : t('Copy')}
-              </Button>
-            )}
-          </CopyButton>
-          {link.mine ? (
-            <Menu position="bottom-end">
-              <Menu.Target>
-                <Button variant="default" leftSection={<IconDots size={16} />}>
-                  {t('Manage')}
-                </Button>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Item leftSection={<IconPencil size={14} />} onClick={onEdit}>
-                  {t('Edit')}
-                </Menu.Item>
-                {link.reports > 0 && (
-                  <Menu.Item leftSection={<IconTool size={14} />} onClick={() => fixed.mutate()}>
-                    {t('Mark as fixed')}
-                  </Menu.Item>
-                )}
-                <Menu.Item leftSection={<IconTrash size={14} />} color="red" onClick={confirmRemove}>
-                  {t('Remove')}
-                </Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
-          ) : link.myVote ? (
-            <Button variant="default" onClick={() => unvote.mutate()}>
-              {link.myVote === 'works' ? t('Undo “works”') : t('Undo report')}
+        <Stack gap="sm" w={190}>
+          <WithInfo id="chat-open" block>
+            <Button component="a" href={link.url} target="_blank" color="periwinkle" variant="light" leftSection={<IconExternalLink size={16} />}>
+              {t('Open link')}
             </Button>
-          ) : (
-            <>
-              <Button variant="default" leftSection={<IconThumbUp size={16} />} onClick={() => works.mutate()} loading={works.isPending}>
-                {t('It works')}
-              </Button>
+          </WithInfo>
+          {/* To pass the chat on to a classmate outside UniLink. */}
+          <WithInfo id="chat-copy" block>
+            <CopyButton value={link.url}>
+              {({ copied, copy }) => (
+                <Button variant="default" color={copied ? 'teal' : undefined} leftSection={copied ? <IconCircleCheck size={16} /> : <IconCopy size={16} />} onClick={copy}>
+                  {copied ? t('Copied') : t('Copy')}
+                </Button>
+              )}
+            </CopyButton>
+          </WithInfo>
+          {link.mine ? (
+            <WithInfo id="chat-manage" block>
               <Menu position="bottom-end">
                 <Menu.Target>
-                  <Button variant="default" leftSection={<IconAlertTriangle size={16} />}>
-                    {t('Report link')}
+                  <Button variant="default" leftSection={<IconDots size={16} />}>
+                    {t('Manage')}
                   </Button>
                 </Menu.Target>
                 <Menu.Dropdown>
-                  <Menu.Label>{t("What's wrong with it?")}</Menu.Label>
-                  {FLAG_REASONS.map((r) => (
-                    <Menu.Item key={r} onClick={() => report.mutate(r)}>
-                      {t(r)}
+                  <Menu.Item leftSection={<IconPencil size={14} />} onClick={onEdit}>
+                    {t('Edit')}
+                  </Menu.Item>
+                  {link.reports > 0 && (
+                    <Menu.Item leftSection={<IconTool size={14} />} onClick={() => fixed.mutate()}>
+                      {t('Mark as fixed')}
                     </Menu.Item>
-                  ))}
+                  )}
+                  <Menu.Item leftSection={<IconTrash size={14} />} color="red" onClick={confirmRemove}>
+                    {t('Remove')}
+                  </Menu.Item>
                 </Menu.Dropdown>
               </Menu>
+            </WithInfo>
+          ) : link.myVote ? (
+            <WithInfo id={link.myVote === 'works' ? 'chat-works' : 'chat-report'} block>
+              <Button variant="default" onClick={() => unvote.mutate()}>
+                {link.myVote === 'works' ? t('Undo “works”') : t('Undo report')}
+              </Button>
+            </WithInfo>
+          ) : (
+            <>
+              <WithInfo id="chat-works" block>
+                <Button variant="default" leftSection={<IconThumbUp size={16} />} onClick={() => works.mutate()} loading={works.isPending}>
+                  {t('It works')}
+                </Button>
+              </WithInfo>
+              <WithInfo id="chat-report" block>
+                <Menu position="bottom-end">
+                  <Menu.Target>
+                    <Button variant="default" leftSection={<IconAlertTriangle size={16} />}>
+                      {t('Report link')}
+                    </Button>
+                  </Menu.Target>
+                  <Menu.Dropdown>
+                    <Menu.Label>{t("What's wrong with it?")}</Menu.Label>
+                    {FLAG_REASONS.map((r) => (
+                      <Menu.Item key={r} onClick={() => report.mutate(r)}>
+                        {t(r)}
+                      </Menu.Item>
+                    ))}
+                  </Menu.Dropdown>
+                </Menu>
+              </WithInfo>
             </>
           )}
         </Stack>
@@ -281,21 +314,21 @@ function LinkForm({ classId, existing, onDone }: { classId: number; existing: Ch
     <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
       <Stack>
         <TextInput
-          label={t('Invite link')}
+          label={<WithInfo id="chat-url">{t('Invite link')}</WithInfo>}
           placeholder="https://chat.whatsapp.com/…"
           data-autofocus
           description={detected ? t('Detected: {{platform}}', { platform: detected.platform }) : 'WhatsApp, Discord, Messenger, Telegram, Teams…'}
           {...form.getInputProps('url')}
         />
         <Select
-          label={t('Who is it for?')}
+          label={<WithInfo id="chat-purpose">{t('Who is it for?')}</WithInfo>}
           data={(Object.keys(LINK_PURPOSES) as LinkPurpose[]).map((p) => ({ value: p, label: t(LINK_PURPOSES[p]) }))}
           allowDeselect={false}
           {...form.getInputProps('purpose')}
         />
-        <TextInput label={t('Name')} placeholder={t('General course group, study server…')} {...form.getInputProps('label')} />
+        <TextInput label={<WithInfo id="chat-label">{t('Name')}</WithInfo>} placeholder={t('General course group, study server…')} {...form.getInputProps('label')} />
         <Text size="xs" c="dimmed">
-          {t('Everyone in this section will see the link right away. Each chat can be shared once per course, across all sections.')}
+          {t('Everyone in this section will see the link right away. Each chat can be shared once per course, across all sections.')} <ReqInfo id="chat-add" />
         </Text>
         <Group justify="flex-end">
           <Button type="submit" loading={save.isPending}>

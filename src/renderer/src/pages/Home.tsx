@@ -14,6 +14,7 @@ import { useAction, useMe } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
 import { useUndo } from '../lib/undo';
 import { t } from '../lib/i18n';
+import { ReqInfo, WithInfo } from '../components/ReqInfo';
 
 type TodayItem = Out<typeof rpc.todos.today>['today'][number];
 
@@ -24,7 +25,7 @@ export function Home() {
   return (
     <>
       <Text component="h1" fz={30} fw={600} className="display" mt={0} mb="md">
-        {t('Hi {{name}}', { name: me.name.split(' ')[0] })} <span aria-hidden>👋</span>
+        {t('Hi {{name}}', { name: me.name.split(' ')[0] })} <span aria-hidden>👋</span> <ReqInfo id="nav-home" />
         <Text span c="dimmed" fz="md" fw={500} ml="sm">
           {dayjs().format(t('dddd, MMMM D'))}
         </Text>
@@ -90,7 +91,7 @@ function Welcome() {
     <Card padding="md">
       <Group justify="space-between" wrap="nowrap" align="flex-start">
         <Text fw={800} size="lg" className="display">
-          {t('Welcome to UniLink!')}
+          {t('Welcome to UniLink!')} <ReqInfo id="home-welcome" />
         </Text>
         <ActionIcon variant="subtle" color="gray" size="sm" onClick={hide} aria-label={t('Hide these steps')}>
           <IconX size={14} />
@@ -143,7 +144,7 @@ function TodayTasks() {
     <Card padding="md">
       <Group justify="space-between" mb="sm">
         <Text fw={800} size="lg" className="display">
-          {t('Today')}
+          {t('Today')} <ReqInfo id="home-today" />
         </Text>
         {items.length > 0 && (
           <Group gap={6}>
@@ -167,9 +168,11 @@ function TodayTasks() {
             <TaskRow key={item.key} item={item} today={today} />
           ))}
           {planned && !daysOff.includes(today) && (
-            <Anchor component="button" type="button" size="xs" c="dimmed" ta="left" w="fit-content" onClick={() => takeOff.mutate()}>
-              {t('Can’t study today? Move today’s tasks')}
-            </Anchor>
+            <WithInfo id="home-take-off">
+              <Anchor component="button" type="button" size="xs" c="dimmed" ta="left" w="fit-content" onClick={() => takeOff.mutate()}>
+                {t('Can’t study today? Move today’s tasks')}
+              </Anchor>
+            </WithInfo>
           )}
           <form
             onSubmit={(e) => {
@@ -177,19 +180,21 @@ function TodayTasks() {
               if (title.trim()) add.mutate();
             }}
           >
-            <TextInput
-              size="xs"
-              radius="xl"
-              placeholder={t('Add a task… try "read chapter 3 friday"')}
-              aria-label={t('Add a task…')}
-              value={title}
-              onChange={(e) => setTitle(e.currentTarget.value)}
-              rightSection={
-                <ActionIcon size="sm" variant="subtle" type="submit" disabled={!title.trim()} aria-label={t('Add task')}>
-                  <IconPlus size={14} />
-                </ActionIcon>
-              }
-            />
+            <WithInfo id="home-add-task" block>
+              <TextInput
+                size="xs"
+                radius="xl"
+                placeholder={t('Add a task… try "read chapter 3 friday"')}
+                aria-label={t('Add a task…')}
+                value={title}
+                onChange={(e) => setTitle(e.currentTarget.value)}
+                rightSection={
+                  <ActionIcon size="sm" variant="subtle" type="submit" disabled={!title.trim()} aria-label={t('Add task')}>
+                    <IconPlus size={14} />
+                  </ActionIcon>
+                }
+              />
+            </WithInfo>
             {parsed.dueDate && (
               <Text size="xs" c="dimmed" mt={4} pl={6}>
                 {parsed.weekly
@@ -200,16 +205,18 @@ function TodayTasks() {
           </form>
           {!!data.data?.later.length && (
             <>
-              <Button
-                variant="subtle"
-                color="gray"
-                size="compact-xs"
-                w="fit-content"
-                leftSection={showLater ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
-                onClick={() => setShowLater((s) => !s)}
-              >
-                {t('Later ({{count}})', { count: data.data.later.length })}
-              </Button>
+              <WithInfo id="home-later">
+                <Button
+                  variant="subtle"
+                  color="gray"
+                  size="compact-xs"
+                  w="fit-content"
+                  leftSection={showLater ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
+                  onClick={() => setShowLater((s) => !s)}
+                >
+                  {t('Later ({{count}})', { count: data.data.later.length })}
+                </Button>
+              </WithInfo>
               <Collapse expanded={showLater}>
                 <Stack gap={8}>
                   {data.data.later.map((item) => (
@@ -241,7 +248,7 @@ function TaskRow({ item, today }: { item: TodayItem; today: string }) {
       <Checkbox mt={2} size="xs" checked={item.done} onChange={(e) => toggle.mutate(e.currentTarget.checked)} aria-label={t('Done: {{title}}', { title: item.title })} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <Text size="sm" fw={600} td={item.done ? 'line-through' : undefined} c={item.done ? 'dimmed' : undefined} lineClamp={2}>
-          {item.title}
+          {item.title} <ReqInfo id="task-row" />
         </Text>
         <Group gap={4}>
           {item.context && (
@@ -273,9 +280,11 @@ function TaskRow({ item, today }: { item: TodayItem; today: string }) {
       </div>
       {item.kind === 'task' && !item.done && <FocusButton taskId={item.id} title={item.title} />}
       {item.kind === 'todo' && (
-        <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => remove.mutate()} aria-label={item.weekly ? t('Delete task and stop it repeating') : t('Delete task')}>
-          <IconTrash size={13} />
-        </ActionIcon>
+        <WithInfo id="task-delete">
+          <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => remove.mutate()} aria-label={item.weekly ? t('Delete task and stop it repeating') : t('Delete task')}>
+            <IconTrash size={13} />
+          </ActionIcon>
+        </WithInfo>
       )}
     </Group>
   );
@@ -296,7 +305,7 @@ function Deadlines() {
     <Card padding="md">
       <Group justify="space-between" mb="sm">
         <Text fw={800} size="lg" className="display">
-          {t('Deadlines')}
+          {t('Deadlines')} <ReqInfo id="home-deadlines" />
         </Text>
         <Anchor component={Link} to="/calendar" size="xs" fw={700}>
           {t('Calendar')}
@@ -330,21 +339,25 @@ function Deadlines() {
                   </Text>
                 </div>
                 {student && e.detail !== 'planner' && e.detail !== 'key' && (
-                  <Tooltip label={t('Plan it')}>
-                    <ActionIcon
-                      size="sm"
-                      variant="subtle"
-                      color="gray"
-                      component={Link}
-                      to={`/planner?new=1&from=${e.key}`}
-                      aria-label={t('Plan out {{title}}', { title: e.title })}
-                    >
-                      <IconListCheck size={15} />
-                    </ActionIcon>
-                  </Tooltip>
+                  <WithInfo id="plan-it">
+                    <Tooltip label={t('Plan it')}>
+                      <ActionIcon
+                        size="sm"
+                        variant="subtle"
+                        color="gray"
+                        component={Link}
+                        to={`/planner?new=1&from=${e.key}`}
+                        aria-label={t('Plan out {{title}}', { title: e.title })}
+                      >
+                        <IconListCheck size={15} />
+                      </ActionIcon>
+                    </Tooltip>
+                  </WithInfo>
                 )}
                 {student && e.deadlineId != null && (
-                  <Checkbox size="xs" mt={2} onChange={() => setDone.mutate(e.deadlineId!)} aria-label={t('Mark {{title}} done', { title: e.title })} />
+                  <WithInfo id="deadline-done">
+                    <Checkbox size="xs" mt={2} onChange={() => setDone.mutate(e.deadlineId!)} aria-label={t('Mark {{title}} done', { title: e.title })} />
+                  </WithInfo>
                 )}
               </Group>
             );

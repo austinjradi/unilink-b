@@ -8,6 +8,7 @@ import { TimePollForm, TimePolls } from '../../components/TimePolls';
 import { Empty, Loading } from '../../components/ui';
 import { rpc } from '../../lib/rpc';
 import { t } from '../../lib/i18n';
+import { ReqInfo, WithInfo } from '../../components/ReqInfo';
 
 // S3: the class's upcoming study sessions.
 export function StudySessions({ classId }: { classId: number }) {
@@ -18,15 +19,21 @@ export function StudySessions({ classId }: { classId: number }) {
   return (
     <>
       <Group justify="space-between" mb="md">
-        <Title order={2}>{t('Study Sessions')}</Title>
+        <Title order={2}>
+          {t('Study Sessions')} <ReqInfo id="tab-sessions" />
+        </Title>
         <Group gap="sm">
           <JoinByCode />
-          <Button variant="default" leftSection={<IconCalendarQuestion size={16} />} onClick={() => setAsking(true)}>
-            {t('Find a time')}
-          </Button>
-          <Button leftSection={<IconPlus size={16} />} onClick={() => setCreating(true)}>
-            {t('Create your study session')}
-          </Button>
+          <WithInfo id="poll-create">
+            <Button variant="default" leftSection={<IconCalendarQuestion size={16} />} onClick={() => setAsking(true)}>
+              {t('Find a time')}
+            </Button>
+          </WithInfo>
+          <WithInfo id="session-create">
+            <Button leftSection={<IconPlus size={16} />} onClick={() => setCreating(true)}>
+              {t('Create your study session')}
+            </Button>
+          </WithInfo>
         </Group>
       </Group>
       <TimePolls classId={classId} />
@@ -41,10 +48,10 @@ export function StudySessions({ classId }: { classId: number }) {
         )}
       </SessionsCard>
       <PastSessions classId={classId} />
-      <Modal opened={creating} onClose={() => setCreating(false)} title={t('Create a study session')} size="lg">
+      <Modal opened={creating} onClose={() => setCreating(false)} title={<WithInfo id="session-create">{t('Create a study session')}</WithInfo>} size="lg">
         {creating && <SessionForm classId={classId} existing={null} onDone={() => setCreating(false)} />}
       </Modal>
-      <Modal opened={asking} onClose={() => setAsking(false)} title={t('Find a time that works')}>
+      <Modal opened={asking} onClose={() => setAsking(false)} title={<WithInfo id="poll-create">{t('Find a time that works')}</WithInfo>}>
         {asking && <TimePollForm classId={classId} onDone={() => setAsking(false)} />}
       </Modal>
     </>
@@ -58,16 +65,18 @@ function PastSessions({ classId }: { classId: number }) {
   if (!past.data?.length) return null;
   return (
     <Stack gap="xs" mt="md">
-      <Button
-        variant="subtle"
-        color="gray"
-        size="compact-sm"
-        w="fit-content"
-        leftSection={open ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
-        onClick={() => setOpen((o) => !o)}
-      >
-        {t('Earlier sessions ({{count}})', { count: past.data.length })}
-      </Button>
+      <WithInfo id="sessions-past">
+        <Button
+          variant="subtle"
+          color="gray"
+          size="compact-sm"
+          w="fit-content"
+          leftSection={open ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+          onClick={() => setOpen((o) => !o)}
+        >
+          {t('Earlier sessions ({{count}})', { count: past.data.length })}
+        </Button>
+      </WithInfo>
       <Collapse expanded={open}>
         <Stack gap={6} pl="md">
           {past.data.map((s) => (

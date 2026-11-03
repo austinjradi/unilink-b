@@ -27,14 +27,15 @@ import { ChangePassword, DeleteAccount, NotificationSettings, PrivacyPanel, Prof
 import { StudyTimeForm } from './Planner';
 import { LanguageSwitch } from '../components/LanguageSwitch';
 import { t, tx } from '../lib/i18n';
+import { ReqInfo, WithInfo } from '../components/ReqInfo';
 
 const TABS = [
-  { value: 'general', label: tx('General') },
-  { value: 'account', label: tx('Account') },
-  { value: 'goat', label: tx('Goat') },
-  { value: 'privacy', label: tx('Privacy') },
-  { value: 'notifications', label: tx('Notifications') },
-  { value: 'integrations', label: tx('Integrations') },
+  { value: 'general', label: tx('General'), info: 'settings-general' },
+  { value: 'account', label: tx('Account'), info: 'settings-account' },
+  { value: 'goat', label: tx('Goat'), info: 'settings-goat' },
+  { value: 'privacy', label: tx('Privacy'), info: 'settings-privacy' },
+  { value: 'notifications', label: tx('Notifications'), info: 'settings-notifications' },
+  { value: 'integrations', label: tx('Integrations'), info: 'settings-integrations' },
 ] as const;
 
 // Settings in the layout of the wireframe (A2Team.pdf p. 11): sections on the left.
@@ -50,26 +51,30 @@ export function SettingsPage() {
   return (
     <Tabs value={tab} onChange={(v) => navigate(`/settings/${v}`)} orientation={narrow ? 'horizontal' : 'vertical'} variant="pills" radius="lg" keepMounted={false}>
       <Box
-        w={narrow ? undefined : 220}
+        w={narrow ? undefined : 240}
         pr={narrow ? 0 : 'lg'}
         mr={narrow ? 0 : 'lg'}
         mb={narrow ? 'lg' : 0}
         style={narrow ? undefined : { borderRight: '2px solid var(--ul-rule)', minHeight: 'calc(100vh - 140px)' }}
       >
         <Title order={1} fz={34} mb="lg">
-          {t('Settings')}
+          {t('Settings')} <ReqInfo id="nav-settings" />
         </Title>
         <Tabs.List>
           {TABS.map((tabItem) => (
-            <Tabs.Tab key={tabItem.value} value={tabItem.value} fz="md" fw={700} py="sm">
+            <Tabs.Tab key={tabItem.value} value={tabItem.value} fz="md" fw={700} py="sm" rightSection={<ReqInfo id={tabItem.info} />}>
               {t(tabItem.label)}
             </Tabs.Tab>
           ))}
         </Tabs.List>
         {!narrow && (
-          <Button mt="xl" variant="subtle" color="gray" leftSection={<IconLogout size={16} />} onClick={() => signOut.mutate()}>
-            {t('Sign out')}
-          </Button>
+          <Box mt="xl">
+            <WithInfo id="sign-out">
+              <Button variant="subtle" color="gray" leftSection={<IconLogout size={16} />} onClick={() => signOut.mutate()}>
+                {t('Sign out')}
+              </Button>
+            </WithInfo>
+          </Box>
         )}
       </Box>
 
@@ -84,7 +89,7 @@ export function SettingsPage() {
           <Stack gap="lg" maw={760}>
             <ProfileForm />
             {me.role === 'student' && (
-              <SectionCard title={t('Free study time')}>
+              <SectionCard info="free-time" title={t('Free study time')}>
                 <StudyTimeForm />
               </SectionCard>
             )}
@@ -117,13 +122,13 @@ function GeneralPanel() {
   const { colorScheme, setColorScheme } = useMantineColorScheme();
   return (
     <Stack gap="lg" maw={760}>
-      <SectionCard title={t('Language')}>
+      <SectionCard info="language" title={t('Language')}>
         <Text size="sm" c="dimmed" mb="sm">
           {t('Used for the whole app, your notifications and emails.')}
         </Text>
         <LanguageSwitch signedIn />
       </SectionCard>
-      <SectionCard title={t('Appearance')}>
+      <SectionCard info="appearance" title={t('Appearance')}>
         <SegmentedControl
           value={colorScheme}
           onChange={(v) => setColorScheme(v as 'light' | 'dark' | 'auto')}
@@ -134,7 +139,7 @@ function GeneralPanel() {
           ]}
         />
       </SectionCard>
-      <SectionCard title={t('About UniLink')}>
+      <SectionCard info="about" title={t('About UniLink')}>
         <Text size="sm" c="dimmed">
           {t("UniLink brings McGill students' classes, classmates, deadlines, grades and study planning into one place. Built by the pls.sleep(NOW) team.")}
         </Text>
@@ -169,7 +174,7 @@ function GoatEditor() {
         <GoatSvg goat={shown} />
       </Box>
       <Text c="dimmed" size="sm">
-        {t('Your goat shows up next to your posts, replies and study sessions.')}
+        {t('Your goat shows up next to your posts, replies and study sessions.')} <ReqInfo id="settings-goat" />
       </Text>
 
       <Box w="100%" maw={760}>
@@ -196,6 +201,9 @@ function GoatEditor() {
           ))}
         </Group>
         <Card radius={0} padding="lg" style={{ border: '2px solid var(--ul-rule)', borderTop: '2px dashed var(--ul-border)' }}>
+          <Group justify="flex-end" mb="xs">
+            <ReqInfo id="goat-parts" />
+          </Group>
           <SimpleGrid cols={{ base: 3, sm: 4, md: 6 }} spacing="md">
             {(GOAT_OPTIONS[part] as readonly string[]).map((option) => {
               const preview = { ...shown, [part]: option } as GoatConfig;

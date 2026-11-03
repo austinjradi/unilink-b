@@ -7,6 +7,7 @@ import { fmtDateTime, fmtTime } from '../lib/format';
 import { useAction } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
 import { t, term } from '../lib/i18n';
+import { ReqInfo, WithInfo } from '../components/ReqInfo';
 
 type Status = Out<typeof rpc.studyMode.status>;
 
@@ -18,6 +19,7 @@ export function StudyModePage() {
   return (
     <>
       <PageHeader
+        info="study-page"
         title={t('Study Mode')}
         subtitle={t("Turns on by itself during your classes and study sessions, and holds back notifications until it's over.")}
       />
@@ -32,7 +34,7 @@ export function StudyModePage() {
         <Grid.Col span={{ base: 12, lg: 5 }}>
           <Stack gap="lg">
             <PerClass enabled={status.data.settings.autoForClasses} />
-            <Alert variant="light" icon={<IconInfoCircle size={18} />} title={t("What study mode can't do yet")}>
+            <Alert variant="light" icon={<IconInfoCircle size={18} />} title={<WithInfo id="study-limits">{t("What study mode can't do yet")}</WithInfo>}>
               <List size="sm" spacing={4}>
                 <List.Item>
                   <b>{t('Block distracting websites.')}</b>{' '}
@@ -66,7 +68,7 @@ function TimeLeft({ until }: { until: Date }) {
   const clock = `${hours ? `${hours}:` : ''}${hours ? pad(Math.floor(seconds / 60) % 60) : Math.floor(seconds / 60)}:${pad(seconds % 60)}`;
   return (
     <Text fz={36} fw={700} lh={1.1} mt={6} className="display" role="timer" style={{ fontVariantNumeric: 'tabular-nums' }}>
-      {t('{{time}} left', { time: clock })}
+      {t('{{time}} left', { time: clock })} <ReqInfo id="study-countdown" />
     </Text>
   );
 }
@@ -89,7 +91,7 @@ function FocusTime() {
     </div>
   );
   return (
-    <SectionCard title={t('Your focus time')} actions={<Text size="xs" c="dimmed">{t('Only you see this')}</Text>}>
+    <SectionCard info="study-focus-time" title={t('Your focus time')} actions={<Text size="xs" c="dimmed">{t('Only you see this')}</Text>}>
       {thisWeek || lastWeek || streak ? (
         <SimpleGrid cols={3}>
           {stat(t('This week'), thisWeek ? `${duration(thisWeek)}` : '—')}
@@ -122,7 +124,9 @@ function StatusCard({ status }: { status: Status }) {
             <IconFocus2 size={26} />
           </ThemeIcon>
           <div>
-            <Title order={3}>{status.active ? t('Study mode is on') : t('Study mode is off')}</Title>
+            <Title order={3}>
+              {status.active ? t('Study mode is on') : t('Study mode is off')} <ReqInfo id="study-status" />
+            </Title>
             {status.active ? (
               <>
               <Text>
@@ -151,15 +155,17 @@ function StatusCard({ status }: { status: Status }) {
           </div>
         </Group>
         {status.active && (
-          <Button color="teal" variant="white" onClick={() => stop.mutate()} loading={stop.isPending}>
-            {t('Stop')}
-          </Button>
+          <WithInfo id="study-stop">
+            <Button color="teal" variant="white" onClick={() => stop.mutate()} loading={stop.isPending}>
+              {t('Stop')}
+            </Button>
+          </WithInfo>
         )}
       </Group>
       {!status.active && (
         <Group mt="lg" gap="xs">
           <Text size="sm" fw={500} mr="xs">
-            {t('Start a focus session:')}
+            {t('Start a focus session:')} <ReqInfo id="study-focus-start" />
           </Text>
           {[25, 50, 90].map((m) => (
             <Button key={m} variant="light" size="xs" onClick={() => start.mutate(m)}>
@@ -177,21 +183,21 @@ function Settings({ status }: { status: Status }) {
   const update = useAction((patch: Partial<typeof s>) => rpc.studyMode.updateSettings({ ...s, ...patch }));
 
   return (
-    <SectionCard title={t('Settings')}>
+    <SectionCard info="study-settings" title={t('Settings')}>
       <Stack>
         <Switch
-          label={t('Turn on during my class times')}
+          label={<WithInfo id="study-auto-classes">{t('Turn on during my class times')}</WithInfo>}
           description={t("Uses the class times on each class's Overview tab")}
           checked={s.autoForClasses}
           onChange={(e) => update.mutate({ autoForClasses: e.currentTarget.checked })}
         />
         <Switch
-          label={t("Turn on during study sessions I'm going to")}
+          label={<WithInfo id="study-auto-sessions">{t("Turn on during study sessions I'm going to")}</WithInfo>}
           checked={s.autoForSessions}
           onChange={(e) => update.mutate({ autoForSessions: e.currentTarget.checked })}
         />
         <Switch
-          label={t("Hold UniLink notifications while it's on")}
+          label={<WithInfo id="study-hold">{t("Hold UniLink notifications while it's on")}</WithInfo>}
           description={t("You'll see them all when study mode ends")}
           checked={s.silenceNotifications}
           onChange={(e) => update.mutate({ silenceNotifications: e.currentTarget.checked })}
@@ -199,7 +205,7 @@ function Settings({ status }: { status: Status }) {
         <Switch
           label={
             <Group gap={6}>
-              {t('Also turn on system Do Not Disturb')} <IconBellOff size={14} />
+              {t('Also turn on system Do Not Disturb')} <IconBellOff size={14} /> <ReqInfo id="study-dnd" />
             </Group>
           }
           description={
@@ -221,7 +227,7 @@ function PerClass({ enabled }: { enabled: boolean }) {
   const set = useAction((v: { classId: number; enabled: boolean }) => rpc.studyMode.setClassAuto(v));
 
   return (
-    <SectionCard title={t('Per class')}>
+    <SectionCard info="study-per-class" title={t('Per class')}>
       {classes.isPending ? (
         <Loading />
       ) : classes.data?.length ? (

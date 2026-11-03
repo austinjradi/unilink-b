@@ -36,6 +36,7 @@ import { GoatAvatar } from './Goat';
 import { Empty, Loading, Tag } from './ui';
 import { t, tx } from '../lib/i18n';
 import { toStoredTopic } from './Feed';
+import { ReqInfo, WithInfo } from './ReqInfo';
 
 // S3 study sessions in the layout of the wireframes (A2Team.pdf p. 12–13): rows with the
 // class and type tags, when and where, how many are going, and a join/details action.
@@ -65,62 +66,73 @@ export function SessionRow({ session: s, onDetails }: { session: Session; onDeta
     <Group wrap="nowrap" py="md" gap="lg" align="center" style={{ borderBottom: '1.5px solid var(--ul-border)' }}>
       <div style={{ flex: 1.4, minWidth: 0 }}>
         <Group gap={6} mb={6}>
-          <Tag>{s.classLabel}</Tag>
-          {s.tag && <Tag color="periwinkle">{t(s.tag)}</Tag>}
-          {s.visibility === 'invite' && <Tag color="grape">{t('Invite only')}</Tag>}
-          {s.seriesId != null && <Tag color="cyan">{t('Weekly')}</Tag>}
-          {s.hostIsProfessor && <Tag color="periwinkle">{t('Professor')}</Tag>}
-          {s.cancelledAt && <Tag color="red">{t('Cancelled')}</Tag>}
+          <WithInfo id="post-class"><Tag>{s.classLabel}</Tag></WithInfo>
+          {s.tag && <WithInfo id="session-type"><Tag color="periwinkle">{t(s.tag)}</Tag></WithInfo>}
+          {s.visibility === 'invite' && <WithInfo id="session-visibility"><Tag color="grape">{t('Invite only')}</Tag></WithInfo>}
+          {s.seriesId != null && <WithInfo id="session-weekly"><Tag color="cyan">{t('Weekly')}</Tag></WithInfo>}
+          {s.hostIsProfessor && <WithInfo id="session-from-prof"><Tag color="periwinkle">{t('Professor')}</Tag></WithInfo>}
+          {s.cancelledAt && <WithInfo id="session-cancel"><Tag color="red">{t('Cancelled')}</Tag></WithInfo>}
         </Group>
         <Text fw={800} td={s.cancelledAt ? 'line-through' : undefined} lineClamp={1}>
-          {s.title}
+          {s.title} <ReqInfo id="session-row" />
         </Text>
       </div>
       <div style={{ flex: 1.3, minWidth: 0 }}>
         <Text size="lg" fw={600} lh={1.2}>
-          {when(s)}
+          {when(s)} <ReqInfo id="session-time" />
         </Text>
         <Group gap={4} c="dimmed" wrap="nowrap">
           {s.format === 'online' ? <IconVideo size={14} /> : <IconMapPin size={14} />}
           <Text size="md" lh={1.3} lineClamp={1}>
             {place(s)}
           </Text>
+          <ReqInfo id="session-format" />
         </Group>
         {s.clash && (
-          <Text size="xs" fw={700} c="orange" lineClamp={1}>
-            {t('You have {{what}} then', { what: s.clash })}
-          </Text>
+          <WithInfo id="session-clash">
+            <Text size="xs" fw={700} c="orange" lineClamp={1}>
+              {t('You have {{what}} then', { what: s.clash })}
+            </Text>
+          </WithInfo>
         )}
       </div>
       <div style={{ width: 100 }}>
         <Text size="lg" fw={600} lh={1.2}>
-          {s.goingCount}/{s.capacity}
+          {s.goingCount}/{s.capacity} <ReqInfo id="session-capacity" />
         </Text>
         <Text size="sm" c="dimmed">
           {s.waitlistCount ? t('+{{count}} waiting', { count: s.waitlistCount }) : t('members')}
         </Text>
       </div>
-      <Group gap="xs" wrap="nowrap" w={190} justify="flex-end">
+      <Group gap="xs" wrap="nowrap" w={240} justify="flex-end">
         {!s.cancelledAt && s.myStatus === null && (
-          <Button onClick={() => join.mutate()} loading={join.isPending} variant={s.isFull ? 'default' : 'filled'}>
-            {s.isFull ? t('Join waitlist') : t('Join')}
-          </Button>
+          <WithInfo id="session-join">
+            <Button onClick={() => join.mutate()} loading={join.isPending} variant={s.isFull ? 'default' : 'filled'}>
+              {s.isFull ? t('Join waitlist') : t('Join')}
+            </Button>
+          </WithInfo>
         )}
         {s.myStatus === 'waitlisted' && (
-          <Text size="sm" fw={800} c="orange">
-            {t('Waitlist #{{position}}', { position: s.myWaitlistPosition ?? 1 })}
-          </Text>
+          <WithInfo id="session-status">
+            <Text size="sm" fw={800} c="orange">
+              {t('Waitlist #{{position}}', { position: s.myWaitlistPosition ?? 1 })}
+            </Text>
+          </WithInfo>
         )}
         {s.myStatus === 'going' && (
-          <Text size="sm" fw={800} c="teal">
-            {s.isHost ? t('Hosting') : t('Going')}
-          </Text>
+          <WithInfo id="session-status">
+            <Text size="sm" fw={800} c="teal">
+              {s.isHost ? t('Hosting') : t('Going')}
+            </Text>
+          </WithInfo>
         )}
-        <Tooltip label={t('Details, people and invite code')}>
-          <ActionIcon variant="subtle" size="xl" radius="xl" onClick={onDetails} aria-label={t('Details for {{title}}', { title: s.title })}>
-            <IconMessageDots size={30} stroke={1.6} />
-          </ActionIcon>
-        </Tooltip>
+        <WithInfo id="session-details">
+          <Tooltip label={t('Details, people and invite code')}>
+            <ActionIcon variant="subtle" size="xl" radius="xl" onClick={onDetails} aria-label={t('Details for {{title}}', { title: s.title })}>
+              <IconMessageDots size={30} stroke={1.6} />
+            </ActionIcon>
+          </Tooltip>
+        </WithInfo>
       </Group>
     </Group>
   );
@@ -146,7 +158,9 @@ function InviteCode({ session: s }: { session: Session }) {
         <div>
           <Group gap={6}>
             <IconKey size={16} />
-            <Text fw={800}>{t('Invite code')}</Text>
+            <Text fw={800}>
+              {t('Invite code')} <ReqInfo id="session-invite-code" />
+            </Text>
             <Code fz="lg" fw={700}>
               {s.inviteCode}
             </Code>
@@ -165,18 +179,22 @@ function InviteCode({ session: s }: { session: Session }) {
               </Button>
             )}
           </CopyButton>
-          <Tooltip label={t('A message with a link that opens this session, for a group chat')}>
-            <CopyButton value={inviteMessage(s)}>
-              {({ copied, copy }) => (
-                <Button size="xs" variant="light" onClick={copy}>
-                  {copied ? t('Copied') : t('Copy invite')}
-                </Button>
-              )}
-            </CopyButton>
-          </Tooltip>
-          <Button size="xs" variant="subtle" color="gray" onClick={() => newCode.mutate()}>
-            {t('New code')}
-          </Button>
+          <WithInfo id="session-invite-message">
+            <Tooltip label={t('A message with a link that opens this session, for a group chat')}>
+              <CopyButton value={inviteMessage(s)}>
+                {({ copied, copy }) => (
+                  <Button size="xs" variant="light" onClick={copy}>
+                    {copied ? t('Copied') : t('Copy invite')}
+                  </Button>
+                )}
+              </CopyButton>
+            </Tooltip>
+          </WithInfo>
+          <WithInfo id="session-new-code">
+            <Button size="xs" variant="subtle" color="gray" onClick={() => newCode.mutate()}>
+              {t('New code')}
+            </Button>
+          </WithInfo>
         </Stack>
       </Group>
     </Card>
@@ -200,7 +218,7 @@ export function SessionDetails({ session: s, onEdit, onClose }: { session: Sessi
   const confirmCancel = () => {
     let laterWeeks = false;
     modals.openConfirmModal({
-      title: t('Cancel this session?'),
+      title: <WithInfo id="session-cancel">{t('Cancel this session?')}</WithInfo>,
       children: (
         <Stack gap="sm">
           <Text size="sm">{t("Everyone going or waiting will be told it's cancelled. To step down instead, leave it and the next person going becomes the host.")}</Text>
@@ -215,7 +233,7 @@ export function SessionDetails({ session: s, onEdit, onClose }: { session: Sessi
 
   const confirmLeaveAsHost = () =>
     modals.openConfirmModal({
-      title: t('Leave and hand over this session?'),
+      title: <WithInfo id="session-host-leave">{t('Leave and hand over this session?')}</WithInfo>,
       children: (
         <Text size="sm">
           {s.goingCount > 1
@@ -230,17 +248,20 @@ export function SessionDetails({ session: s, onEdit, onClose }: { session: Sessi
   return (
     <Stack>
       <Group gap={6}>
-        <Tag>{s.classLabel}</Tag>
-        {s.tag && <Tag color="periwinkle">{t(s.tag)}</Tag>}
-        {s.visibility === 'invite' && <Tag color="grape">{t('Invite only')}</Tag>}
-        {s.seriesId != null && <Tag color="cyan">{t('Weekly')}</Tag>}
-        {s.hostIsProfessor && <Tag color="periwinkle">{t('Professor')}</Tag>}
+        <WithInfo id="post-class"><Tag>{s.classLabel}</Tag></WithInfo>
+        {s.tag && <WithInfo id="session-type"><Tag color="periwinkle">{t(s.tag)}</Tag></WithInfo>}
+        {s.visibility === 'invite' && <WithInfo id="session-visibility"><Tag color="grape">{t('Invite only')}</Tag></WithInfo>}
+        {s.seriesId != null && <WithInfo id="session-weekly"><Tag color="cyan">{t('Weekly')}</Tag></WithInfo>}
+        {s.hostIsProfessor && <WithInfo id="session-from-prof"><Tag color="periwinkle">{t('Professor')}</Tag></WithInfo>}
       </Group>
-      <Title order={2}>{s.title}</Title>
+      <Title order={2}>
+        {s.title} <ReqInfo id="session-title" />
+      </Title>
       <Group gap="lg" c="dimmed">
         <Group gap={6}>
           <IconClock size={16} />
           <Text>{when(s)}</Text>
+          <ReqInfo id="session-time" />
         </Group>
         <Group gap={6}>
           {s.format === 'online' ? <IconVideo size={16} /> : <IconMapPin size={16} />}
@@ -251,22 +272,31 @@ export function SessionDetails({ session: s, onEdit, onClose }: { session: Sessi
           ) : (
             <Text>{place(s)}</Text>
           )}
+          <ReqInfo id={s.format === 'online' ? 'session-meeting-link' : 'session-where'} />
         </Group>
       </Group>
       {s.format === 'online' && !s.meetingUrl && (
         <Text size="xs" c="dimmed">
-          {t('The meeting link shows here once you’re going.')}
+          {t('The meeting link shows here once you’re going.')} <ReqInfo id="session-meeting-link" />
         </Text>
       )}
-      {s.description && <Text style={{ whiteSpace: 'pre-wrap' }}>{s.description}</Text>}
+      {s.description && (
+        <Text style={{ whiteSpace: 'pre-wrap' }}>
+          {s.description} <ReqInfo id="session-plan" />
+        </Text>
+      )}
       {s.isHost && !s.cancelledAt && <InviteCode session={s} />}
       <Divider
-        label={[
-          t('{{count}} of {{capacity}} going', { count: s.goingCount, capacity: s.capacity ?? s.goingCount }),
-          s.waitlistCount ? t('{{count}} on the waitlist', { count: s.waitlistCount }) : null,
-        ]
-          .filter(Boolean)
-          .join(' · ')}
+        label={
+          <WithInfo id="session-going">
+            {[
+              t('{{count}} of {{capacity}} going', { count: s.goingCount, capacity: s.capacity ?? s.goingCount }),
+              s.waitlistCount ? t('{{count}} on the waitlist', { count: s.waitlistCount }) : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </WithInfo>
+        }
         labelPosition="left"
       />
       {s.going.length ? (
@@ -289,50 +319,64 @@ export function SessionDetails({ session: s, onEdit, onClose }: { session: Sessi
         <Group gap={6} c="dimmed">
           <IconLock size={14} />
           <Text size="sm">
-            {s.hostFirstName ? t('Hosted by {{name}}.', { name: s.hostFirstName }) : ''} {t('Join to see who else is going.')}
+            {s.hostFirstName ? t('Hosted by {{name}}.', { name: s.hostFirstName }) : ''} {t('Join to see who else is going.')} <ReqInfo id="session-going" />
           </Text>
         </Group>
       )}
       {s.myStatus === 'waitlisted' && (
         <Text size="sm" c="orange" fw={700}>
-          {t("You're #{{position}} on the waitlist. You'll be moved in automatically when a spot opens.", { position: s.myWaitlistPosition ?? 1 })}
+          {t("You're #{{position}} on the waitlist. You'll be moved in automatically when a spot opens.", { position: s.myWaitlistPosition ?? 1 })} <ReqInfo id="session-status" />
         </Text>
       )}
       {!s.cancelledAt && (
         <Group mt="md">
           {s.myStatus === null && (
-            <Button onClick={() => join.mutate()} loading={join.isPending}>
-              {s.isFull ? t('Join waitlist') : t('Join')}
-            </Button>
+            <WithInfo id="session-join">
+              <Button onClick={() => join.mutate()} loading={join.isPending}>
+                {s.isFull ? t('Join waitlist') : t('Join')}
+              </Button>
+            </WithInfo>
           )}
           {moreWeeks && (
-            <Button variant={s.myStatus === null ? 'light' : 'default'} onClick={() => joinWeeks.mutate()} loading={joinWeeks.isPending}>
-              {s.myStatus === null ? t('Join every week') : t('Join the later weeks too')}
-            </Button>
+            <WithInfo id="session-join-weeks">
+              <Button variant={s.myStatus === null ? 'light' : 'default'} onClick={() => joinWeeks.mutate()} loading={joinWeeks.isPending}>
+                {s.myStatus === null ? t('Join every week') : t('Join the later weeks too')}
+              </Button>
+            </WithInfo>
           )}
           {s.isHost ? (
             <>
-              <Button variant="default" onClick={onEdit}>
-                {t('Edit')}
-              </Button>
-              <Button variant="default" onClick={confirmLeaveAsHost}>
-                {t('Leave')}
-              </Button>
-              <Button variant="subtle" color="red" onClick={confirmCancel}>
-                {t('Cancel session')}
-              </Button>
+              <WithInfo id="session-edit">
+                <Button variant="default" onClick={onEdit}>
+                  {t('Edit')}
+                </Button>
+              </WithInfo>
+              <WithInfo id="session-host-leave">
+                <Button variant="default" onClick={confirmLeaveAsHost}>
+                  {t('Leave')}
+                </Button>
+              </WithInfo>
+              <WithInfo id="session-cancel">
+                <Button variant="subtle" color="red" onClick={confirmCancel}>
+                  {t('Cancel session')}
+                </Button>
+              </WithInfo>
             </>
           ) : (
             s.myStatus && (
-              <Button variant="default" onClick={() => leave.mutate()}>
-                {s.myStatus === 'waitlisted' ? t('Leave waitlist') : t('Leave')}
-              </Button>
+              <WithInfo id="session-leave">
+                <Button variant="default" onClick={() => leave.mutate()}>
+                  {s.myStatus === 'waitlisted' ? t('Leave waitlist') : t('Leave')}
+                </Button>
+              </WithInfo>
             )
           )}
           {s.myStatus && (
-            <Button variant="subtle" leftSection={<IconCalendarPlus size={16} />} onClick={() => addToCalendar.mutate()} loading={addToCalendar.isPending}>
-              {t('Add to calendar')}
-            </Button>
+            <WithInfo id="session-ics">
+              <Button variant="subtle" leftSection={<IconCalendarPlus size={16} />} onClick={() => addToCalendar.mutate()} loading={addToCalendar.isPending}>
+                {t('Add to calendar')}
+              </Button>
+            </WithInfo>
           )}
         </Group>
       )}
@@ -348,10 +392,10 @@ export function SessionList({ sessions, empty }: { sessions: Session[]; empty: R
   return (
     <>
       {sessions.length ? sessions.map((s) => <SessionRow key={s.id} session={s} onDetails={() => setOpenId(s.id)} />) : empty}
-      <Drawer opened={open != null} onClose={() => setOpenId(null)} position="right" size="lg" title={<Text fw={800}>{t('Study session')}</Text>}>
+      <Drawer opened={open != null} onClose={() => setOpenId(null)} position="right" size="lg" title={<Text fw={800}>{t('Study session')} <ReqInfo id="session-details" /></Text>}>
         {open && <SessionDetails session={open} onEdit={() => setEditing(open)} onClose={() => setOpenId(null)} />}
       </Drawer>
-      <Modal opened={editing != null} onClose={() => setEditing(null)} title={t('Edit session')} size="lg">
+      <Modal opened={editing != null} onClose={() => setEditing(null)} title={<WithInfo id="session-edit">{t('Edit session')}</WithInfo>} size="lg">
         {editing && <SessionForm classId={editing.classId} existing={editing} onDone={() => setEditing(null)} />}
       </Modal>
     </>
@@ -391,6 +435,7 @@ export function JoinByCode() {
         <Button size="md" variant="default" type="submit" disabled={!code.trim()} loading={join.isPending}>
           {t('Join')}
         </Button>
+        <ReqInfo id="session-join-code" />
       </Group>
     </form>
   );
@@ -476,45 +521,47 @@ export function SessionForm({
       <Stack>
         <Group grow align="flex-start">
           <Select
-            label={t('Class')}
+            label={<WithInfo id="session-class">{t('Class')}</WithInfo>}
             data={classes.data?.map((c) => ({ value: String(c.id), label: c.code })) ?? []}
             disabled={!!existing || !!classId}
             allowDeselect={false}
             {...form.getInputProps('classId')}
           />
-          <Autocomplete label={t('Type')} placeholder={t('Assignment, Midterm…')} data={SESSION_TAGS.map((tag) => t(tag))} {...form.getInputProps('tag')} />
+          <Autocomplete label={<WithInfo id="session-type">{t('Type')}</WithInfo>} placeholder={t('Assignment, Midterm…')} data={SESSION_TAGS.map((tag) => t(tag))} {...form.getInputProps('tag')} />
         </Group>
-        <TextInput label={t('Topic')} placeholder={t('Do Assignment 2 together')} data-autofocus {...form.getInputProps('title')} />
-        <Textarea label={t("What's the plan?")} autosize minRows={2} {...form.getInputProps('description')} />
-        <SegmentedControl
-          data={[
-            { value: 'in-person', label: t('In person') },
-            { value: 'online', label: t('Online') },
-          ]}
-          {...form.getInputProps('format')}
-        />
+        <TextInput label={<WithInfo id="session-title">{t('Topic')}</WithInfo>} placeholder={t('Do Assignment 2 together')} data-autofocus {...form.getInputProps('title')} />
+        <Textarea label={<WithInfo id="session-plan">{t("What's the plan?")}</WithInfo>} autosize minRows={2} {...form.getInputProps('description')} />
+        <WithInfo id="session-format" block>
+          <SegmentedControl
+            data={[
+              { value: 'in-person', label: t('In person') },
+              { value: 'online', label: t('Online') },
+            ]}
+            {...form.getInputProps('format')}
+          />
+        </WithInfo>
         {form.values.format === 'in-person' ? (
-          <TextInput label={t('Where')} placeholder={t('Cybertheque Room 2')} {...form.getInputProps('location')} />
+          <TextInput label={<WithInfo id="session-where">{t('Where')}</WithInfo>} placeholder={t('Cybertheque Room 2')} {...form.getInputProps('location')} />
         ) : (
           <TextInput
-            label={t('Meeting link')}
+            label={<WithInfo id="session-meeting-link">{t('Meeting link')}</WithInfo>}
             description={t('Only people going see it.')}
             placeholder="https://mcgill.zoom.us/j/…"
             {...form.getInputProps('meetingUrl')}
           />
         )}
         <Group grow>
-          <DateTimePicker label={t('Starts')} valueFormat="ddd D MMM, HH:mm" minDate={new Date()} {...form.getInputProps('startsAt')} />
-          <DateTimePicker label={t('Ends')} valueFormat="ddd D MMM, HH:mm" minDate={new Date()} {...form.getInputProps('endsAt')} />
+          <DateTimePicker label={<WithInfo id="session-time">{t('Starts')}</WithInfo>} valueFormat="ddd D MMM, HH:mm" minDate={new Date()} {...form.getInputProps('startsAt')} />
+          <DateTimePicker label={<WithInfo id="session-time">{t('Ends')}</WithInfo>} valueFormat="ddd D MMM, HH:mm" minDate={new Date()} {...form.getInputProps('endsAt')} />
         </Group>
         {busy.data?.what && (
           <Text size="xs" fw={700} c="orange" mt={-8}>
-            {t('You have {{what}} then', { what: busy.data.what })}
+            {t('You have {{what}} then', { what: busy.data.what })} <ReqInfo id="session-clash" />
           </Text>
         )}
         {!existing && !fromPoll && (
           <Select
-            label={t('Repeats')}
+            label={<WithInfo id="session-weekly">{t('Repeats')}</WithInfo>}
             description={t('Weekly sessions share one invite code, which joins every week.')}
             data={[
               { value: '1', label: t("Doesn't repeat") },
@@ -525,10 +572,10 @@ export function SessionForm({
           />
         )}
         <Group grow align="flex-start">
-          <NumberInput label={t('Max people')} description={t('Others join a waitlist once it’s full')} min={2} max={30} {...form.getInputProps('capacity')} />
+          <NumberInput label={<WithInfo id="session-capacity">{t('Max people')}</WithInfo>} description={t('Others join a waitlist once it’s full')} min={2} max={30} {...form.getInputProps('capacity')} />
           {!fromPoll && (
             <Select
-              label={t('Who can see it')}
+              label={<WithInfo id="session-visibility">{t('Who can see it')}</WithInfo>}
               data={[
                 { value: 'class', label: t('Everyone in the section') },
                 { value: 'invite', label: t('Only people with the invite code') },
@@ -579,13 +626,15 @@ export function SessionInvite({ code }: { code: string }) {
     <Card padding="xl" maw={620}>
       <Stack>
         <Group gap={6}>
-          <Tag>{s.classLabel}</Tag>
-          {s.tag && <Tag color="periwinkle">{t(s.tag)}</Tag>}
-          {s.visibility === 'invite' && <Tag color="grape">{t('Invite only')}</Tag>}
-          {s.seriesId != null && <Tag color="cyan">{t('Weekly')}</Tag>}
-          {s.cancelledAt && <Tag color="red">{t('Cancelled')}</Tag>}
+          <WithInfo id="post-class"><Tag>{s.classLabel}</Tag></WithInfo>
+          {s.tag && <WithInfo id="session-type"><Tag color="periwinkle">{t(s.tag)}</Tag></WithInfo>}
+          {s.visibility === 'invite' && <WithInfo id="session-visibility"><Tag color="grape">{t('Invite only')}</Tag></WithInfo>}
+          {s.seriesId != null && <WithInfo id="session-weekly"><Tag color="cyan">{t('Weekly')}</Tag></WithInfo>}
+          {s.cancelledAt && <WithInfo id="session-cancel"><Tag color="red">{t('Cancelled')}</Tag></WithInfo>}
         </Group>
-        <Title order={2}>{s.title}</Title>
+        <Title order={2}>
+          {s.title} <ReqInfo id="session-invite-page" />
+        </Title>
         <Group gap="lg" c="dimmed">
           <Group gap={6}>
             <IconClock size={16} />
@@ -637,9 +686,11 @@ export function SessionInvite({ code }: { code: string }) {
           </Group>
         ) : (
           <Group justify="flex-end">
-            <Button onClick={() => join.mutate()} loading={join.isPending} variant={s.isFull ? 'default' : 'filled'}>
-              {s.isFull ? t('Join waitlist') : t('Join')}
-            </Button>
+            <WithInfo id="session-join">
+              <Button onClick={() => join.mutate()} loading={join.isPending} variant={s.isFull ? 'default' : 'filled'}>
+                {s.isFull ? t('Join waitlist') : t('Join')}
+              </Button>
+            </WithInfo>
           </Group>
         )}
       </Stack>

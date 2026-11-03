@@ -33,6 +33,7 @@ import { t } from '../lib/i18n';
 import { useAction } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
 import { Empty, Loading } from './ui';
+import { ReqInfo, WithInfo } from './ReqInfo';
 
 type Assessment = Out<typeof rpc.courses.assessments>[number];
 
@@ -76,7 +77,7 @@ export function GradeCalculator({ classId }: { classId: number }) {
   const confirmRemove = (a: Assessment) => {
     if (!teaching) return remove.mutate(a.id);
     modals.openConfirmModal({
-      title: t('Remove {{name}}?', { name: a.name }),
+      title: <WithInfo id="scheme-edit">{t('Remove {{name}}?', { name: a.name })}</WithInfo>,
       children: <Text size="sm">{t("Students who entered a mark for it lose that mark, and they're told the scheme changed.")}</Text>,
       labels: { confirm: t('Remove'), cancel: t('Keep') },
       confirmProps: { color: 'red' },
@@ -88,41 +89,49 @@ export function GradeCalculator({ classId }: { classId: number }) {
     <Stack gap="lg">
       <Card padding="lg">
         <Group justify="space-between" mb={4}>
-          <Title order={2}>{teaching ? t('Grading scheme') : t('Current grades')}</Title>
+          <Title order={2}>
+            {teaching ? t('Grading scheme') : t('Current grades')} <ReqInfo id="grades-card" />
+          </Title>
           {canEdit && (
           <Group gap="md">
             {teaching && list.length > 0 && (mine.data?.length ?? 0) > 1 && (
-              <Menu position="bottom-end">
-                <Menu.Target>
-                  <Button variant="subtle" leftSection={<IconCopy size={16} />}>
-                    {t('Copy to a section')}
-                  </Button>
-                </Menu.Target>
-                <Menu.Dropdown>
-                  {mine.data!
-                    .filter((c) => c.id !== classId)
-                    .map((c) => (
-                      <Menu.Item key={c.id} onClick={() => copyTo.mutate(c)}>
-                        {c.code}
-                      </Menu.Item>
-                    ))}
-                </Menu.Dropdown>
-              </Menu>
+              <WithInfo id="scheme-copy">
+                <Menu position="bottom-end">
+                  <Menu.Target>
+                    <Button variant="subtle" leftSection={<IconCopy size={16} />}>
+                      {t('Copy to a section')}
+                    </Button>
+                  </Menu.Target>
+                  <Menu.Dropdown>
+                    {mine.data!
+                      .filter((c) => c.id !== classId)
+                      .map((c) => (
+                        <Menu.Item key={c.id} onClick={() => copyTo.mutate(c)}>
+                          {c.code}
+                        </Menu.Item>
+                      ))}
+                  </Menu.Dropdown>
+                </Menu>
+              </WithInfo>
             )}
             {list.length > 0 && (
               <Switch
-                label={t('Second scheme, whichever is higher')}
+                label={<WithInfo id="scheme-second">{t('Second scheme, whichever is higher')}</WithInfo>}
                 checked={two}
                 onChange={(e) => setSecondScheme.mutate(e.currentTarget.checked)}
                 disabled={setSecondScheme.isPending}
               />
             )}
-            <Button variant="subtle" leftSection={<IconFileImport size={16} />} onClick={() => setImporting(true)}>
-              {t('From the syllabus')}
-            </Button>
-            <Button variant="default" leftSection={<IconPlus size={16} />} onClick={() => setEditing('new')}>
-              {t('Add component')}
-            </Button>
+            <WithInfo id="scheme-import">
+              <Button variant="subtle" leftSection={<IconFileImport size={16} />} onClick={() => setImporting(true)}>
+                {t('From the syllabus')}
+              </Button>
+            </WithInfo>
+            <WithInfo id="scheme-add">
+              <Button variant="default" leftSection={<IconPlus size={16} />} onClick={() => setEditing('new')}>
+                {t('Add component')}
+              </Button>
+            </WithInfo>
           </Group>
           )}
         </Group>
@@ -131,27 +140,46 @@ export function GradeCalculator({ classId }: { classId: number }) {
             ? t("Students in the section see this scheme and enter their own marks, which stay private, even from you. They're told when you change it.")
             : canEdit
               ? t('The grading scheme is shared with your section, so anyone in it can add or fix a component. Your grades are private.')
-              : t('{{name}} sets the grading scheme for this section. Your grades are private.', { name: managedBy ?? '' })}
+              : t('{{name}} sets the grading scheme for this section. Your grades are private.', { name: managedBy ?? '' })}{' '}
+          <ReqInfo id="scheme-shared" />
         </Text>
         {list.length ? (
           <Table.ScrollContainer minWidth={teaching ? 460 : 760}>
             <Table withTableBorder withColumnBorders verticalSpacing="sm" fz="md">
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th>{t('Component')}</Table.Th>
-                  <Table.Th w={120}>{two ? t('Scheme 1 (%)') : t('Weight (%)')}</Table.Th>
-                  {two && <Table.Th w={120}>{t('Scheme 2 (%)')}</Table.Th>}
+                  <Table.Th>
+                    <WithInfo id="scheme-component">{t('Component')}</WithInfo>
+                  </Table.Th>
+                  <Table.Th w={120}>
+                    <WithInfo id="scheme-weight">{two ? t('Scheme 1 (%)') : t('Weight (%)')}</WithInfo>
+                  </Table.Th>
+                  {two && (
+                    <Table.Th w={120}>
+                      <WithInfo id="scheme-second">{t('Scheme 2 (%)')}</WithInfo>
+                    </Table.Th>
+                  )}
                   {!teaching && (
                     <Table.Th w={170}>
-                      {t('Your grade (%)')}
+                      <WithInfo id="marks-enter">{t('Your grade (%)')}</WithInfo>
                       <Text size="xs" c="dimmed" fw={400}>
                         {t('or a fraction, like 44/50')}
                       </Text>
                     </Table.Th>
                   )}
-                  {!teaching && <Table.Th w={200}>{t('Weighted contribution (%)')}</Table.Th>}
-                  <Table.Th w={140}>{t('Added by')}</Table.Th>
-                  {canEdit && <Table.Th w={90} />}
+                  {!teaching && (
+                    <Table.Th w={200}>
+                      <WithInfo id="marks-contribution">{t('Weighted contribution (%)')}</WithInfo>
+                    </Table.Th>
+                  )}
+                  <Table.Th w={140}>
+                    <WithInfo id="scheme-added-by">{t('Added by')}</WithInfo>
+                  </Table.Th>
+                  {canEdit && (
+                    <Table.Th w={90} ta="right">
+                      <ReqInfo id="scheme-edit" />
+                    </Table.Th>
+                  )}
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -191,7 +219,8 @@ export function GradeCalculator({ classId }: { classId: number }) {
                         <Text size="xs" c="dimmed" mt={2}>
                           {a.parts.best != null && a.parts.best < a.parts.marks.length
                             ? t('best {{best}} of {{count}} marks', { best: a.parts.best, count: a.parts.marks.length })
-                            : t('from {{count}} marks', { count: a.parts.marks.length })}
+                            : t('from {{count}} marks', { count: a.parts.marks.length })}{' '}
+                          <ReqInfo id="marks-several" />
                         </Text>
                       )}
                     </Table.Td>
@@ -231,20 +260,22 @@ export function GradeCalculator({ classId }: { classId: number }) {
         {list.length > 0 && (
           <Group mt="sm" gap="lg">
             {!teaching && (
-              <Button size="compact-sm" variant="subtle" leftSection={<IconClipboardText size={14} />} onClick={() => setPasting(true)}>
-                {t('Paste marks from myCourses')}
-              </Button>
+              <WithInfo id="marks-paste">
+                <Button size="compact-sm" variant="subtle" leftSection={<IconClipboardText size={14} />} onClick={() => setPasting(true)}>
+                  {t('Paste marks from myCourses')}
+                </Button>
+              </WithInfo>
             )}
             {!teaching && (
               <Text size="sm" c="dimmed">
                 {t('Average so far:')}{' '}
-                <b>{summary.currentAverage == null ? '—' : `${summary.currentAverage}% (${letterFor(summary.currentAverage).letter})`}</b>
+                <b>{summary.currentAverage == null ? '—' : `${summary.currentAverage}% (${letterFor(summary.currentAverage).letter})`}</b> <ReqInfo id="marks-average" />
               </Text>
             )}
             <Text size="sm" c={summary.unlistedWeight === 0 ? 'dimmed' : 'orange'}>
               {t('Weights total')} <b>{summary.totalWeight}%</b>
               {two && ` · ${t('scheme 2: {{weight}}%', { weight: summary.schemes[1].totalWeight })}`}
-              {summary.unlistedWeight > 0 && ` ${t('({{weight}}% not listed yet, counted as still to come)', { weight: summary.unlistedWeight })}`}
+              {summary.unlistedWeight > 0 && ` ${t('({{weight}}% not listed yet, counted as still to come)', { weight: summary.unlistedWeight })}`} <ReqInfo id="scheme-total" />
             </Text>
           </Group>
         )}
@@ -254,7 +285,7 @@ export function GradeCalculator({ classId }: { classId: number }) {
         <Grid gap="lg" align="stretch">
           <Grid.Col span={{ base: 12, md: 3 }}>
             <Title order={3} mb="sm">
-              {t('Target grade')}
+              {t('Target grade')} <ReqInfo id="grade-target" />
             </Title>
             <Select
               radius="xl"
@@ -276,7 +307,9 @@ export function GradeCalculator({ classId }: { classId: number }) {
               <Stack align="center" justify="center" gap={4} h="100%" ta="center">
                 {!goal || goal.status === 'secured' ? (
                   <>
-                    <Text fw={700}>{t("You've already secured")}</Text>
+                    <Text fw={700}>
+                      {t("You've already secured")} <ReqInfo id="grade-needed" />
+                    </Text>
                     <Text fz={44} fw={700} className="display">
                       {target} 🎉
                     </Text>
@@ -288,7 +321,9 @@ export function GradeCalculator({ classId }: { classId: number }) {
                   </>
                 ) : goal.status === 'out-of-reach' ? (
                   <>
-                    <Text fw={700}>{t('Out of reach')}</Text>
+                    <Text fw={700}>
+                      {t('Out of reach')} <ReqInfo id="grade-needed" />
+                    </Text>
                     <Text size="sm">
                       {single
                         ? t("Even 100% on the {{name}} won't reach {{min}}%.", restParams)
@@ -301,7 +336,9 @@ export function GradeCalculator({ classId }: { classId: number }) {
                   </>
                 ) : (
                   <>
-                    <Text fw={700}>{t('You need at least')}</Text>
+                    <Text fw={700}>
+                      {t('You need at least')} <ReqInfo id="grade-needed" />
+                    </Text>
                     <Text fz={48} fw={700} className="display" lh={1}>
                       {goal.needed}%
                     </Text>
@@ -326,7 +363,7 @@ export function GradeCalculator({ classId }: { classId: number }) {
         </Grid>
       )}
 
-      <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing && editing !== 'new' ? t('Edit component') : t('Add component')}>
+      <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing && editing !== 'new' ? <WithInfo id="scheme-edit">{t('Edit component')}</WithInfo> : <WithInfo id="scheme-add">{t('Add component')}</WithInfo>}>
         {editing && (
           <ComponentForm
             key={editing === 'new' ? 'new' : editing.id}
@@ -338,13 +375,13 @@ export function GradeCalculator({ classId }: { classId: number }) {
           />
         )}
       </Modal>
-      <Modal opened={pasting} onClose={() => setPasting(false)} title={t('Marks from myCourses')} size="lg">
+      <Modal opened={pasting} onClose={() => setPasting(false)} title={<WithInfo id="marks-paste">{t('Marks from myCourses')}</WithInfo>} size="lg">
         {pasting && <GradesPaste scheme={list} onDone={() => setPasting(false)} />}
       </Modal>
-      <Modal opened={importing} onClose={() => setImporting(false)} title={t('Grading scheme from a syllabus')} size="lg">
+      <Modal opened={importing} onClose={() => setImporting(false)} title={<WithInfo id="scheme-import">{t('Grading scheme from a syllabus')}</WithInfo>} size="lg">
         {importing && <SchemeImport classId={classId} scheme={list} outlineName={info.data.outlineName} onDone={() => setImporting(false)} />}
       </Modal>
-      <Modal opened={severalId != null} onClose={() => setSeveralId(null)} title={t('Marks for {{name}}', { name: list.find((a) => a.id === severalId)?.name ?? '' })}>
+      <Modal opened={severalId != null} onClose={() => setSeveralId(null)} title={<WithInfo id="marks-several">{t('Marks for {{name}}', { name: list.find((a) => a.id === severalId)?.name ?? '' })}</WithInfo>}>
         {severalId != null && list.some((a) => a.id === severalId) && <SeveralMarks assessment={list.find((a) => a.id === severalId)!} onDone={() => setSeveralId(null)} />}
       </Modal>
     </Stack>
@@ -357,7 +394,7 @@ function Scenarios({ items, needed, single, two }: { items: Assessment[]; needed
   return (
     <Card padding="md" h="100%">
       <Text fw={800} className="display">
-        {t('Explore different scenarios')}
+        {t('Explore different scenarios')} <ReqInfo id="grade-scenarios" />
       </Text>
       <Text size="xs" c="dimmed" mb="xs">
         {single
@@ -420,12 +457,12 @@ function ComponentForm({ classId, existing, two, teaching, onDone }: { classId: 
   return (
     <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
       <Stack>
-        <TextInput label={t('Component')} placeholder={t('Midterm')} data-autofocus {...form.getInputProps('name')} />
+        <TextInput label={<WithInfo id="scheme-component">{t('Component')}</WithInfo>} placeholder={t('Midterm')} data-autofocus {...form.getInputProps('name')} />
         <Group align="flex-end">
-          <NumberInput label={two ? t('Weight in scheme 1') : t('Weight')} suffix="%" min={0} max={100} decimalScale={2} w={160} {...form.getInputProps('weight')} />
+          <NumberInput label={<WithInfo id="scheme-weight">{two ? t('Weight in scheme 1') : t('Weight')}</WithInfo>} suffix="%" min={0} max={100} decimalScale={2} w={160} {...form.getInputProps('weight')} />
           {two && (
             <NumberInput
-              label={t('Weight in scheme 2')}
+              label={<WithInfo id="scheme-second">{t('Weight in scheme 2')}</WithInfo>}
               description={t("0 if it doesn't count there")}
               suffix="%"
               min={0}
@@ -437,7 +474,7 @@ function ComponentForm({ classId, existing, two, teaching, onDone }: { classId: 
           )}
         </Group>
         <DateTimePicker
-          label={t('Due date')}
+          label={<WithInfo id="scheme-due">{t('Due date')}</WithInfo>}
           description={t("Shows on everyone's calendar in this section")}
           placeholder={t('Optional')}
           clearable
@@ -445,7 +482,7 @@ function ComponentForm({ classId, existing, two, teaching, onDone }: { classId: 
           {...form.getInputProps('dueAt')}
         />
         <Text size="xs" c="dimmed">
-          {teaching ? t("This changes the grading scheme for the whole section, and students are told.") : t('This changes the grading scheme for the whole section. Enter your own grade in the table.')}
+          {teaching ? t("This changes the grading scheme for the whole section, and students are told.") : t('This changes the grading scheme for the whole section. Enter your own grade in the table.')} <ReqInfo id="scheme-shared" />
         </Text>
         <Group justify="flex-end">
           <Button type="submit" loading={save.isPending}>
@@ -468,7 +505,7 @@ function SeveralMarks({ assessment: a, onDone }: { assessment: Assessment; onDon
   return (
     <Stack>
       <Textarea
-        label={t('Your marks')}
+        label={<WithInfo id="marks-several">{t('Your marks')}</WithInfo>}
         description={t('Percentages or fractions, with spaces between them.')}
         placeholder="8/10 9/10 7.5/10"
         autosize
@@ -479,7 +516,7 @@ function SeveralMarks({ assessment: a, onDone }: { assessment: Assessment; onDon
         error={unreadable.length ? t('Can’t read: {{marks}}', { marks: unreadable.join(', ') }) : undefined}
       />
       <NumberInput
-        label={t('Only the best ones count')}
+        label={<WithInfo id="marks-best">{t('Only the best ones count')}</WithInfo>}
         description={t('Leave it empty if they all count. "Best 4 of 5 quizzes" is 4.')}
         placeholder="—"
         min={1}
@@ -541,7 +578,7 @@ function SchemeImport({ classId, scheme, outlineName, onDone }: { classId: numbe
   return (
     <Stack>
       <Text size="sm" c="dimmed">
-        {t('Read the course outline, or paste the part with the grading breakdown. You choose what gets added.')}
+        {t('Read the course outline, or paste the part with the grading breakdown. You choose what gets added.')} <ReqInfo id="scheme-import" />
       </Text>
       <Group gap="xs">
         {outlineName && (
@@ -552,9 +589,10 @@ function SchemeImport({ classId, scheme, outlineName, onDone }: { classId: numbe
         <Button size="xs" variant="default" leftSection={<IconFileText size={14} />} onClick={() => readFile.mutate()} loading={readFile.isPending}>
           {t('Choose a PDF, Word or text file')}
         </Button>
+        <ReqInfo id="syllabus-read" />
       </Group>
       <Textarea
-        label={t('Syllabus text')}
+        label={<WithInfo id="syllabus-read">{t('Syllabus text')}</WithInfo>}
         placeholder={t('Assignments 20%, Midterm 30%, Final exam 50%')}
         autosize
         minRows={4}
@@ -594,7 +632,7 @@ function SchemeImport({ classId, scheme, outlineName, onDone }: { classId: numbe
       {found.length > 0 && (
         <Group justify="space-between">
           <Text size="sm" c={total === 100 ? 'teal' : 'orange'} fw={700}>
-            {t('The scheme would total {{total}}%', { total: Math.round(total * 100) / 100 })}
+            {t('The scheme would total {{total}}%', { total: Math.round(total * 100) / 100 })} <ReqInfo id="scheme-total" />
           </Text>
           <Button onClick={() => add.mutate()} disabled={!picked.length || total > 100} loading={add.isPending}>
             {t('Add {{count}} components', { count: picked.length })}
@@ -622,10 +660,10 @@ function GradesPaste({ scheme, onDone }: { scheme: Assessment[]; onDone: () => v
   return (
     <Stack>
       <Text size="sm" c="dimmed">
-        {t('On myCourses, open Grades for this course, select the page and paste it here. Only you see your marks.')}
+        {t('On myCourses, open Grades for this course, select the page and paste it here. Only you see your marks.')} <ReqInfo id="marks-paste" />
       </Text>
       <Textarea
-        label={t('Your grades page')}
+        label={<WithInfo id="marks-paste">{t('Your grades page')}</WithInfo>}
         placeholder={'Assignment 1  18 / 20  90 %\nMidterm  41 / 50  82 %'}
         autosize
         minRows={4}

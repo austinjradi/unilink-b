@@ -11,6 +11,7 @@ import { t } from '../lib/i18n';
 import { type Out, rpc } from '../lib/rpc';
 import { SessionForm } from './Sessions';
 import { Tag } from './ui';
+import { ReqInfo, WithInfo } from './ReqInfo';
 
 type Poll = Out<typeof rpc.timePolls.list>[number];
 type Picked = { optionId: number; classId: number; title: string; startsAt: Date; endsAt: Date };
@@ -26,7 +27,7 @@ export function TimePolls({ classId }: { classId: number | null }) {
       {polls.data.map((poll) => (
         <PollCard key={poll.id} poll={poll} showClass={classId == null} onPick={setPicked} />
       ))}
-      <Modal opened={picked != null} onClose={() => setPicked(null)} title={t('Set up the study session')} size="lg">
+      <Modal opened={picked != null} onClose={() => setPicked(null)} title={<WithInfo id="poll-pick">{t('Set up the study session')}</WithInfo>} size="lg">
         {picked && <SessionForm classId={picked.classId} existing={null} fromPoll={picked} onDone={() => setPicked(null)} />}
       </Modal>
     </Stack>
@@ -43,27 +44,33 @@ function PollCard({ poll, showClass, onPick }: { poll: Poll; showClass: boolean;
         <div style={{ minWidth: 0 }}>
           {showClass && poll.classLabel && (
             <Group mb={6}>
-              <Tag>{poll.classLabel}</Tag>
+              <WithInfo id="post-class">
+                <Tag>{poll.classLabel}</Tag>
+              </WithInfo>
             </Group>
           )}
-          <Title order={4}>{poll.title}</Title>
+          <Title order={4}>
+            {poll.title} <ReqInfo id="poll-card" />
+          </Title>
           <Text size="sm" c="dimmed">
             {poll.mine ? t('You asked when works. Pick a time once people have answered.') : t('{{name}} asks: which times work for you?', { name: poll.hostName })}
           </Text>
         </div>
         {poll.mine && (
-          <Tooltip label={t('Remove')}>
-            <ActionIcon variant="subtle" color="red" size="sm" onClick={() => remove.mutate()} aria-label={t('Delete {{name}}', { name: poll.title })}>
-              <IconTrash size={14} />
-            </ActionIcon>
-          </Tooltip>
+          <WithInfo id="poll-remove">
+            <Tooltip label={t('Remove')}>
+              <ActionIcon variant="subtle" color="red" size="sm" onClick={() => remove.mutate()} aria-label={t('Delete {{name}}', { name: poll.title })}>
+                <IconTrash size={14} />
+              </ActionIcon>
+            </Tooltip>
+          </WithInfo>
         )}
       </Group>
       <Stack gap={8}>
         {poll.options.map((o) => (
           <Group key={o.id} justify="space-between" wrap="nowrap" gap="sm">
             <Checkbox
-              label={`${fmtDateTime(o.startsAt)}–${fmtTime(o.endsAt)}`}
+              label={<WithInfo id="poll-vote">{`${fmtDateTime(o.startsAt)}–${fmtTime(o.endsAt)}`}</WithInfo>}
               description={o.clash ? t('You have {{what}} then', { what: o.clash }) : undefined}
               styles={{ description: { color: 'var(--mantine-color-orange-text)', fontWeight: 700 } }}
               checked={o.voted}
@@ -74,9 +81,11 @@ function PollCard({ poll, showClass, onPick }: { poll: Poll; showClass: boolean;
                 {t('{{count}} can make it', { count: o.votes })}
               </Text>
               {poll.mine && (
-                <Button size="compact-xs" variant="light" onClick={() => onPick({ optionId: o.id, classId: poll.classId, title: poll.title, startsAt: o.startsAt, endsAt: o.endsAt })}>
-                  {t('Pick this time')}
-                </Button>
+                <WithInfo id="poll-pick">
+                  <Button size="compact-xs" variant="light" onClick={() => onPick({ optionId: o.id, classId: poll.classId, title: poll.title, startsAt: o.startsAt, endsAt: o.endsAt })}>
+                    {t('Pick this time')}
+                  </Button>
+                </WithInfo>
               )}
             </Group>
           </Group>
@@ -106,9 +115,9 @@ export function TimePollForm({ classId, onDone }: { classId: number; onDone: () 
   return (
     <form onSubmit={form.onSubmit((v) => create.mutate(v))}>
       <Stack>
-        <TextInput label={t('Topic')} placeholder={t('Do Assignment 2 together')} data-autofocus {...form.getInputProps('title')} />
+        <TextInput label={<WithInfo id="poll-create">{t('Topic')}</WithInfo>} placeholder={t('Do Assignment 2 together')} data-autofocus {...form.getInputProps('title')} />
         <Select
-          label={t('How long')}
+          label={<WithInfo id="poll-length">{t('How long')}</WithInfo>}
           data={[60, 90, 120, 180].map((minutes) => ({ value: String(minutes), label: t('{{hours}} h', { hours: minutes / 60 }) }))}
           allowDeselect={false}
           {...form.getInputProps('minutes')}
@@ -116,7 +125,7 @@ export function TimePollForm({ classId, onDone }: { classId: number; onDone: () 
         <Stack gap="xs">
           {form.values.times.map((_, index) => (
             <Group key={index} gap="xs" wrap="nowrap" align="flex-end">
-              <DateTimePicker style={{ flex: 1 }} label={index === 0 ? t('Times to offer') : undefined} aria-label={t('Time {{number}}', { number: index + 1 })} valueFormat="ddd D MMM, HH:mm" minDate={new Date()} {...form.getInputProps(`times.${index}`)} />
+              <DateTimePicker style={{ flex: 1 }} label={index === 0 ? <WithInfo id="poll-times">{t('Times to offer')}</WithInfo> : undefined} aria-label={t('Time {{number}}', { number: index + 1 })} valueFormat="ddd D MMM, HH:mm" minDate={new Date()} {...form.getInputProps(`times.${index}`)} />
               {form.values.times.length > 2 && (
                 <ActionIcon variant="subtle" color="red" mb={6} onClick={() => form.removeListItem('times', index)} aria-label={t('Remove time {{number}}', { number: index + 1 })}>
                   <IconTrash size={14} />

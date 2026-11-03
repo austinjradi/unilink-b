@@ -12,6 +12,7 @@ import { fmtDateTime, fromNow, toDate } from '../../lib/format';
 import { useAction } from '../../lib/hooks';
 import { t } from '../../lib/i18n';
 import { type Out, rpc } from '../../lib/rpc';
+import { ReqInfo, WithInfo } from '../../components/ReqInfo';
 
 type Assignment = Out<typeof rpc.assignments.list>[number];
 
@@ -29,9 +30,11 @@ export function Assignments({ classId }: { classId: number }) {
     <Stack gap="lg">
       {teaching && (
         <Group justify="flex-end">
-          <Button leftSection={<IconPlus size={16} />} onClick={() => setEditing('new')}>
-            {t('Post an assignment')}
-          </Button>
+          <WithInfo id="assignment-post">
+            <Button leftSection={<IconPlus size={16} />} onClick={() => setEditing('new')}>
+              {t('Post an assignment')}
+            </Button>
+          </WithInfo>
         </Group>
       )}
       {list.data.length ? (
@@ -47,7 +50,7 @@ export function Assignments({ classId }: { classId: number }) {
           </Empty>
         </Card>
       )}
-      <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing && editing !== 'new' ? t('Edit assignment') : t('Post an assignment')} size="lg">
+      <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing && editing !== 'new' ? <WithInfo id="assignment-manage">{t('Edit assignment')}</WithInfo> : <WithInfo id="assignment-post">{t('Post an assignment')}</WithInfo>} size="lg">
         {editing && <AssignmentForm classId={classId} existing={editing === 'new' ? null : editing} onDone={() => setEditing(null)} />}
       </Modal>
     </Stack>
@@ -65,7 +68,7 @@ function AssignmentCard({ assignment: a, teaching, onEdit }: { assignment: Assig
 
   const confirmRemove = () =>
     modals.openConfirmModal({
-      title: t('Remove this assignment?'),
+      title: <WithInfo id="assignment-manage">{t('Remove this assignment?')}</WithInfo>,
       children: <Text size="sm">{t("It comes off everyone's calendar, and the handout is deleted. Students aren't notified.")}</Text>,
       labels: { confirm: t('Remove'), cancel: t('Keep') },
       confirmProps: { color: 'red' },
@@ -77,14 +80,18 @@ function AssignmentCard({ assignment: a, teaching, onEdit }: { assignment: Assig
       <Group justify="space-between" align="flex-start" wrap="nowrap">
         <div style={{ minWidth: 0 }}>
           <Title order={3} td={a.done ? 'line-through' : undefined}>
-            {a.title}
+            {a.title} <ReqInfo id="assignment-card" />
           </Title>
           <Group gap="xs" mt={4}>
             <Text size="sm" c="dimmed">
               {t('Due {{when}}', { when: fmtDateTime(a.dueAt) })} · {fromNow(a.dueAt)}
             </Text>
             {past && <Tag color="gray">{t('Past due')}</Tag>}
-            {a.releaseAt && <Tag color="grape">{t('Goes out {{when}}', { when: fmtDateTime(a.releaseAt) })}</Tag>}
+            {a.releaseAt && (
+              <WithInfo id="assignment-later">
+                <Tag color="grape">{t('Goes out {{when}}', { when: fmtDateTime(a.releaseAt) })}</Tag>
+              </WithInfo>
+            )}
           </Group>
         </div>
         {teaching ? (
@@ -95,11 +102,14 @@ function AssignmentCard({ assignment: a, teaching, onEdit }: { assignment: Assig
             <ActionIcon variant="subtle" color="red" onClick={confirmRemove} aria-label={t('Delete {{name}}', { name: a.title })}>
               <IconTrash size={16} />
             </ActionIcon>
+            <ReqInfo id="assignment-manage" />
           </Group>
         ) : (
-          <Tooltip label={a.done ? t('Mark as not done') : t('Mark as done')}>
-            <Checkbox checked={a.done} onChange={(e) => setDone.mutate(e.currentTarget.checked)} aria-label={t('Mark {{title}} done', { title: a.title })} />
-          </Tooltip>
+          <WithInfo id="assignment-done">
+            <Tooltip label={a.done ? t('Mark as not done') : t('Mark as done')}>
+              <Checkbox checked={a.done} onChange={(e) => setDone.mutate(e.currentTarget.checked)} aria-label={t('Mark {{title}} done', { title: a.title })} />
+            </Tooltip>
+          </WithInfo>
         )}
       </Group>
       {a.notes && (
@@ -109,23 +119,29 @@ function AssignmentCard({ assignment: a, teaching, onEdit }: { assignment: Assig
       )}
       <Group gap="xs" mt="md">
         {a.attachmentName && (
-          <Button size="xs" variant="light" leftSection={<IconPaperclip size={14} />} onClick={() => open.mutate()} loading={open.isPending}>
-            {a.attachmentName}
-          </Button>
+          <WithInfo id="assignment-file">
+            <Button size="xs" variant="light" leftSection={<IconPaperclip size={14} />} onClick={() => open.mutate()} loading={open.isPending}>
+              {a.attachmentName}
+            </Button>
+          </WithInfo>
         )}
         {!teaching && (a.planned || !past) && (
-          <Button size="xs" variant="default" leftSection={<IconListCheck size={14} />} component={Link} to={a.planned ? '/planner' : `/planner?new=1&from=deadline-${a.id}`}>
-            {a.planned ? t('See my plan') : t('Plan it')}
-          </Button>
+          <WithInfo id="assignment-plan">
+            <Button size="xs" variant="default" leftSection={<IconListCheck size={14} />} component={Link} to={a.planned ? '/planner' : `/planner?new=1&from=deadline-${a.id}`}>
+              {a.planned ? t('See my plan') : t('Plan it')}
+            </Button>
+          </WithInfo>
         )}
         {teaching && a.releaseAt && (
-          <Button size="xs" variant="light" onClick={() => sendNow.mutate()} loading={sendNow.isPending}>
-            {t('Send it out now')}
-          </Button>
+          <WithInfo id="assignment-later">
+            <Button size="xs" variant="light" onClick={() => sendNow.mutate()} loading={sendNow.isPending}>
+              {t('Send it out now')}
+            </Button>
+          </WithInfo>
         )}
         {a.progress && !a.releaseAt && (
           <Text size="sm" c="dimmed">
-            {t('{{done}} of {{count}} students checked it off', { done: a.progress.done, count: a.progress.total })}
+            {t('{{done}} of {{count}} students checked it off', { done: a.progress.done, count: a.progress.total })} <ReqInfo id="assignment-progress" />
           </Text>
         )}
       </Group>
@@ -182,12 +198,12 @@ function AssignmentForm({ classId, existing, onDone }: { classId: number; existi
   return (
     <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
       <Stack>
-        <TextInput label={t('Assignment')} placeholder={t('Problem set 3')} data-autofocus {...form.getInputProps('title')} />
+        <TextInput label={<WithInfo id="assignment-post">{t('Assignment')}</WithInfo>} placeholder={t('Problem set 3')} data-autofocus {...form.getInputProps('title')} />
         <Group grow align="flex-end">
-          <DateTimePicker label={t('Due')} valueFormat="ddd D MMM YYYY, HH:mm" {...form.getInputProps('dueAt')} />
+          <DateTimePicker label={<WithInfo id="assignment-due">{t('Due')}</WithInfo>} valueFormat="ddd D MMM YYYY, HH:mm" {...form.getInputProps('dueAt')} />
           {!existing && (
             <NumberInput
-              label={t('Weight')}
+              label={<WithInfo id="assignment-weight">{t('Weight')}</WithInfo>}
               description={t('Adds it to the grading scheme. Leave empty if it isn’t graded.')}
               suffix="%"
               min={0}
@@ -197,10 +213,10 @@ function AssignmentForm({ classId, existing, onDone }: { classId: number; existi
             />
           )}
         </Group>
-        <Textarea label={t('Instructions')} autosize minRows={3} {...form.getInputProps('notes')} />
+        <Textarea label={<WithInfo id="assignment-card">{t('Instructions')}</WithInfo>} autosize minRows={3} {...form.getInputProps('notes')} />
         {(!existing || existing.releaseAt) && (
           <DateTimePicker
-            label={t('Send it out later')}
+            label={<WithInfo id="assignment-later">{t('Send it out later')}</WithInfo>}
             description={t('Leave this empty to send it out now. Until then, students see nothing and get no notification.')}
             placeholder={t('Now')}
             valueFormat="ddd D MMM YYYY, HH:mm"
@@ -210,12 +226,14 @@ function AssignmentForm({ classId, existing, onDone }: { classId: number; existi
           />
         )}
         {!existing && others.length > 0 && (
-          <MultiSelect label={t('Also post to')} placeholder={t('Optional')} data={others.map((c) => ({ value: String(c.id), label: c.code }))} value={also} onChange={setAlso} clearable />
+          <MultiSelect label={<WithInfo id="assignment-also">{t('Also post to')}</WithInfo>} placeholder={t('Optional')} data={others.map((c) => ({ value: String(c.id), label: c.code }))} value={also} onChange={setAlso} clearable />
         )}
         <Group gap="xs">
-          <Button variant="default" size="xs" leftSection={<IconPaperclip size={14} />} onClick={() => choose.mutate()}>
-            {fileName ? t('Change file') : t('Attach the assignment file')}
-          </Button>
+          <WithInfo id="assignment-file">
+            <Button variant="default" size="xs" leftSection={<IconPaperclip size={14} />} onClick={() => choose.mutate()}>
+              {fileName ? t('Change file') : t('Attach the assignment file')}
+            </Button>
+          </WithInfo>
           {fileName && (
             <Text size="sm" c="dimmed">
               {fileName}

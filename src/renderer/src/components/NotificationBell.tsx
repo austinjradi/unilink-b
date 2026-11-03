@@ -8,6 +8,7 @@ import { dayLabel, fromNow } from '../lib/format';
 import { t, tm } from '../lib/i18n';
 import { useAction } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
+import { ReqInfo, WithInfo } from './ReqInfo';
 
 // G3: in-app notifications.
 export function NotificationBell() {
@@ -24,6 +25,7 @@ export function NotificationBell() {
   const days = [...new Set(items.map((n) => ymd(n.createdAt)))];
 
   return (
+    <WithInfo id="notif-bell">
     <Popover opened={opened} onChange={setOpened} position="bottom-end" width="min(380px, calc(100vw - 16px))" shadow="md">
       <Popover.Target>
         <Indicator label={unread > 9 ? '9+' : unread} size={16} disabled={!unread} offset={6} color="red.8">
@@ -34,25 +36,31 @@ export function NotificationBell() {
       </Popover.Target>
       <Popover.Dropdown p={0}>
         <Group justify="space-between" px="md" py="sm" style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}>
-          <Text fw={600}>{t('Notifications')}</Text>
-          <Button size="compact-xs" variant="subtle" disabled={!unread} onClick={() => markAll.mutate()}>
-            {t('Mark all read')}
-          </Button>
+          <Text fw={600}>
+            {t('Notifications')} <ReqInfo id="notif-bell" />
+          </Text>
+          <WithInfo id="notif-mark-all">
+            <Button size="compact-xs" variant="subtle" disabled={!unread} onClick={() => markAll.mutate()}>
+              {t('Mark all read')}
+            </Button>
+          </WithInfo>
         </Group>
         {(list.data?.items.length ?? 0) > 0 && (
-          <SegmentedControl
-            size="xs"
-            fullWidth
-            mx="md"
-            mt="xs"
-            value={onlyUnread ? 'unread' : 'all'}
-            onChange={(v) => setOnlyUnread(v === 'unread')}
-            data={[
-              { value: 'all', label: t('All') },
-              { value: 'unread', label: t('Unread ({{count}})', { count: unread }) },
-            ]}
-            aria-label={t('Which notifications to show')}
-          />
+          <Box mx="md" mt="xs">
+            <WithInfo id="notif-filter" block>
+              <SegmentedControl
+                size="xs"
+                fullWidth
+                value={onlyUnread ? 'unread' : 'all'}
+                onChange={(v) => setOnlyUnread(v === 'unread')}
+                data={[
+                  { value: 'all', label: t('All') },
+                  { value: 'unread', label: t('Unread ({{count}})', { count: unread }) },
+                ]}
+                aria-label={t('Which notifications to show')}
+              />
+            </WithInfo>
+          </Box>
         )}
         <ScrollArea.Autosize mah={440}>
           {items.length ? (
@@ -102,9 +110,11 @@ export function NotificationBell() {
         <Box px="md" py="xs" style={{ borderTop: '1px solid var(--mantine-color-default-border)' }}>
           <Anchor component={Link} to="/settings/notifications" size="xs" onClick={() => setOpened(false)}>
             {t('Notification settings')}
-          </Anchor>
+          </Anchor>{' '}
+          <ReqInfo id="notif-settings" />
         </Box>
       </Popover.Dropdown>
     </Popover>
+    </WithInfo>
   );
 }

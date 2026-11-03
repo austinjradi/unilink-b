@@ -4,17 +4,21 @@ import { IconAlertTriangle, IconMoodEmpty } from '@tabler/icons-react';
 import { Link } from 'react-router';
 import { t, tx } from '../lib/i18n';
 import { KIND_COLORS } from '../theme';
+import type { ReqTopicId } from '../lib/reqTopics';
+import { ReqInfo } from './ReqInfo';
 
 export function PageHeader({
   title,
   subtitle,
   actions,
   crumbs,
+  info,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
   actions?: ReactNode;
   crumbs?: { label: string; to?: string }[];
+  info?: ReqTopicId;
 }) {
   return (
     <div style={{ marginBottom: 'var(--mantine-spacing-lg)' }}>
@@ -37,6 +41,7 @@ export function PageHeader({
         <div>
           <Title order={1} fz={34}>
             {title}
+            {info && <> <ReqInfo id={info} /></>}
           </Title>
           {subtitle && (
             <Text c="dimmed" mt={2}>
@@ -50,12 +55,13 @@ export function PageHeader({
   );
 }
 
-export function SectionCard({ title, actions, children }: { title: ReactNode; actions?: ReactNode; children: ReactNode }) {
+export function SectionCard({ title, actions, children, info }: { title: ReactNode; actions?: ReactNode; children: ReactNode; info?: ReqTopicId }) {
   return (
     <Card padding="lg">
       <Group justify="space-between" mb="md">
         <Text fw={800} size="lg" className="display">
           {title}
+          {info && <> <ReqInfo id={info} /></>}
         </Text>
         {actions}
       </Group>
@@ -141,6 +147,7 @@ export function ClashNote({ codes }: { codes: string[] }) {
       <Text size="xs" inherit>
         {t('Clashes with {{codes}}', { codes: codes.join(', ') })}
       </Text>
+      <ReqInfo id="clash-note" />
     </Group>
   );
 }

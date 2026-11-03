@@ -6,6 +6,7 @@ import { Notifications } from '@mantine/notifications';
 import { QueryCache, QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { HashRouter, Navigate, Route, Routes, useLocation, useParams } from 'react-router';
 import { Layout } from './components/Layout';
+import { ReqInfoHost } from './components/ReqInfo';
 import type { Locale } from '@shared/i18n';
 import { MeContext } from './lib/hooks';
 import { applyLocale, getLocale, LocaleContext, t, useLocale } from './lib/i18n';
@@ -177,6 +178,7 @@ export function App() {
           <QueryClientProvider client={queryClient}>
             {/* Re-mount everything on a language change so every label re-renders. */}
             <ModalsProvider key={locale}>
+              <ReqInfoHost />
               <HashRouter>
                 <Root />
               </HashRouter>

@@ -42,6 +42,7 @@ export function GpaTrend({ points }: { points: Point[] }) {
 
   return (
     <SectionCard
+      info="gpa-trend"
       title={t('GPA by term')}
       actions={
         <Group gap="md">

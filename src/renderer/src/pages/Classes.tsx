@@ -13,6 +13,7 @@ import { useAction, useMe } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
 import { AcademicsPanel } from './Academics';
 import { t, term } from '../lib/i18n';
+import { ReqInfo, WithInfo } from '../components/ReqInfo';
 
 const TABS = ['mine', 'find', 'record', 'degree'] as const;
 type CoursesTab = (typeof TABS)[number];
@@ -26,22 +27,22 @@ export function CoursesPage() {
 
   return (
     <>
-      <PageHeader title={t('Courses')} subtitle={student ? t('Your classes, finding new ones, and how they add up toward your degree.') : t('The sections you teach, and finding others.')} />
+      <PageHeader info="nav-courses" title={t('Courses')} subtitle={student ? t('Your classes, finding new ones, and how they add up toward your degree.') : t('The sections you teach, and finding others.')} />
       <Tabs value={tab} onChange={(v) => navigate(`/courses/${v}`)} keepMounted={false} variant="pills" radius="xl">
         <Tabs.List mb="lg">
-          <Tabs.Tab value="mine" leftSection={<IconSchool size={16} />}>
+          <Tabs.Tab value="mine" leftSection={<IconSchool size={16} />} rightSection={<ReqInfo id="tab-mine" />}>
             {t('My courses')}
           </Tabs.Tab>
-          <Tabs.Tab value="find" leftSection={<IconSearch size={16} />}>
+          <Tabs.Tab value="find" leftSection={<IconSearch size={16} />} rightSection={<ReqInfo id="tab-find" />}>
             {t('Find courses')}
           </Tabs.Tab>
           {student && (
-            <Tabs.Tab value="record" leftSection={<IconListDetails size={16} />}>
+            <Tabs.Tab value="record" leftSection={<IconListDetails size={16} />} rightSection={<ReqInfo id="tab-record" />}>
               {t('Course record')}
             </Tabs.Tab>
           )}
           {student && (
-            <Tabs.Tab value="degree" leftSection={<IconCertificate size={16} />}>
+            <Tabs.Tab value="degree" leftSection={<IconCertificate size={16} />} rightSection={<ReqInfo id="tab-degree" />}>
               {t('Degree plan')}
             </Tabs.Tab>
           )}
@@ -106,7 +107,7 @@ function MyCourses() {
           <Card key={c.id} component={Link} to={`/classes/${c.id}`} className="clickable" padding="lg">
             <Group justify="space-between" mb="xs">
               <Text fw={700} fz={24} className="display">
-                {c.code}
+                {c.code} <ReqInfo id="course-card" />
               </Text>
               <Tag>{term(c.term)}</Tag>
             </Group>
@@ -133,22 +134,28 @@ function MyCourses() {
                 <Group gap={6} wrap="nowrap">
                   <IconUsers size={16} />
                   <Text size="sm">{t('{{count}} students on UniLink', { count: c.memberCount })}</Text>
+                  <ReqInfo id="course-members" />
                 </Group>
                 {questions > 0 && (
                   <Group gap={6} wrap="nowrap">
                     <IconMessageQuestion size={16} />
                     <Text size="sm">{t('{{count}} unanswered questions', { count: questions })}</Text>
+                    <ReqInfo id="feed-unanswered" />
                   </Group>
                 )}
                 {newPosts > 0 && (
-                  <Badge size="sm" variant="light">
-                    {t('{{count}} new posts', { count: newPosts })}
-                  </Badge>
+                  <WithInfo id="post-new-badge">
+                    <Badge size="sm" variant="light">
+                      {t('{{count}} new posts', { count: newPosts })}
+                    </Badge>
+                  </WithInfo>
                 )}
                 {reports > 0 && (
-                  <Badge size="sm" variant="light" color="red">
-                    {t('{{count}} reported threads', { count: reports })}
-                  </Badge>
+                  <WithInfo id="feed-reported">
+                    <Badge size="sm" variant="light" color="red">
+                      {t('{{count}} reported threads', { count: reports })}
+                    </Badge>
+                  </WithInfo>
                 )}
               </Group>
             </Stack>
@@ -189,19 +196,22 @@ function FindCourses() {
 
   return (
     <SectionCard
+      info="tab-find"
       title={t('Find your courses')}
       actions={
-        <Button size="compact-sm" variant="subtle" leftSection={<IconClipboardText size={14} />} onClick={() => setPasting(true)}>
-          {t('Paste my schedule')}
-        </Button>
+        <WithInfo id="find-paste">
+          <Button size="compact-sm" variant="subtle" leftSection={<IconClipboardText size={14} />} onClick={() => setPasting(true)}>
+            {t('Paste my schedule')}
+          </Button>
+        </WithInfo>
       }
     >
-      <Modal opened={pasting} onClose={() => setPasting(false)} title={t('Add sections from your schedule')} size="lg">
+      <Modal opened={pasting} onClose={() => setPasting(false)} title={<WithInfo id="find-paste">{t('Add sections from your schedule')}</WithInfo>} size="lg">
         {pasting && <SchedulePaste term={term} professor={professor} onDone={() => setPasting(false)} />}
       </Modal>
       <Group mb="md" align="flex-end">
         <TextInput
-          label={t('Course code or title')}
+          label={<WithInfo id="find-search">{t('Course code or title')}</WithInfo>}
           placeholder={t('e.g. COMP 2XX, MATH 240 or algorithms')}
           description={t('X stands for any digit: "COMP 3XX" lists every 300-level COMP course.')}
           leftSection={<IconSearch size={16} />}
@@ -211,9 +221,9 @@ function FindCourses() {
           style={{ flex: 1 }}
           autoFocus
         />
-        <Select label={t('Term')} radius="xl" data={terms.data ?? [CURRENT_TERM]} value={term} onChange={(v) => v && setTerm(v)} w={160} allowDeselect={false} />
+        <Select label={<WithInfo id="find-term">{t('Term')}</WithInfo>} radius="xl" data={terms.data ?? [CURRENT_TERM]} value={term} onChange={(v) => v && setTerm(v)} w={160} allowDeselect={false} />
         <Select
-          label={t('Level')}
+          label={<WithInfo id="find-level">{t('Level')}</WithInfo>}
           radius="xl"
           placeholder={t('Any')}
           data={LEVELS.map((l) => ({ value: String(l), label: t('{{level}}-level', { level: l }) }))}
@@ -224,7 +234,7 @@ function FindCourses() {
         />
         {!professor && (
           <Tooltip label={t('Leaves out sections that clash with your classes that term. Sections with no times entered yet stay listed.')} multiline w={260}>
-            <Checkbox label={t('Fits my timetable')} checked={fits} onChange={(e) => setFits(e.currentTarget.checked)} mb={8} />
+            <Checkbox label={<WithInfo id="find-fits">{t('Fits my timetable')}</WithInfo>} checked={fits} onChange={(e) => setFits(e.currentTarget.checked)} mb={8} />
           </Tooltip>
         )}
       </Group>
@@ -235,11 +245,21 @@ function FindCourses() {
           <Table highlightOnHover verticalSpacing="sm">
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>{t('Section')}</Table.Th>
-                <Table.Th>{t('Title')}</Table.Th>
-                <Table.Th>{t('Credits')}</Table.Th>
-                <Table.Th>{t('Students')}</Table.Th>
-                <Table.Th />
+                <Table.Th>
+                  <WithInfo id="find-section">{t('Section')}</WithInfo>
+                </Table.Th>
+                <Table.Th>
+                  <WithInfo id="find-times">{t('Title')}</WithInfo>
+                </Table.Th>
+                <Table.Th>
+                  <WithInfo id="find-credits">{t('Credits')}</WithInfo>
+                </Table.Th>
+                <Table.Th>
+                  <WithInfo id="course-members">{t('Students')}</WithInfo>
+                </Table.Th>
+                <Table.Th ta="right">
+                  <ReqInfo id="join-section" />
+                </Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -289,7 +309,8 @@ function FindCourses() {
           {t('No sections match. Try a code like "MATH 240" or "COMP 2XX". The built-in catalogue is a sample of McGill courses for now.')}
           <Badge ml={6} size="xs" variant="light" color="yellow">
             {t('sample')}
-          </Badge>
+          </Badge>{' '}
+          <ReqInfo id="catalogue-sample" />
         </Empty>
       )}
     </SectionCard>
@@ -345,7 +366,7 @@ function SchedulePaste({ term: termName, professor, onDone }: { term: string; pr
         {t('On Minerva, open your schedule for {{term}}, select it and paste it here. Codes like "COMP 251 001" are read, and you pick what to add.', { term: term(termName) })}
       </Text>
       <Textarea
-        label={t('Schedule')}
+        label={<WithInfo id="find-paste">{t('Schedule')}</WithInfo>}
         placeholder={'COMP 251 001  Algorithms and Data Structures\nMATH 240 002  Discrete Structures'}
         autosize
         minRows={5}
@@ -390,6 +411,7 @@ function SchedulePaste({ term: termName, professor, onDone }: { term: string; pr
         <Button onClick={() => join.mutate()} disabled={!picked.length} loading={join.isPending}>
           {professor ? t('Teach {{count}} sections', { count: picked.length }) : t('Join {{count}} sections', { count: picked.length })}
         </Button>
+        <ReqInfo id="join-section" />
       </Group>
     </Stack>
   );

@@ -4,16 +4,19 @@ import { useQuery } from '@tanstack/react-query';
 import { useAction } from '../lib/hooks';
 import { t } from '../lib/i18n';
 import { rpc } from '../lib/rpc';
+import { ReqInfo, WithInfo } from './ReqInfo';
 
 // ST1 + ST2: start a focus session on a planned task, as long as the task is meant to take.
 export function FocusButton({ taskId, title }: { taskId: number; title: string }) {
   const focus = useAction(() => rpc.studyMode.focusOnTask({ taskId }), { success: 'Focus session started' });
   return (
-    <Tooltip label={t('Focus on this task')}>
-      <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => focus.mutate()} loading={focus.isPending} aria-label={t('Focus on {{title}}', { title })}>
-        <IconFocus2 size={14} />
-      </ActionIcon>
-    </Tooltip>
+    <WithInfo id="focus-task">
+      <Tooltip label={t('Focus on this task')}>
+        <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => focus.mutate()} loading={focus.isPending} aria-label={t('Focus on {{title}}', { title })}>
+          <IconFocus2 size={14} />
+        </ActionIcon>
+      </Tooltip>
+    </WithInfo>
   );
 }
 
@@ -29,7 +32,7 @@ export function FocusCheckIn() {
   return (
     <Dialog opened withBorder shadow="md" radius="lg" size="sm" position={{ bottom: 20, right: 20 }} role="status">
       <Text size="sm" fw={700} mb="sm">
-        {t('Focus session over. Did you finish “{{title}}”?', { title: finished.title })}
+        {t('Focus session over. Did you finish “{{title}}”?', { title: finished.title })} <ReqInfo id="focus-checkin" />
       </Text>
       <Group gap="xs">
         <Button size="xs" onClick={() => answer.mutate(true)} loading={answer.isPending}>

@@ -52,6 +52,7 @@ import { type Out, rpc } from '../lib/rpc';
 import { useUndo } from '../lib/undo';
 import { ClassSelect } from './Calendar';
 import { t, tx } from '../lib/i18n';
+import { ReqInfo, WithInfo } from '../components/ReqInfo';
 
 type Assignment = Out<typeof rpc.planner.list>[number];
 type Task = Assignment['tasks'][number];
@@ -77,6 +78,7 @@ export function PlannerPage() {
   return (
     <>
       <PageHeader
+        info="planner-page"
         title={t('Assignment planner')}
         subtitle={
           <>
@@ -86,14 +88,17 @@ export function PlannerPage() {
             (
             <Anchor component="button" type="button" size="sm" onClick={() => setEditingTime(true)}>
               {t('change')}
-            </Anchor>
+            </Anchor>{' '}
+            <ReqInfo id="free-time" />
             ). {t('Missed tasks move to your next free time automatically.')}
           </>
         }
         actions={
-          <Button leftSection={<IconPlus size={16} />} onClick={() => setEditing('new')}>
-            {t('New assignment')}
-          </Button>
+          <WithInfo id="planner-new">
+            <Button leftSection={<IconPlus size={16} />} onClick={() => setEditing('new')}>
+              {t('New assignment')}
+            </Button>
+          </WithInfo>
         }
       />
 
@@ -113,7 +118,9 @@ export function PlannerPage() {
           {finished.length > 0 && (
             <Accordion variant="contained">
               <Accordion.Item value="finished">
-                <Accordion.Control>{t('Finished or past due ({{count}})', { count: finished.length })}</Accordion.Control>
+                <Accordion.Control>
+                  <WithInfo id="planner-finished">{t('Finished or past due ({{count}})', { count: finished.length })}</WithInfo>
+                </Accordion.Control>
                 <Accordion.Panel>
                   <Stack gap="md">
                     {finished.map((a) => (
@@ -127,11 +134,11 @@ export function PlannerPage() {
         </Stack>
       )}
 
-      <Modal opened={editing != null} onClose={close} title={editing === 'new' ? t('New assignment') : t('Edit assignment')} size="lg">
+      <Modal opened={editing != null} onClose={close} title={editing === 'new' ? <WithInfo id="planner-new">{t('New assignment')}</WithInfo> : <WithInfo id="plan-edit">{t('Edit assignment')}</WithInfo>} size="lg">
         {editing === 'new' && <NewAssignmentForm onDone={close} from={from} />}
         {editing && editing !== 'new' && <EditAssignmentForm assignment={editing} onDone={close} />}
       </Modal>
-      <Modal opened={editingTime} onClose={() => setEditingTime(false)} title={t('Your free study time')}>
+      <Modal opened={editingTime} onClose={() => setEditingTime(false)} title={<WithInfo id="free-time">{t('Your free study time')}</WithInfo>}>
         {editingTime && <StudyTimeForm onDone={() => setEditingTime(false)} />}
       </Modal>
     </>
@@ -158,13 +165,15 @@ export function StudyTimeForm({ onDone }: { onDone?: () => void }) {
   return (
     <Stack>
       <Text size="sm" c="dimmed">
-        {t('Minutes you can study on each day of the week. Study sessions you join count toward them.')}
+        {t('Minutes you can study on each day of the week. Study sessions you join count toward them.')} <ReqInfo id="free-weekday" />
       </Text>
       {aroundClasses.data && (
         <Group gap="xs">
-          <Button size="xs" variant="light" onClick={() => setMinutes(aroundClasses.data!)}>
-            {t('Start from my class times')}
-          </Button>
+          <WithInfo id="free-start-classes">
+            <Button size="xs" variant="light" onClick={() => setMinutes(aroundClasses.data!)}>
+              {t('Start from my class times')}
+            </Button>
+          </WithInfo>
           <Text size="xs" c="dimmed" style={{ flex: '1 1 220px' }}>
             {t('Four hours on a day with no classes, less your time in class, and at least an hour. Change anything before you save.')}
           </Text>
@@ -187,7 +196,7 @@ export function StudyTimeForm({ onDone }: { onDone?: () => void }) {
       </SimpleGrid>
       <DatePickerInput
         type="multiple"
-        label={t('Days off')}
+        label={<WithInfo id="free-days-off">{t('Days off')}</WithInfo>}
         description={t('Days you won’t study at all, like a trip. Plans move around them.')}
         placeholder={t('Pick days')}
         valueFormat="D MMM"
@@ -197,7 +206,9 @@ export function StudyTimeForm({ onDone }: { onDone?: () => void }) {
         onChange={(days) => setDaysOff(days.map((day) => day.slice(0, 10)))}
       />
       <Group justify="space-between">
-        <Text size="sm">{t('{{hours}} h a week', { hours: Math.round(total / 6) / 10 })}</Text>
+        <Text size="sm">
+          {t('{{hours}} h a week', { hours: Math.round(total / 6) / 10 })} <ReqInfo id="free-time" />
+        </Text>
         <Button onClick={() => save.mutate()} loading={save.isPending}>
           {t('Save free time')}
         </Button>
@@ -219,7 +230,7 @@ function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onE
   const days = [...new Set(a.tasks.map((task) => task.scheduledFor))].sort();
   const confirmDelete = () =>
     modals.openConfirmModal({
-      title: t('Delete "{{title}}"?', { title: a.title }),
+      title: <WithInfo id="plan-delete">{t('Delete "{{title}}"?', { title: a.title })}</WithInfo>,
       children: <Text size="sm">{t('Its tasks and attachment are deleted too.')}</Text>,
       labels: { confirm: t('Delete'), cancel: t('Keep') },
       confirmProps: { color: 'red' },
@@ -232,27 +243,35 @@ function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onE
         <div>
           <Group gap="xs">
             <Text fw={700} size="lg">
-              {a.title}
+              {a.title} <ReqInfo id="plan-card" />
             </Text>
-            {a.classLabel && <Badge variant="light">{a.classLabel}</Badge>}
+            {a.classLabel && (
+              <WithInfo id="plan-class">
+                <Badge variant="light">{a.classLabel}</Badge>
+              </WithInfo>
+            )}
             {(a.deadlineId != null || a.assessmentId != null) && (
-              <Tooltip label={t("Follows the section's due date: if a classmate moves it, this plan moves too.")} multiline w={260}>
-                <Badge variant="outline" color="gray" leftSection={<IconLink size={12} />}>
-                  {t('Follows the class deadline')}
-                </Badge>
-              </Tooltip>
+              <WithInfo id="plan-follows">
+                <Tooltip label={t("Follows the section's due date: if a classmate moves it, this plan moves too.")} multiline w={260}>
+                  <Badge variant="outline" color="gray" leftSection={<IconLink size={12} />}>
+                    {t('Follows the class deadline')}
+                  </Badge>
+                </Tooltip>
+              </WithInfo>
             )}
           </Group>
           <Text size="sm" c={a.pastDue ? 'red' : 'dimmed'}>
             {t('Due {{when}} ({{relative}})', { when: fmtDateTime(a.dueAt), relative: fromNow(a.dueAt) })} ·{' '}
-            {t('{{count}} buffer days', { count: a.bufferDays })}
+            {t('{{count}} buffer days', { count: a.bufferDays })} <ReqInfo id="plan-buffer" />
           </Text>
         </div>
         <Group gap="xs">
           {a.attachmentName && (
-            <Button size="xs" variant="default" leftSection={<IconPaperclip size={14} />} onClick={() => open.mutate()}>
-              {a.attachmentName}
-            </Button>
+            <WithInfo id="plan-file">
+              <Button size="xs" variant="default" leftSection={<IconPaperclip size={14} />} onClick={() => open.mutate()}>
+                {a.attachmentName}
+              </Button>
+            </WithInfo>
           )}
           <Menu position="bottom-end">
             <Menu.Target>
@@ -261,13 +280,13 @@ function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onE
               </ActionIcon>
             </Menu.Target>
             <Menu.Dropdown>
-              <Menu.Item leftSection={<IconPencil size={14} />} onClick={onEdit}>
+              <Menu.Item leftSection={<IconPencil size={14} />} rightSection={<ReqInfo id="plan-edit" />} onClick={onEdit}>
                 {t('Edit details and due date')}
               </Menu.Item>
-              <Menu.Item leftSection={<IconRefresh size={14} />} onClick={() => replan.mutate()}>
+              <Menu.Item leftSection={<IconRefresh size={14} />} rightSection={<ReqInfo id="plan-replan" />} onClick={() => replan.mutate()}>
                 {t('Re-plan from scratch')}
               </Menu.Item>
-              <Menu.Item leftSection={<IconTrash size={14} />} color="red" onClick={confirmDelete}>
+              <Menu.Item leftSection={<IconTrash size={14} />} rightSection={<ReqInfo id="plan-delete" />} color="red" onClick={confirmDelete}>
                 {t('Delete')}
               </Menu.Item>
             </Menu.Dropdown>
@@ -278,7 +297,7 @@ function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onE
       <Group gap="xs" mb="md">
         <Progress value={a.tasks.length ? (a.doneCount / a.tasks.length) * 100 : 0} style={{ flex: 1 }} color="teal" />
         <Text size="xs" c="dimmed">
-          {t('{{done}}/{{total}} done', { done: a.doneCount, total: a.tasks.length })}
+          {t('{{done}}/{{total}} done', { done: a.doneCount, total: a.tasks.length })} <ReqInfo id="plan-progress" />
         </Text>
       </Group>
 
@@ -286,7 +305,7 @@ function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onE
         <Alert color="yellow" variant="light" icon={<IconAlertTriangle size={18} />} mb="md" p="xs">
           <Text size="sm">
             {a.tight && `${t('Some work lands on your buffer day before the deadline.')} `}
-            {a.overloaded && t('Some days have more work than your free study time. Add free time or move tasks.')}
+            {a.overloaded && t('Some days have more work than your free study time. Add free time or move tasks.')} <ReqInfo id="plan-warning" />
           </Text>
         </Alert>
       )}
@@ -295,7 +314,7 @@ function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onE
         {days.map((day) => (
           <div key={day}>
             <Text size="xs" fw={700} tt="uppercase" c={day < today ? 'red' : day === today ? 'indigo' : 'dimmed'} mb={4}>
-              {dayLabel(day, today)}
+              {dayLabel(day, today)} <ReqInfo id="plan-day" />
             </Text>
             <Stack gap={4}>
               {a.tasks
@@ -316,9 +335,11 @@ function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onE
       >
         <Group mt="md" gap="xs">
           <TextInput size="xs" placeholder={t('Add a task…')} aria-label={t('Add a task…')} value={adding} onChange={(e) => setAdding(e.currentTarget.value)} style={{ flex: 1 }} />
-          <Button size="xs" variant="light" type="submit" disabled={!adding.trim()} loading={addTask.isPending}>
-            {t('Add')}
-          </Button>
+          <WithInfo id="plan-add-task">
+            <Button size="xs" variant="light" type="submit" disabled={!adding.trim()} loading={addTask.isPending}>
+              {t('Add')}
+            </Button>
+          </WithInfo>
         </Group>
       </form>
     </Card>
@@ -348,30 +369,38 @@ function TaskRow({ task, dueDay }: { task: Task; dueDay: string }) {
     <Group gap="sm" pl="xs" style={{ rowGap: 4 }}>
       <Checkbox checked={!!task.doneAt} onChange={(e) => setDone.mutate(e.currentTarget.checked)} aria-label={t('Done')} />
       <Text size="sm" style={{ flex: '1 1 160px' }} td={task.doneAt ? 'line-through' : undefined} c={task.doneAt ? 'dimmed' : undefined}>
-        {task.title}
+        {task.title} <ReqInfo id="plan-task" />
       </Text>
       {task.pinned && (
-        <Tooltip label={t('You placed this task by hand, so re-plans leave it here')}>
-          <IconPin size={14} color="var(--mantine-color-dimmed)" />
-        </Tooltip>
+        <WithInfo id="plan-task-pin">
+          <Tooltip label={t('You placed this task by hand, so re-plans leave it here')}>
+            <IconPin size={14} color="var(--mantine-color-dimmed)" />
+          </Tooltip>
+        </WithInfo>
       )}
-      <Badge size="sm" variant="default">
-        {task.minutes} min
-      </Badge>
-      <DateInput
-        size="xs"
-        w={120}
-        value={task.scheduledFor}
-        onChange={(v) => v && move.mutate(ymd(toDate(v)!))}
-        valueFormat="ddd D MMM"
-        maxDate={dueDay}
-        aria-label={t('Move to day')}
-        disabled={!!task.doneAt}
-      />
+      <WithInfo id="plan-task-minutes">
+        <Badge size="sm" variant="default">
+          {task.minutes} min
+        </Badge>
+      </WithInfo>
+      <WithInfo id="plan-task-move">
+        <DateInput
+          size="xs"
+          w={120}
+          value={task.scheduledFor}
+          onChange={(v) => v && move.mutate(ymd(toDate(v)!))}
+          valueFormat="ddd D MMM"
+          maxDate={dueDay}
+          aria-label={t('Move to day')}
+          disabled={!!task.doneAt}
+        />
+      </WithInfo>
       {!task.doneAt && <FocusButton taskId={task.id} title={task.title} />}
-      <ActionIcon variant="subtle" color="red" size="sm" onClick={() => remove.mutate()} aria-label={t('Delete task')}>
-        <IconTrash size={14} />
-      </ActionIcon>
+      <WithInfo id="plan-task-delete">
+        <ActionIcon variant="subtle" color="red" size="sm" onClick={() => remove.mutate()} aria-label={t('Delete task')}>
+          <IconTrash size={14} />
+        </ActionIcon>
+      </WithInfo>
     </Group>
   );
 }
@@ -481,7 +510,7 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
       <Stack>
         {sources.length > 0 && (
           <Select
-            label={t('Start from a deadline')}
+            label={<WithInfo id="plan-start-from">{t('Start from a deadline')}</WithInfo>}
             description={t('Fills in the name, class and due date')}
             placeholder={t('Optional')}
             searchable
@@ -491,13 +520,13 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
             onChange={startFrom}
           />
         )}
-        <TextInput label={t('Assignment')} placeholder={t('Problem set 3')} data-autofocus {...form.getInputProps('title')} />
+        <TextInput label={<WithInfo id="plan-title">{t('Assignment')}</WithInfo>} placeholder={t('Problem set 3')} data-autofocus {...form.getInputProps('title')} />
         <Group grow align="flex-start">
-          <ClassSelect value={v.classId} onChange={(id) => form.setFieldValue('classId', id)} />
-          <DateTimePicker label={t('Due')} valueFormat="ddd D MMM YYYY, HH:mm" minDate={new Date()} {...form.getInputProps('dueAt')} />
+          <ClassSelect info="plan-class" value={v.classId} onChange={(id) => form.setFieldValue('classId', id)} />
+          <DateTimePicker label={<WithInfo id="plan-due">{t('Due')}</WithInfo>} valueFormat="ddd D MMM YYYY, HH:mm" minDate={new Date()} {...form.getInputProps('dueAt')} />
         </Group>
         <NumberInput
-          label={t('Buffer days')}
+          label={<WithInfo id="plan-buffer">{t('Buffer days')}</WithInfo>}
           description={t('Days kept free right before the deadline')}
           min={0}
           max={7}
@@ -507,9 +536,11 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
 
         <div>
           <Group gap="xs">
-            <Button variant="default" size="xs" leftSection={<IconPaperclip size={14} />} onClick={() => choose.mutate()}>
-              {attachment ? t('Change file') : t('Attach the assignment file')}
-            </Button>
+            <WithInfo id="plan-file">
+              <Button variant="default" size="xs" leftSection={<IconPaperclip size={14} />} onClick={() => choose.mutate()}>
+                {attachment ? t('Change file') : t('Attach the assignment file')}
+              </Button>
+            </WithInfo>
             {attachment && (
               <Text size="sm" c="dimmed">
                 {attachment.name}
@@ -532,7 +563,7 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
             </Text>
           )}
           {found && found.length > 0 && (
-            <Alert color="teal" variant="light" icon={<IconListNumbers size={18} />} mt="xs" p="xs" title={t('Found {{count}} problems in the file', { count: found.length })}>
+            <Alert color="teal" variant="light" icon={<IconListNumbers size={18} />} mt="xs" p="xs" title={<WithInfo id="plan-found">{t('Found {{count}} problems in the file', { count: found.length })}</WithInfo>}>
               <Text size="sm" lineClamp={3}>
                 {found.map((p) => (p.points ? `${p.title} (${t('{{count}} pts', { count: p.points })})` : p.title)).join(' · ')}
               </Text>
@@ -550,32 +581,35 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
 
         <div>
           <Text size="sm" fw={500} mb={6}>
-            {t('How should it be split?')}
+            {t('How should it be split?')} <ReqInfo id="plan-split" />
           </Text>
           {looksLikeExam(v.title) && (
-            <Button
-              display="block"
-              size="xs"
-              variant="light"
-              mb="sm"
-              onClick={() => form.setValues({ mode: 'custom', custom: EXAM_STEPS.map((step) => ({ title: t(step.title), minutes: step.minutes })) })}
-            >
-              {t('Studying for an exam? Start from these steps')}
-            </Button>
+            <Group gap={4} mb="sm">
+              <Button
+                size="xs"
+                variant="light"
+                onClick={() => form.setValues({ mode: 'custom', custom: EXAM_STEPS.map((step) => ({ title: t(step.title), minutes: step.minutes })) })}
+              >
+                {t('Studying for an exam? Start from these steps')}
+              </Button>
+              <ReqInfo id="plan-exam-steps" />
+            </Group>
           )}
-          <SegmentedControl
-            data={[
-              { value: 'parts', label: t('Equal parts') },
-              { value: 'custom', label: t('My own tasks') },
-            ]}
-            {...form.getInputProps('mode')}
-            mb="sm"
-          />
+          <Group gap={4} mb="sm">
+            <SegmentedControl
+              data={[
+                { value: 'parts', label: t('Equal parts') },
+                { value: 'custom', label: t('My own tasks') },
+              ]}
+              {...form.getInputProps('mode')}
+            />
+            <ReqInfo id={v.mode === 'parts' ? 'plan-parts' : 'plan-custom-tasks'} />
+          </Group>
           {v.mode === 'parts' ? (
             <Group grow>
-              <NumberInput label={t('Number of parts')} min={1} max={50} {...form.getInputProps('parts')} />
-              <TextInput label={t('Each part is a…')} {...form.getInputProps('partLabel')} />
-              <NumberInput label={t('Minutes each')} min={5} max={600} step={15} {...form.getInputProps('partMinutes')} />
+              <NumberInput label={<WithInfo id="plan-parts">{t('Number of parts')}</WithInfo>} min={1} max={50} {...form.getInputProps('parts')} />
+              <TextInput label={<WithInfo id="plan-parts">{t('Each part is a…')}</WithInfo>} {...form.getInputProps('partLabel')} />
+              <NumberInput label={<WithInfo id="plan-task-minutes">{t('Minutes each')}</WithInfo>} min={5} max={600} step={15} {...form.getInputProps('partMinutes')} />
             </Group>
           ) : (
             <Stack gap="xs">
@@ -588,22 +622,26 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
                   </ActionIcon>
                 </Group>
               ))}
-              <Button size="xs" variant="subtle" leftSection={<IconPlus size={14} />} onClick={() => form.insertListItem('custom', { title: '', minutes: 60 })} w="fit-content">
-                {t('Add task')}
-              </Button>
+              <WithInfo id="plan-custom-tasks">
+                <Button size="xs" variant="subtle" leftSection={<IconPlus size={14} />} onClick={() => form.insertListItem('custom', { title: '', minutes: 60 })} w="fit-content">
+                  {t('Add task')}
+                </Button>
+              </WithInfo>
             </Stack>
           )}
           <Text size="xs" c="dimmed" mt="xs">
             {t('{{count}} tasks', { count: tasks.length })} · {t('{{count}} working days before the deadline', { count: workDays })}
-            {workDays > 0 && tasks.length > 0 && ` · ${t('starting with your next free time')}`}
+            {workDays > 0 && tasks.length > 0 && ` · ${t('starting with your next free time')}`} <ReqInfo id="plan-summary" />
           </Text>
         </div>
 
-        <Textarea label={t('Notes')} autosize minRows={2} {...form.getInputProps('notes')} />
+        <Textarea label={<WithInfo id="plan-notes">{t('Notes')}</WithInfo>} autosize minRows={2} {...form.getInputProps('notes')} />
         <Group justify="flex-end">
-          <Button type="submit" loading={create.isPending} disabled={!tasks.length}>
-            {t('Plan it')}
-          </Button>
+          <WithInfo id="planner-page">
+            <Button type="submit" loading={create.isPending} disabled={!tasks.length}>
+              {t('Plan it')}
+            </Button>
+          </WithInfo>
         </Group>
       </Stack>
     </form>
@@ -629,13 +667,13 @@ function EditAssignmentForm({ assignment: a, onDone }: { assignment: Assignment;
   return (
     <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
       <Stack>
-        <TextInput label={t('Assignment')} {...form.getInputProps('title')} />
+        <TextInput label={<WithInfo id="plan-title">{t('Assignment')}</WithInfo>} {...form.getInputProps('title')} />
         <Group grow align="flex-start">
-          <ClassSelect value={form.values.classId} onChange={(id) => form.setFieldValue('classId', id)} />
-          <DateTimePicker label={t('Due')} valueFormat="ddd D MMM YYYY, HH:mm" {...form.getInputProps('dueAt')} />
+          <ClassSelect info="plan-class" value={form.values.classId} onChange={(id) => form.setFieldValue('classId', id)} />
+          <DateTimePicker label={<WithInfo id="plan-due">{t('Due')}</WithInfo>} valueFormat="ddd D MMM YYYY, HH:mm" {...form.getInputProps('dueAt')} />
         </Group>
-        <NumberInput label={t('Buffer days')} min={0} max={7} w={220} {...form.getInputProps('bufferDays')} />
-        <Textarea label={t('Notes')} autosize minRows={2} {...form.getInputProps('notes')} />
+        <NumberInput label={<WithInfo id="plan-buffer">{t('Buffer days')}</WithInfo>} min={0} max={7} w={220} {...form.getInputProps('bufferDays')} />
+        <Textarea label={<WithInfo id="plan-notes">{t('Notes')}</WithInfo>} autosize minRows={2} {...form.getInputProps('notes')} />
         <Group justify="flex-end">
           <Button type="submit" loading={save.isPending}>
             {t('Save')}

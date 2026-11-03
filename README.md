@@ -104,6 +104,7 @@ The interface follows the team's wireframes in `A2Team.pdf`:
 - **Course record:** a chart of **GPA by term** (`components/GpaTrend.tsx`), credits and CGPA, plus a **CGPA goal**: type the CGPA you're aiming for and see what your next credits
   have to average, or how far straight A's would get you if it's out of reach (`goalOutlook` in `shared/academics.ts`).
 - **Settings:** sections down the side.
+- **Info icons:** every feature and control has a small ⓘ. It opens a popup with the requirements that element implements (the board's own wording, or a note that it isn't on the board), what this version decided, and other requirements someone could have asked for instead (`components/ReqInfo.tsx`, `lib/reqTopics.ts`). Table columns have the icon in their heading rather than on every row.
 
 The design uses rounded fonts (Nunito, with Fredoka for headings), bundled locally through Fontsource, and
 works in light and dark mode. Text meets WCAG AA contrast in both (the colours are set in `theme.ts`), controls have accessible names,
@@ -201,7 +202,8 @@ src/
   shared/          pure logic used by both sides: grades, planner, links, ics, validation, dates
     i18n/          translate(), plural English forms (en.ts), French dictionary (fr/*.json)
 tests/             shared.test.ts (pure logic), services.test.ts (real router + in-memory SQLite),
-                   i18n.test.ts (every UI string has a French translation)
+                   i18n.test.ts (every UI string has a French translation),
+                   reqInfo.test.ts (every info icon has a topic, and every topic an icon)
 ```
 
 The renderer calls the backend through a small tRPC-style layer. A procedure is declared once in a service:

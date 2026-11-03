@@ -266,15 +266,29 @@ h3,
 }
 
 /* Eight nav tabs: tighten them on narrower windows so the bar never overflows. */
-@media (max-width: 1240px) {
+@media (max-width: 1440px) {
   .nav-pill {
     padding: 6px 10px;
     font-size: 13px;
   }
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1232px) {
   .nav-pill {
+    padding: 6px 8px;
+  }
+}
+
+/* French tab names are longer, so each step comes sooner. */
+@media (max-width: 1490px) {
+  :root[lang='fr'] .nav-pill {
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 1283px) {
+  :root[lang='fr'] .nav-pill {
     padding: 6px 8px;
   }
 }
@@ -296,8 +310,14 @@ h3,
   flex-shrink: 0;
 }
 
-@media (max-width: 760px), (min-width: 1024px) and (max-width: 1115px) {
+@media (max-width: 760px), (min-width: 1115px) and (max-width: 1200px) {
   .header-logo .display {
+    display: none;
+  }
+}
+
+@media (min-width: 1115px) and (max-width: 1251px) {
+  :root[lang='fr'] .header-logo .display {
     display: none;
   }
 }
@@ -306,7 +326,7 @@ h3,
   display: none;
 }
 
-@media (max-width: 1023px) {
+@media (max-width: 1114px) {
   .nav-tabs {
     display: none;
   }
@@ -316,8 +336,18 @@ h3,
   }
 }
 
+@media (max-width: 1165px) {
+  :root[lang='fr'] .nav-tabs {
+    display: none;
+  }
+
+  :root[lang='fr'] .nav-menu {
+    display: inline-flex;
+  }
+}
+
 /* The study mode pill takes the room the tabs needed, and French tabs need more of it. */
-@media (max-width: 1300px) {
+@media (max-width: 1400px) {
   header:has(.study-pill) .nav-tabs {
     display: none;
   }
@@ -327,7 +357,7 @@ h3,
   }
 }
 
-@media (max-width: 1380px) {
+@media (max-width: 1480px) {
   :root[lang='fr'] header:has(.study-pill) .nav-tabs {
     display: none;
   }
@@ -369,4 +399,55 @@ h3,
 
 .skip-link:focus {
   transform: none;
+}
+
+/* Info icons: what an element implements, and what else it could have been. */
+.req-info {
+  display: inline-flex;
+  flex-shrink: 0;
+  vertical-align: middle;
+  padding: 3px;
+  margin: -3px 0;
+  border-radius: 999px;
+  color: var(--mantine-color-dimmed);
+  cursor: pointer;
+  font-weight: 400;
+}
+
+.req-info:hover,
+.req-info:focus-visible {
+  color: var(--mantine-color-periwinkle-light-color);
+  background: var(--mantine-color-periwinkle-light);
+}
+
+.req-with {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+}
+
+.req-with > * {
+  min-width: 0;
+}
+
+.req-with-block {
+  display: flex;
+}
+
+.req-with-block > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A selected tab is filled, so its icon can't stay dimmed. */
+.mantine-Tabs-tab[data-active] .req-info {
+  color: inherit;
+}
+
+/* Eight tabs with an icon each: the icons take as little of the bar as they can. */
+.nav-pill .req-info {
+  padding: 1px;
+  margin-left: -2px;
+  margin-right: -6px;
 }

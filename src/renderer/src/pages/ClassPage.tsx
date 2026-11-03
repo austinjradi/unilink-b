@@ -13,14 +13,15 @@ import { Grades } from './class/Grades';
 import { GroupChats } from './class/GroupChats';
 import { Overview } from './class/Overview';
 import { StudySessions } from './class/StudySessions';
+import { ReqInfo, WithInfo } from '../components/ReqInfo';
 
 const TABS = [
-  { value: 'overview', label: tx('Overview'), icon: IconInfoCircle },
-  { value: 'discussion', label: tx('Discussion'), icon: IconMessages },
-  { value: 'assignments', label: tx('Assignments'), icon: IconFileText },
-  { value: 'chats', label: tx('Group chats'), icon: IconBrandWhatsapp },
-  { value: 'sessions', label: tx('Study Sessions'), icon: IconUsersGroup },
-  { value: 'grades', label: tx('Grades'), icon: IconPercentage },
+  { value: 'overview', label: tx('Overview'), icon: IconInfoCircle, info: 'tab-overview' },
+  { value: 'discussion', label: tx('Discussion'), icon: IconMessages, info: 'feed-board' },
+  { value: 'assignments', label: tx('Assignments'), icon: IconFileText, info: 'tab-assignments' },
+  { value: 'chats', label: tx('Group chats'), icon: IconBrandWhatsapp, info: 'tab-chats' },
+  { value: 'sessions', label: tx('Study Sessions'), icon: IconUsersGroup, info: 'tab-sessions' },
+  { value: 'grades', label: tx('Grades'), icon: IconPercentage, info: 'tab-grades' },
 ] as const;
 
 export function ClassPage() {
@@ -44,6 +45,7 @@ export function ClassPage() {
   return (
     <>
       <PageHeader
+        info="class-page"
         crumbs={[{ label: t('Courses'), to: '/courses' }, { label: code }]}
         title={code}
         subtitle={
@@ -59,7 +61,7 @@ export function ClassPage() {
         <Card padding="xl">
           {(c.times.length > 0 || c.clashesWith.length > 0) && (
             <Stack gap={2} mb="md">
-              {c.times.length > 0 && <Text size="sm">{t('Class times: {{times}}', { times: fmtMeetings(c.times) })}</Text>}
+              {c.times.length > 0 && <Text size="sm">{t('Class times: {{times}}', { times: fmtMeetings(c.times) })} <ReqInfo id="find-times" /></Text>}
               <ClashNote codes={c.clashesWith} />
             </Stack>
           )}
@@ -69,9 +71,11 @@ export function ClassPage() {
                 {t("You're in {{other}}. Each section has its own discussion, chats, sessions and shared course info, and you can be in one at a time.", { other: c.otherSection.code })}
               </Text>
               <Group>
-                <Button onClick={() => switchHere.mutate()} loading={switchHere.isPending}>
-                  {t('Switch to {{code}}', { code })}
-                </Button>
+                <WithInfo id="switch-section">
+                  <Button onClick={() => switchHere.mutate()} loading={switchHere.isPending}>
+                    {t('Switch to {{code}}', { code })}
+                  </Button>
+                </WithInfo>
                 <Button variant="default" component={Link} to={`/classes/${c.otherSection.id}`}>
                   {t('Back to {{code}}', { code: c.otherSection.code })}
                 </Button>
@@ -84,14 +88,16 @@ export function ClassPage() {
                   ? t('Teach this section to run its grading scheme, details and class times, post assignments and moderate its discussion.')
                   : t('Join this section to see its group chats, study sessions, discussion and shared course info.')}
               </Text>
-              <Button onClick={() => join.mutate()} loading={join.isPending}>
-                {professor ? t('Teach {{code}}', { code }) : t('Join {{code}}', { code })}
-              </Button>
+              <WithInfo id="join-section">
+                <Button onClick={() => join.mutate()} loading={join.isPending}>
+                  {professor ? t('Teach {{code}}', { code }) : t('Join {{code}}', { code })}
+                </Button>
+              </WithInfo>
             </>
           )}
           {c.sections.length > 1 && (
             <Text size="sm" c="dimmed" mt="lg">
-              {t('Sections this term:')}{' '}
+              <ReqInfo id="sections-list" /> {t('Sections this term:')}{' '}
               {c.sections.map((s, i) => (
                 <span key={s.id}>
                   {i > 0 && ' · '}
@@ -112,8 +118,8 @@ export function ClassPage() {
       ) : (
         <Tabs value={tab} onChange={(v) => navigate(`/classes/${classId}/${v}`)} keepMounted={false} variant="pills" radius="xl">
           <Tabs.List mb="lg">
-            {TABS.map(({ value, label, icon: Icon }) => (
-              <Tabs.Tab key={value} value={value} leftSection={<Icon size={16} />}>
+            {TABS.map(({ value, label, icon: Icon, info }) => (
+              <Tabs.Tab key={value} value={value} leftSection={<Icon size={16} />} rightSection={<ReqInfo id={info} />}>
                 {value === 'grades' && c.teaching ? t('Grading scheme') : t(label)}
               </Tabs.Tab>
             ))}

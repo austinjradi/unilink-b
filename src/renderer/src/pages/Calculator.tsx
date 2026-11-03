@@ -8,6 +8,7 @@ import { Empty, Loading, PageHeader, Tag } from '../components/ui';
 import { useMe } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
 import { t } from '../lib/i18n';
+import { ReqInfo, WithInfo } from '../components/ReqInfo';
 
 // A4: the grade calculator as its own page, with a course picker, and below it how all the
 // term's classes add up.
@@ -22,8 +23,10 @@ export function CalculatorPage() {
   return (
     <>
       <PageHeader
+        info="calculator-page"
         title={t('Grade Calculator')}
         actions={
+          <WithInfo id="mcgill-scale">
           <HoverCard width={260} position="bottom-end" shadow="md">
             <HoverCard.Target>
               <Anchor size="sm" fw={700} underline="always">
@@ -51,6 +54,7 @@ export function CalculatorPage() {
               </Table>
             </HoverCard.Dropdown>
           </HoverCard>
+          </WithInfo>
         }
       />
       {!classes.data?.length ? (
@@ -66,7 +70,7 @@ export function CalculatorPage() {
         <>
           <Group mb="lg" gap="sm">
             <Text fz="xl" fw={600} className="display">
-              {t('Select a course')}
+              {t('Select a course')} <ReqInfo id="calculator-course" />
             </Text>
             <Select
               radius="xl"
@@ -103,7 +107,7 @@ function TermOverview({ onPick }: { onPick: (classId: number) => void }) {
   return (
     <Card padding="lg" mt="lg">
       <Title order={2} mb={4}>
-        {t('This term across your classes')}
+        {t('This term across your classes')} <ReqInfo id="term-overview" />
       </Title>
       <Text size="xs" c="dimmed" mb="md">
         {t('Only you see this. Projections assume you keep your average so far, so they move as marks come in.')}
@@ -112,11 +116,21 @@ function TermOverview({ onPick }: { onPick: (classId: number) => void }) {
         <Table withTableBorder withColumnBorders verticalSpacing="sm" fz="md">
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>{t('Course')}</Table.Th>
-              <Table.Th>{t('Credits')}</Table.Th>
-              <Table.Th>{t('Average so far')}</Table.Th>
-              <Table.Th>{t('Could finish between')}</Table.Th>
-              <Table.Th>{t('Your target')}</Table.Th>
+              <Table.Th>
+                <WithInfo id="calculator-course">{t('Course')}</WithInfo>
+              </Table.Th>
+              <Table.Th>
+                <WithInfo id="find-credits">{t('Credits')}</WithInfo>
+              </Table.Th>
+              <Table.Th>
+                <WithInfo id="marks-average">{t('Average so far')}</WithInfo>
+              </Table.Th>
+              <Table.Th>
+                <WithInfo id="term-range">{t('Could finish between')}</WithInfo>
+              </Table.Th>
+              <Table.Th>
+                <WithInfo id="term-target">{t('Your target')}</WithInfo>
+              </Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -151,7 +165,7 @@ function TermOverview({ onPick }: { onPick: (classId: number) => void }) {
       <Group mt="sm" gap="lg">
         <Text size="sm" c="dimmed">
           {t('Projected term GPA:')} <b>{projected == null ? '—' : projected.toFixed(2)}</b>
-          {projected != null && graded.length < rows.length && ` ${t('(from {{count}} of {{total}} classes with marks)', { count: graded.length, total: rows.length })}`}
+          {projected != null && graded.length < rows.length && ` ${t('(from {{count}} of {{total}} classes with marks)', { count: graded.length, total: rows.length })}`} <ReqInfo id="term-gpa" />
         </Text>
         <Text size="sm" c="dimmed">
           {t('If you reach every target:')} <b>{onTarget?.toFixed(2)}</b>

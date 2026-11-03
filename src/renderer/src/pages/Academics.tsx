@@ -32,10 +32,12 @@ import { graduationPace } from '@shared/degree';
 import { letterFor } from '@shared/grades';
 import { parseTranscript } from '@shared/transcript';
 import { GpaTrend } from '../components/GpaTrend';
+import type { ReqTopicId } from '../lib/reqTopics';
 import { Empty, Loading, SectionCard } from '../components/ui';
 import { useAction, useMe } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
 import { t, term, tx } from '../lib/i18n';
+import { ReqInfo, WithInfo } from '../components/ReqInfo';
 
 type CourseRecord = Out<typeof rpc.record.list>[number];
 type RecordDraft = { code: string; title: string; credits: number; term: string; status: RecordStatus; grade: string | null };
@@ -76,16 +78,18 @@ export function AcademicsPanel({ tab }: { tab: 'record' | 'degree' }) {
   return (
     <>
       <Group justify="flex-end" mb="md">
-        <Button leftSection={<IconPlus size={16} />} onClick={() => openNew()}>
-          {t('Add course')}
-        </Button>
+        <WithInfo id="record-add">
+          <Button leftSection={<IconPlus size={16} />} onClick={() => openNew()}>
+            {t('Add course')}
+          </Button>
+        </WithInfo>
       </Group>
       {tab === 'record' ? (
         <RecordTab onEdit={(record) => setEditing({ record, draft: record })} />
       ) : (
         <DegreeTab onPlan={(draft) => openNew(draft)} />
       )}
-      <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing?.record ? t('Edit course') : t('Add course')}>
+      <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing?.record ? <WithInfo id="record-edit">{t('Edit course')}</WithInfo> : <WithInfo id="record-add">{t('Add course')}</WithInfo>}>
         {editing && <RecordForm key={editing.record?.id ?? editing.draft.code} {...editing} onDone={() => setEditing(null)} />}
       </Modal>
     </>
@@ -94,11 +98,11 @@ export function AcademicsPanel({ tab }: { tab: 'record' | 'degree' }) {
 
 // --- A1 ---------------------------------------------------------------------------
 
-function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function Stat({ label, value, hint, info }: { label: string; value: string; hint?: string; info: ReqTopicId }) {
   return (
     <Paper withBorder p="md">
       <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-        {label}
+        {label} <ReqInfo id={info} />
       </Text>
       <Title order={2}>{value}</Title>
       {hint && (
@@ -145,10 +149,10 @@ function TranscriptImport({ records, onDone }: { records: CourseRecord[]; onDone
   return (
     <Stack>
       <Text size="sm" c="dimmed">
-        {t('On Minerva, open your unofficial transcript, select the terms and courses, and paste them here. Each course line under a term heading like "Fall 2025" is read; you pick what to add.')}
+        {t('On Minerva, open your unofficial transcript, select the terms and courses, and paste them here. Each course line under a term heading like "Fall 2025" is read; you pick what to add.')} <ReqInfo id="record-paste" />
       </Text>
       <Textarea
-        label={t('Transcript')}
+        label={<WithInfo id="record-paste">{t('Transcript')}</WithInfo>}
         placeholder={'Fall 2025\nCOMP 202  Foundations of Programming  3  A  B+'}
         autosize
         minRows={5}
@@ -229,7 +233,7 @@ function CgpaGoalForm({ summary, saved }: { summary: ReturnType<typeof summarize
   const outlook = target != null && over != null ? goalOutlook(summary, target, over) : null;
 
   return (
-    <SectionCard title={t('CGPA goal')}>
+    <SectionCard info="cgpa-goal" title={t('CGPA goal')}>
       <Group align="flex-start" gap="lg">
         <NumberInput
           w={130}
@@ -285,10 +289,10 @@ function RecordTab({ onEdit }: { onEdit: (r: CourseRecord) => void }) {
   return (
     <Stack gap="lg">
       <SimpleGrid cols={{ base: 2, md: 4 }}>
-        <Stat label={t('CGPA')} value={summary.cgpa?.toFixed(2) ?? '—'} hint={t('Out of 4.00, from letter grades')} />
-        <Stat label={t('Credits earned')} value={String(summary.creditsEarned)} />
-        <Stat label={t('In progress')} value={String(summary.creditsInProgress)} hint={t('credits')} />
-        <Stat label={t('Planned')} value={String(summary.creditsPlanned)} hint={t('credits')} />
+        <Stat info="record-cgpa" label={t('CGPA')} value={summary.cgpa?.toFixed(2) ?? '—'} hint={t('Out of 4.00, from letter grades')} />
+        <Stat info="record-credits" label={t('Credits earned')} value={String(summary.creditsEarned)} />
+        <Stat info="record-credits" label={t('In progress')} value={String(summary.creditsInProgress)} hint={t('credits')} />
+        <Stat info="record-credits" label={t('Planned')} value={String(summary.creditsPlanned)} hint={t('credits')} />
       </SimpleGrid>
 
       <GpaTrend points={gpaTrend(summary.terms)} />
@@ -296,17 +300,21 @@ function RecordTab({ onEdit }: { onEdit: (r: CourseRecord) => void }) {
       <CgpaGoal summary={summary} />
 
       <Group>
-        <Button variant="light" leftSection={<IconDownload size={16} />} onClick={() => importClasses.mutate()}>
-          {t('Add my current classes')}
-        </Button>
+        <WithInfo id="record-import-classes">
+          <Button variant="light" leftSection={<IconDownload size={16} />} onClick={() => importClasses.mutate()}>
+            {t('Add my current classes')}
+          </Button>
+        </WithInfo>
         <Text size="sm" c="dimmed">
           {t("Adds the classes you've joined on UniLink as in-progress courses.")}
         </Text>
-        <Button variant="default" leftSection={<IconClipboardText size={16} />} onClick={() => setPasting(true)}>
-          {t('Paste a transcript')}
-        </Button>
+        <WithInfo id="record-paste">
+          <Button variant="default" leftSection={<IconClipboardText size={16} />} onClick={() => setPasting(true)}>
+            {t('Paste a transcript')}
+          </Button>
+        </WithInfo>
       </Group>
-      <Modal opened={pasting} onClose={() => setPasting(false)} title={t('Add courses from a transcript')} size="xl">
+      <Modal opened={pasting} onClose={() => setPasting(false)} title={<WithInfo id="record-paste">{t('Add courses from a transcript')}</WithInfo>} size="xl">
         {pasting && <TranscriptImport records={records.data} onDone={() => setPasting(false)} />}
       </Modal>
 
@@ -320,6 +328,7 @@ function RecordTab({ onEdit }: { onEdit: (r: CourseRecord) => void }) {
         summary.terms.map((termRow) => (
           <SectionCard
             key={termRow.term}
+            info="record-term"
             title={term(termRow.term)}
             actions={
               <Text size="sm" c="dimmed">
@@ -341,9 +350,11 @@ function RecordTab({ onEdit }: { onEdit: (r: CourseRecord) => void }) {
                         <Table.Td>{r.title}</Table.Td>
                         <Table.Td w={90}>{t('{{credits}} cr', { credits: r.credits })}</Table.Td>
                         <Table.Td w={120}>
-                          <Badge variant="light" color={STATUS_COLOR[r.status]}>
-                            {t(STATUS_LABEL[r.status])}
-                          </Badge>
+                          <WithInfo id="record-status">
+                            <Badge variant="light" color={STATUS_COLOR[r.status]}>
+                              {t(STATUS_LABEL[r.status])}
+                            </Badge>
+                          </WithInfo>
                         </Table.Td>
                         <Table.Td w={170}>
                           {r.grade ? (
@@ -351,7 +362,7 @@ function RecordTab({ onEdit }: { onEdit: (r: CourseRecord) => void }) {
                           ) : r.currentAverage != null ? (
                             <Tooltip label={t("From the grades on this class's Grades tab")}>
                               <Text size="sm" c="dimmed">
-                                {t('now {{average}}% ({{letter}})', { average: r.currentAverage, letter: letterFor(r.currentAverage).letter })}
+                                {t('now {{average}}% ({{letter}})', { average: r.currentAverage, letter: letterFor(r.currentAverage).letter })} <ReqInfo id="record-now" />
                               </Text>
                             </Tooltip>
                           ) : (
@@ -368,6 +379,7 @@ function RecordTab({ onEdit }: { onEdit: (r: CourseRecord) => void }) {
                             <ActionIcon variant="subtle" color="red" onClick={() => remove.mutate(r.id)} aria-label={t('Delete')}>
                               <IconTrash size={16} />
                             </ActionIcon>
+                            <ReqInfo id="record-edit" />
                           </Group>
                         </Table.Td>
                       </Table.Tr>
@@ -410,17 +422,19 @@ function RecordForm({ record, draft, onDone }: { record: CourseRecord | null; dr
     <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
       <Stack>
         <Group grow align="flex-start">
-          <TextInput label={t('Course code')} placeholder="COMP 251" data-autofocus {...form.getInputProps('code')} onBlur={lookup} />
-          <NumberInput label={t('Credits')} min={0} max={12} step={0.5} decimalScale={1} {...form.getInputProps('credits')} />
+          <TextInput label={<WithInfo id="record-code">{t('Course code')}</WithInfo>} placeholder="COMP 251" data-autofocus {...form.getInputProps('code')} onBlur={lookup} />
+          <NumberInput label={<WithInfo id="record-code">{t('Credits')}</WithInfo>} min={0} max={12} step={0.5} decimalScale={1} {...form.getInputProps('credits')} />
         </Group>
-        <TextInput label={t('Title')} placeholder={t('Algorithms and Data Structures')} {...form.getInputProps('title')} />
-        <Select label={t('Term')} data={termOptionsData()} searchable allowDeselect={false} {...form.getInputProps('term')} />
-        <SegmentedControl
-          data={RECORD_STATUSES.map((s) => ({ value: s, label: t(STATUS_LABEL[s]) }))}
-          {...form.getInputProps('status')}
-        />
+        <TextInput label={<WithInfo id="record-code">{t('Title')}</WithInfo>} placeholder={t('Algorithms and Data Structures')} {...form.getInputProps('title')} />
+        <Select label={<WithInfo id="record-term-field">{t('Term')}</WithInfo>} data={termOptionsData()} searchable allowDeselect={false} {...form.getInputProps('term')} />
+        <WithInfo id="record-status" block>
+          <SegmentedControl
+            data={RECORD_STATUSES.map((s) => ({ value: s, label: t(STATUS_LABEL[s]) }))}
+            {...form.getInputProps('status')}
+          />
+        </WithInfo>
         {form.values.status === 'completed' && (
-          <Select label={t('Final grade')} data={gradeOptions()} {...form.getInputProps('grade')} />
+          <Select label={<WithInfo id="record-grade">{t('Final grade')}</WithInfo>} data={gradeOptions()} {...form.getInputProps('grade')} />
         )}
         <Group justify="flex-end">
           <Button type="submit" loading={save.isPending}>
@@ -446,7 +460,7 @@ function DegreeTab({ onPlan }: { onPlan: (draft: Partial<RecordDraft>) => void }
     <Stack gap="lg">
       <Group align="flex-end">
         <Select
-          label={t('Your program')}
+          label={<WithInfo id="degree-program">{t('Your program')}</WithInfo>}
           placeholder={t('Pick a program')}
           w={360}
           data={programs.data?.map((p) => ({ value: p.id, label: `${t(p.name)}, ${p.degree}` })) ?? []}
@@ -457,7 +471,7 @@ function DegreeTab({ onPlan }: { onPlan: (draft: Partial<RecordDraft>) => void }
       </Group>
       <Alert variant="light" color="yellow" icon={<IconAlertTriangle size={18} />}>
         <b>{t('Sample programs.')}</b>{' '}
-        {t("They show how degree planning works and are not official McGill requirements. Real program data needs an import from the McGill eCalendar. Always confirm with your advisor or Minerva's degree evaluation.")}
+        {t("They show how degree planning works and are not official McGill requirements. Real program data needs an import from the McGill eCalendar. Always confirm with your advisor or Minerva's degree evaluation.")} <ReqInfo id="degree-sample" />
       </Alert>
 
       {!data ? (
@@ -491,6 +505,7 @@ function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.d
   return (
     <>
       <SectionCard
+        info="degree-result"
         title={`${t(program.name)}, ${program.degree}`}
         actions={
           <Text size="sm" c="dimmed">
@@ -519,16 +534,17 @@ function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.d
           <Badge variant="dot" color="gray">
             {t('{{label}}: {{value}}', { label: { t: 'Not yet planned' }, value: t('{{count}} credits', { count: e.missingCredits }) })}
           </Badge>
+          <ReqInfo id="record-credits" />
         </Group>
         {e.graduated ? (
-          <Alert color="teal" icon={<IconCircleCheck size={18} />}>{t('All requirements are completed.')}</Alert>
+          <Alert color="teal" icon={<IconCircleCheck size={18} />}>{t('All requirements are completed.')} <ReqInfo id="degree-status" /></Alert>
         ) : e.planComplete ? (
           <Alert color="teal" icon={<IconCircleCheck size={18} />}>
-            {t("Your plan is complete: once you pass everything in progress and planned, you'll meet every requirement.")}
+            {t("Your plan is complete: once you pass everything in progress and planned, you'll meet every requirement.")} <ReqInfo id="degree-status" />
           </Alert>
         ) : (
           <Alert color="orange" icon={<IconAlertTriangle size={18} />}>
-            {t('Your plan still needs {{gaps}}. Use "Plan it" below to add courses to a future term.', { gaps: gaps.join(', ') })}
+            {t('Your plan still needs {{gaps}}. Use "Plan it" below to add courses to a future term.', { gaps: gaps.join(', ') })} <ReqInfo id="degree-status" />
           </Alert>
         )}
         {pace && gradYear != null && (
@@ -536,7 +552,7 @@ function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.d
             {pace.terms
               ? t('{{count}} credits left after this term: about {{pace}} a term to graduate in {{year}}.', { count: left, pace: pace.perTerm, year: gradYear })
               : t('{{count}} credits left after this term, with none left before graduating in {{year}}.', { count: left, year: gradYear })}
-            {pace.terms > 0 && pace.perTerm > 18 && ` ${t('That’s more than the usual 15 to 18, so you may need summer courses or another term.')}`}
+            {pace.terms > 0 && pace.perTerm > 18 && ` ${t('That’s more than the usual 15 to 18, so you may need summer courses or another term.')}`} <ReqInfo id="degree-pace" />
           </Text>
         )}
       </SectionCard>
@@ -546,6 +562,7 @@ function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.d
         return (
           <SectionCard
             key={g.id}
+            info="degree-group"
             title={t(g.name)}
             actions={
               <Group gap="xs">
@@ -584,24 +601,28 @@ function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.d
                         </Text>
                       </div>
                       {open && !(g.kind === 'choose' && g.coveredByPlan) ? (
-                        <Button
-                          size="compact-xs"
-                          variant="light"
-                          onClick={() =>
-                            onPlan({ code: c.code, title: titles[c.code] ?? '', credits: c.credits, term: NEXT_TERM, status: 'planned' })
-                          }
-                        >
-                          {t('Plan it')}
-                        </Button>
+                        <WithInfo id="degree-plan-it">
+                          <Button
+                            size="compact-xs"
+                            variant="light"
+                            onClick={() =>
+                              onPlan({ code: c.code, title: titles[c.code] ?? '', credits: c.credits, term: NEXT_TERM, status: 'planned' })
+                            }
+                          >
+                            {t('Plan it')}
+                          </Button>
+                        </WithInfo>
                       ) : (
-                        <Badge size="sm" variant="light" color={STATUS_COLOR[c.state]} style={{ flexShrink: 0 }}>
-                          {t(STATUS_LABEL[c.state])}
-                        </Badge>
+                        <WithInfo id="record-status">
+                          <Badge size="sm" variant="light" color={STATUS_COLOR[c.state]} style={{ flexShrink: 0 }}>
+                            {t(STATUS_LABEL[c.state])}
+                          </Badge>
+                        </WithInfo>
                       )}
                     </Group>
                     {c.state === 'below-minimum' && (
                       <Text size="xs" c="red" mt={4}>
-                        {t('Grade below {{grade}}: retake to count it', { grade: program.minProgramGrade })}
+                        {t('Grade below {{grade}}: retake to count it', { grade: program.minProgramGrade })} <ReqInfo id="degree-below-min" />
                       </Text>
                     )}
                   </Paper>
@@ -612,7 +633,7 @@ function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.d
         );
       })}
 
-      <SectionCard title={t('Electives')}>
+      <SectionCard info="degree-electives" title={t('Electives')}>
         <Text size="sm">
           {t('{{count}} credits from other courses count as electives toward the {{total}}-credit total.', {
             count: e.electiveCredits,

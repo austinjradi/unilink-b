@@ -27,6 +27,7 @@ import { clearDrafts } from '../lib/drafts';
 import { useAction, useMe } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
 import { t, tx } from '../lib/i18n';
+import { ReqInfo, WithInfo } from '../components/ReqInfo';
 
 // G4 account settings and G3 notification settings, shown as Settings tabs.
 
@@ -34,13 +35,13 @@ export function PrivacyPanel() {
   const download = useAction(() => rpc.profile.exportData(), { success: (r) => (r ? t('Saved a copy of your data.') : '') });
   return (
     <Stack gap="lg">
-      <SectionCard title={t('What classmates see')}>
+      <SectionCard info="privacy-visible" title={t('What classmates see')}>
         <Alert variant="light" icon={<IconEye size={18} />}>
           {t("Your name, McGill email, pronouns, faculty and goat are shown to classmates only once you post or reply on a discussion board. Joining a study session doesn't reveal you: only the other people going see who's there. Group chat links you share show your name. There's no member list for your classes. Your grades, notes, course record and planner are private to you.")}
         </Alert>
       </SectionCard>
       {/* G4: alongside deleting your account and data (Settings → Account). */}
-      <SectionCard title={t('Your data')}>
+      <SectionCard info="privacy-download" title={t('Your data')}>
         <Text size="sm" c="dimmed" mb="sm">
           {t('Download a copy of everything UniLink keeps about you: your profile, classes, course record, marks, notes, plans, to-dos, posts, replies, links and study sessions.')}
         </Text>
@@ -49,7 +50,7 @@ export function PrivacyPanel() {
         </Button>
       </SectionCard>
       {/* There's no server, so this is the only copy of anything anyone keeps here. */}
-      <SectionCard title={t('Back up this browser')}>
+      <SectionCard info="backup-download" title={t('Back up this browser')}>
         <Text size="sm" c="dimmed" mb="sm">
           {t('Everything in UniLink is saved only in this browser, so clearing its data would lose it. A backup keeps it all in one file you can restore here or on another computer. It holds every account used in this browser, with notes and marks, so keep it somewhere private.')}
         </Text>
@@ -57,9 +58,11 @@ export function PrivacyPanel() {
           <Button variant="default" leftSection={<IconDownload size={16} />} onClick={() => void window.unilink.downloadBackup()}>
             {t('Download a backup')}
           </Button>
-          <Button variant="default" leftSection={<IconRestore size={16} />} onClick={restoreBackup}>
-            {t('Restore a backup')}
-          </Button>
+          <WithInfo id="backup-restore">
+            <Button variant="default" leftSection={<IconRestore size={16} />} onClick={restoreBackup}>
+              {t('Restore a backup')}
+            </Button>
+          </WithInfo>
         </Group>
       </SectionCard>
     </Stack>
@@ -83,11 +86,14 @@ export function NotificationSettings() {
 
   return (
     <SectionCard
+      info="settings-notifications"
       title={t('Notifications')}
       actions={
-        <Button size="xs" variant="subtle" leftSection={<IconMail size={14} />} onClick={() => setShowOutbox(true)}>
-          {t('Email outbox ({{count}})', { count: outbox.data?.length ?? 0 })}
-        </Button>
+        <WithInfo id="email-outbox">
+          <Button size="xs" variant="subtle" leftSection={<IconMail size={14} />} onClick={() => setShowOutbox(true)}>
+            {t('Email outbox ({{count}})', { count: outbox.data?.length ?? 0 })}
+          </Button>
+        </WithInfo>
       }
     >
       <Text size="sm" c="dimmed" mb="sm">
@@ -96,12 +102,14 @@ export function NotificationSettings() {
       <Table verticalSpacing={6}>
         <Table.Thead>
           <Table.Tr>
-            <Table.Th />
-            <Table.Th ta="center" w={90}>
-              {t('Desktop')}
+            <Table.Th>
+              <ReqInfo id="notif-types" />
             </Table.Th>
             <Table.Th ta="center" w={90}>
-              {t('Email')}
+              <WithInfo id="notif-desktop">{t('Desktop')}</WithInfo>
+            </Table.Th>
+            <Table.Th ta="center" w={90}>
+              <WithInfo id="notif-email">{t('Email')}</WithInfo>
             </Table.Th>
           </Table.Tr>
         </Table.Thead>
@@ -145,7 +153,7 @@ export function NotificationSettings() {
         </Table.Tbody>
       </Table>
 
-      <Modal opened={showOutbox} onClose={() => setShowOutbox(false)} title={t('Email outbox')} size="lg">
+      <Modal opened={showOutbox} onClose={() => setShowOutbox(false)} title={<WithInfo id="email-outbox">{t('Email outbox')}</WithInfo>} size="lg">
         <Alert variant="light" color="yellow" icon={<IconAlertTriangle size={18} />} mb="md">
           {t("Emails aren't actually sent yet: that needs a mail server, which this local-only version of UniLink doesn't have. This is what would have been sent to you.")}
         </Alert>
@@ -205,16 +213,16 @@ export function ProfileForm() {
   );
 
   return (
-    <SectionCard title={t('Profile')}>
+    <SectionCard info="profile-form" title={t('Profile')}>
       <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
         <Stack>
           <Group grow>
-            <TextInput label={t('Name')} {...form.getInputProps('name')} />
-            <Autocomplete label={t('Pronouns')} placeholder={t('Optional')} data={[...PRONOUNS]} {...form.getInputProps('pronouns')} />
+            <TextInput label={<WithInfo id="profile-name">{t('Name')}</WithInfo>} {...form.getInputProps('name')} />
+            <Autocomplete label={<WithInfo id="signup-pronouns">{t('Pronouns')}</WithInfo>} placeholder={t('Optional')} data={[...PRONOUNS]} {...form.getInputProps('pronouns')} />
           </Group>
           <Group grow>
-            <Select label={t('Faculty')} placeholder="—" clearable data={facultyOptions()} {...form.getInputProps('faculty')} />
-            {me.role === 'student' && <Select label={t('Expected graduation')} placeholder="—" clearable data={gradYearOptions()} {...form.getInputProps('gradYear')} />}
+            <Select label={<WithInfo id="signup-faculty">{t('Faculty')}</WithInfo>} placeholder="—" clearable data={facultyOptions()} {...form.getInputProps('faculty')} />
+            {me.role === 'student' && <Select label={<WithInfo id="signup-grad">{t('Expected graduation')}</WithInfo>} placeholder="—" clearable data={gradYearOptions()} {...form.getInputProps('gradYear')} />}
           </Group>
           <Group justify="flex-end">
             <Button type="submit" disabled={!form.isDirty()} loading={save.isPending}>
@@ -245,12 +253,12 @@ export function ChangePassword() {
   );
 
   return (
-    <SectionCard title={t('Change password')}>
+    <SectionCard info="profile-password" title={t('Change password')}>
       <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
         <Stack>
           <PasswordInput visibilityToggleButtonProps={{ 'aria-label': t('Show or hide the password') }} label={t('Current password')} {...form.getInputProps('currentPassword')} />
           <Group grow>
-            <PasswordInput visibilityToggleButtonProps={{ 'aria-label': t('Show or hide the password') }} label={t('New password')} description={t('At least 12 characters. A short phrase is easiest to remember.')} {...form.getInputProps('newPassword')} />
+            <PasswordInput visibilityToggleButtonProps={{ 'aria-label': t('Show or hide the password') }} label={<WithInfo id="signup-password">{t('New password')}</WithInfo>} description={t('At least 12 characters. A short phrase is easiest to remember.')} {...form.getInputProps('newPassword')} />
             <PasswordInput visibilityToggleButtonProps={{ 'aria-label': t('Show or hide the password') }} label={t('Confirm new password')} {...form.getInputProps('confirm')} />
           </Group>
           <Group justify="flex-end">
@@ -275,14 +283,14 @@ export function DeleteAccount() {
   });
 
   return (
-    <SectionCard title={t('Delete account')}>
+    <SectionCard info="delete-account" title={t('Delete account')}>
       <Text size="sm" c="dimmed" mb="md">
         {t("Permanently deletes your account, classes, links, posts, grades and plans. Sessions you host pass to the next person going. This can't be undone.")}
       </Text>
       <Button color="red" variant="light" onClick={() => setOpen(true)}>
         {t('Delete my account')}
       </Button>
-      <Modal opened={open} onClose={() => setOpen(false)} title={t('Delete your account?')}>
+      <Modal opened={open} onClose={() => setOpen(false)} title={<WithInfo id="delete-account">{t('Delete your account?')}</WithInfo>}>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -295,11 +303,11 @@ export function DeleteAccount() {
             <Checkbox
               checked={keepPosts}
               onChange={(e) => setKeepPosts(e.currentTarget.checked)}
-              label={t('Leave my posts and replies up, without my name')}
+              label={<WithInfo id="delete-keep-posts">{t('Leave my posts and replies up, without my name')}</WithInfo>}
               description={t('Classmates keep the answers you gave. They show as "Former student".')}
             />
             <Text size="xs" c="dimmed">
-              {t('Class times, deadlines and grading schemes you added for a section stay with it, credited to a former student.')}
+              {t('Class times, deadlines and grading schemes you added for a section stay with it, credited to a former student.')} <ReqInfo id="delete-shared" />
             </Text>
             <Group justify="flex-end">
               <Button variant="default" onClick={() => setOpen(false)}>

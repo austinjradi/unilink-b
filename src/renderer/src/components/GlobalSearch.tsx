@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router';
 import { fmtDateTime } from '../lib/format';
 import { t, tx } from '../lib/i18n';
 import { type Out, rpc } from '../lib/rpc';
+import { ReqInfo, WithInfo } from './ReqInfo';
 
 type Result = Out<typeof rpc.search.everything>[number];
 
@@ -50,12 +51,14 @@ export function GlobalSearch() {
 
   return (
     <>
-      <Tooltip label={t('Search everything (Ctrl+K)')}>
-        <ActionIcon variant="subtle" color="gray" size="lg" onClick={() => setOpen(true)} aria-label={t('Search everything')}>
-          <IconSearch size={20} />
-        </ActionIcon>
-      </Tooltip>
-      <Modal opened={open} onClose={() => setOpen(false)} title={t('Search everything')} size="lg" zIndex={400}>
+      <WithInfo id="search">
+        <Tooltip label={t('Search everything (Ctrl+K)')}>
+          <ActionIcon variant="subtle" color="gray" size="lg" onClick={() => setOpen(true)} aria-label={t('Search everything')}>
+            <IconSearch size={20} />
+          </ActionIcon>
+        </Tooltip>
+      </WithInfo>
+      <Modal opened={open} onClose={() => setOpen(false)} title={<WithInfo id="search">{t('Search everything')}</WithInfo>} size="lg" zIndex={400}>
         <Stack gap="md">
           <TextInput
             data-autofocus
@@ -88,7 +91,7 @@ export function GlobalSearch() {
             return (
               <div key={kind} role="group" aria-label={t(label)}>
                 <Text size="xs" fw={800} c="dimmed" tt="uppercase" mb={4}>
-                  {t(label)}
+                  {t(label)} <ReqInfo id="search-results" />
                 </Text>
                 <Stack gap={0}>
                   {items.map((r) => (

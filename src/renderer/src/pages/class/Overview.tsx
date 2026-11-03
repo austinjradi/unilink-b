@@ -14,6 +14,7 @@ import { fromNow } from '../../lib/format';
 import { useAction } from '../../lib/hooks';
 import { type Out, rpc } from '../../lib/rpc';
 import { t } from '../../lib/i18n';
+import { ReqInfo, WithInfo } from '../../components/ReqInfo';
 
 type Info = Out<typeof rpc.courses.info>;
 type Meeting = { weekday: number; startTime: string; endTime: string; location: string };
@@ -33,7 +34,8 @@ function SharedNote({ code, editor, when }: { code: string; editor: Editor; when
   return (
     <Text size="xs" c="dimmed" ta="right">
       {t('Shared with {{code}}', { code })}
-      {editor && ` · ${when ? t('edited by {{name}} {{when}}', { name: editorName(editor), when: fromNow(when) }) : t('added by {{name}}', { name: editorName(editor) })}`}
+      {editor && ` · ${when ? t('edited by {{name}} {{when}}', { name: editorName(editor), when: fromNow(when) }) : t('added by {{name}}', { name: editorName(editor) })}`}{' '}
+      <ReqInfo id="shared-note" />
     </Text>
   );
 }
@@ -83,16 +85,16 @@ function CourseDetails({ classId, code, info }: { classId: number; code: string;
   });
 
   return (
-    <SectionCard title={t('Course details')} actions={<SharedNote code={code} editor={info.detailsEditedBy} when={info.detailsEditedAt} />}>
+    <SectionCard info="course-details" title={t('Course details')} actions={<SharedNote code={code} editor={info.detailsEditedBy} when={info.detailsEditedAt} />}>
       <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
         <Stack>
           <Group grow>
-            <TextInput label={t('Professor')} placeholder={t('Prof. Jane Doe')} readOnly={readOnly} {...form.getInputProps('professor')} />
-            <TextInput label={t('Professor email')} placeholder={t('jane.doe@mcgill.ca')} readOnly={readOnly} {...form.getInputProps('professorEmail')} />
+            <TextInput label={<WithInfo id="detail-professor">{t('Professor')}</WithInfo>} placeholder={t('Prof. Jane Doe')} readOnly={readOnly} {...form.getInputProps('professor')} />
+            <TextInput label={<WithInfo id="detail-professor">{t('Professor email')}</WithInfo>} placeholder={t('jane.doe@mcgill.ca')} readOnly={readOnly} {...form.getInputProps('professorEmail')} />
           </Group>
           <Group grow>
-            <TextInput label={t('Office hours')} placeholder={t('Tue 14:00–15:30, McConnell 110N')} readOnly={readOnly} {...form.getInputProps('officeHours')} />
-            <TextInput label={t('Lecture location')} placeholder={t('Leacock 132')} readOnly={readOnly} {...form.getInputProps('location')} />
+            <TextInput label={<WithInfo id="detail-office-hours">{t('Office hours')}</WithInfo>} placeholder={t('Tue 14:00–15:30, McConnell 110N')} readOnly={readOnly} {...form.getInputProps('officeHours')} />
+            <TextInput label={<WithInfo id="detail-location">{t('Lecture location')}</WithInfo>} placeholder={t('Leacock 132')} readOnly={readOnly} {...form.getInputProps('location')} />
           </Group>
           {(info.outlineName || !readOnly) && (
             <Group gap="xs">
@@ -111,6 +113,7 @@ function CourseDetails({ classId, code, info }: { classId: number; code: string;
                   {t('Remove')}
                 </Button>
               )}
+              <ReqInfo id="detail-outline" />
             </Group>
           )}
           <Group justify="space-between">
@@ -134,7 +137,7 @@ function MyNotes({ classId, initial }: { classId: number; initial: string }) {
   useEffect(() => setNotes(initial), [initial]);
   const save = useAction(() => rpc.courses.saveNotes({ classId, notes }), { success: 'Notes saved' });
   return (
-    <SectionCard title={t('My notes')} actions={<Text size="xs" c="dimmed">{t('Only you see these')}</Text>}>
+    <SectionCard info="my-notes" title={t('My notes')} actions={<Text size="xs" c="dimmed">{t('Only you see these')}</Text>}>
       <Stack>
         <Textarea autosize minRows={2} placeholder={t('Syllabus highlights, TA names…')} value={notes} onChange={(e) => setNotes(e.currentTarget.value)} aria-label={t('My notes')} />
         <Group justify="flex-end">
@@ -160,6 +163,7 @@ function ClassTimes({ classId, code, initial, editor, canEdit }: { classId: numb
 
   return (
     <SectionCard
+      info="class-times"
       title={t('Class times')}
       actions={
         <Group gap="sm">
@@ -207,6 +211,7 @@ function ClassTimes({ classId, code, initial, editor, canEdit }: { classId: numb
               aria-label={t('Location')}
               readOnly={!canEdit}
             />
+            <ReqInfo id="class-time-row" />
             {canEdit && (
               <ActionIcon variant="subtle" color="red" onClick={() => setRows((r) => r.filter((_, j) => j !== i))} aria-label={t('Remove')} mb={4}>
                 <IconTrash size={16} />
@@ -245,14 +250,17 @@ function ComingUp({ classId, exam }: { classId: number; exam: ReturnType<typeof 
 
   return (
     <SectionCard
+      info="coming-up"
       title={t('Coming up')}
       actions={
-        <Button size="compact-xs" variant="subtle" leftSection={<IconFileImport size={14} />} onClick={() => setImporting(true)}>
-          {t('Dates from a syllabus')}
-        </Button>
+        <WithInfo id="syllabus-import">
+          <Button size="compact-xs" variant="subtle" leftSection={<IconFileImport size={14} />} onClick={() => setImporting(true)}>
+            {t('Dates from a syllabus')}
+          </Button>
+        </WithInfo>
       }
     >
-      <Modal opened={importing} onClose={() => setImporting(false)} title={t('Import dates from a syllabus')} size="xl">
+      <Modal opened={importing} onClose={() => setImporting(false)} title={<WithInfo id="syllabus-import">{t('Import dates from a syllabus')}</WithInfo>} size="xl">
         {importing && <SyllabusImport initialClassId={classId} onDone={() => setImporting(false)} />}
       </Modal>
       {items.length ? (
@@ -289,7 +297,7 @@ function ComingUp({ classId, exam }: { classId: number; exam: ReturnType<typeof 
           <Group gap="sm" wrap="nowrap">
             <Box w={9} h={9} style={{ flex: 'none', borderRadius: 9, background: `var(--mantine-color-${kindColor('session')}-4)` }} />
             <Text size="sm" fw={700} style={{ flex: 1, minWidth: 0 }} truncate>
-              {t('When works for “{{title}}”?', { title: poll.title })}
+              {t('When works for “{{title}}”?', { title: poll.title })} <ReqInfo id="poll-card" />
             </Text>
             <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
               {poll.options.some((o) => o.voted) ? t('Answered') : t('Answer')}
@@ -303,7 +311,7 @@ function ComingUp({ classId, exam }: { classId: number; exam: ReturnType<typeof 
           <Group gap="sm" wrap="nowrap">
             <Box w={9} h={9} style={{ flex: 'none', borderRadius: 9, background: 'var(--mantine-color-red-4)' }} />
             <Text size="sm" fw={800} style={{ flex: 1, minWidth: 0 }} truncate>
-              {t('Final exam')} · {exam.location}
+              {t('Final exam')} · {exam.location} <ReqInfo id="final-exam" />
             </Text>
             <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
               {dayjs(exam.date).format(t('ddd, MMM D'))} · {exam.start}
@@ -325,7 +333,7 @@ function MembershipCard({ cls }: { cls: Out<typeof rpc.classes.get> }) {
 
   const confirmLeave = () =>
     modals.openConfirmModal({
-      title: t('Leave {{code}}?', { code: cls.code }),
+      title: <WithInfo id="leave-class">{t('Leave {{code}}?', { code: cls.code })}</WithInfo>,
       children: (
         <Text size="sm">
           {cls.teaching
@@ -341,9 +349,9 @@ function MembershipCard({ cls }: { cls: Out<typeof rpc.classes.get> }) {
   const others = cls.sections.filter((s) => s.id !== cls.id);
 
   return (
-    <SectionCard title={cls.teaching ? t('Your students') : t('Your classmates')}>
+    <SectionCard info="classmates-card" title={cls.teaching ? t('Your students') : t('Your classmates')}>
       <Text size="sm" mb="xs">
-        {t('{{count}} students from {{code}} are on UniLink.', { count: cls.memberCount, code: cls.code })}
+        {t('{{count}} students from {{code}} are on UniLink.', { count: cls.memberCount, code: cls.code })} <ReqInfo id="course-members" />
       </Text>
       <Text size="sm" c="dimmed" mb="md">
         {cls.teaching
@@ -355,7 +363,7 @@ function MembershipCard({ cls }: { cls: Out<typeof rpc.classes.get> }) {
           {classmates.data.map((c) => (
             <div key={c.id}>
               <Text size="sm" fw={700}>
-                {c.name} {c.role === 'professor' && <Tag color="periwinkle">{t('Professor')}</Tag>}
+                {c.name} <ReqInfo id="author-card" /> {c.role === 'professor' && <Tag color="periwinkle">{t('Professor')}</Tag>}
                 {c.pronouns && (
                   <Text span size="xs" c="dimmed" fw={500}>
                     {' '}
@@ -374,23 +382,29 @@ function MembershipCard({ cls }: { cls: Out<typeof rpc.classes.get> }) {
       )}
       <Group>
         {cls.teaching && (
-          <CopyButton value={`${window.location.href.split('#')[0]}#/classes/${cls.id}`}>
-            {({ copied, copy }) => (
-              <Tooltip label={t('Put it on your syllabus: it opens this section, with a button to join.')}>
-                <Button variant="default" leftSection={<IconLink size={16} />} onClick={copy}>
-                  {copied ? t('Copied') : t('Copy a link for students')}
-                </Button>
-              </Tooltip>
-            )}
-          </CopyButton>
+          <WithInfo id="copy-class-link">
+            <CopyButton value={`${window.location.href.split('#')[0]}#/classes/${cls.id}`}>
+              {({ copied, copy }) => (
+                <Tooltip label={t('Put it on your syllabus: it opens this section, with a button to join.')}>
+                  <Button variant="default" leftSection={<IconLink size={16} />} onClick={copy}>
+                    {copied ? t('Copied') : t('Copy a link for students')}
+                  </Button>
+                </Tooltip>
+              )}
+            </CopyButton>
+          </WithInfo>
         )}
-        <Button variant="light" color="red" onClick={confirmLeave}>
-          {cls.teaching ? t('Stop teaching') : t('Leave class')}
-        </Button>
-        {others.map((s) => (
-          <Button key={s.id} variant="default" component={Link} to={`/classes/${s.id}`}>
-            {t('See section {{section}}', { section: s.section })}
+        <WithInfo id="leave-class">
+          <Button variant="light" color="red" onClick={confirmLeave}>
+            {cls.teaching ? t('Stop teaching') : t('Leave class')}
           </Button>
+        </WithInfo>
+        {others.map((s) => (
+          <WithInfo key={s.id} id="sections-list">
+            <Button variant="default" component={Link} to={`/classes/${s.id}`}>
+              {t('See section {{section}}', { section: s.section })}
+            </Button>
+          </WithInfo>
         ))}
       </Group>
     </SectionCard>

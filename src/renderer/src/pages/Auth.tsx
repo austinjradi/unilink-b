@@ -32,13 +32,16 @@ import { restoreBackup } from '../lib/backup';
 import { rpc } from '../lib/rpc';
 import { LanguageSwitch } from '../components/LanguageSwitch';
 import { getLocale, t } from '../lib/i18n';
+import { ReqInfo, WithInfo } from '../components/ReqInfo';
 
 function AuthCard({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return (
     <Center mih="100vh" p="md">
       <Paper className="sketch" shadow="sm" p="xl" w={440} radius="xl">
         <Group justify="space-between" mb="lg">
-          <Logo />
+          <WithInfo id="nav-logo">
+            <Logo />
+          </WithInfo>
           <GoatAvatar goat={{ hat: 'grad', eyes: 'happy', horns: 'classic', fur: 'white', background: 'mint' }} size={72} />
         </Group>
         <Group justify="flex-end" mb="sm">
@@ -100,24 +103,29 @@ export function SignIn() {
     <AuthCard title={t('Welcome back')} subtitle={t('Sign in with your McGill email.')}>
       <form onSubmit={form.onSubmit((v) => signIn.mutate(v))}>
         <Stack>
-          <TextInput label={t('McGill email')} placeholder={t('first.last@mail.mcgill.ca')} required {...form.getInputProps('email')} />
-          <PasswordInput visibilityToggleButtonProps={{ 'aria-label': t('Show or hide the password') }} label={t('Password')} required {...form.getInputProps('password')} />
+          <TextInput label={<WithInfo id="signin-email">{t('McGill email')}</WithInfo>} placeholder={t('first.last@mail.mcgill.ca')} required {...form.getInputProps('email')} />
+          <PasswordInput visibilityToggleButtonProps={{ 'aria-label': t('Show or hide the password') }} label={<WithInfo id="signin-password">{t('Password')}</WithInfo>} required {...form.getInputProps('password')} />
           <Group justify="space-between">
-            <Anchor component={Link} to="/reset" size="sm">
-              {t('Forgot password?')}
-            </Anchor>
-            <Button type="submit" loading={signIn.isPending}>
-              {t('Sign in')}
-            </Button>
+            <WithInfo id="signin-forgot">
+              <Anchor component={Link} to="/reset" size="sm">
+                {t('Forgot password?')}
+              </Anchor>
+            </WithInfo>
+            <WithInfo id="signin-password">
+              <Button type="submit" loading={signIn.isPending}>
+                {t('Sign in')}
+              </Button>
+            </WithInfo>
           </Group>
           <Text size="sm" ta="center">
             {t('New to UniLink?')}{' '}
             <Anchor component={Link} to="/signup">
               {t('Create an account')}
-            </Anchor>
+            </Anchor>{' '}
+            <ReqInfo id="signin-create" />
           </Text>
           {devInfo.data && (
-            <Alert variant="light" icon={<IconInfoCircle />} title={t('Demo: sign in as a classmate or professor')}>
+            <Alert variant="light" icon={<IconInfoCircle />} title={<WithInfo id="demo-accounts">{t('Demo: sign in as a classmate or professor')}</WithInfo>}>
               <Group gap={6} mb="xs">
                 {devInfo.data.accounts.map((a) => (
                   <Button
@@ -144,10 +152,11 @@ export function SignIn() {
                 <Anchor component="button" type="button" size="xs" onClick={confirmReset}>
                   {t('Reset demo data')}
                 </Anchor>{' '}
-                ·{' '}
+                <ReqInfo id="demo-reset" /> ·{' '}
                 <Anchor component="button" type="button" size="xs" onClick={restoreBackup}>
                   {t('Restore a backup')}
-                </Anchor>
+                </Anchor>{' '}
+                <ReqInfo id="backup-restore" />
               </Text>
             </Alert>
           )}
@@ -161,7 +170,7 @@ export function SignIn() {
 // reset a forgotten password, since UniLink doesn't email reset codes.
 export function RecoveryCodeNotice({ code }: { code: string }) {
   return (
-    <Alert variant="light" color="yellow" icon={<IconKey size={18} />} title={t('Save your recovery code')}>
+    <Alert variant="light" color="yellow" icon={<IconKey size={18} />} title={<WithInfo id="recovery-code">{t('Save your recovery code')}</WithInfo>}>
       <Text size="sm" mb="xs">
         {t("If you forget your password, this code lets you set a new one. It's shown only once, so keep it somewhere safe (a password manager is ideal).")}
       </Text>
@@ -244,24 +253,26 @@ export function SignUp() {
     >
       <form onSubmit={form.onSubmit((v) => signUp.mutate(v))}>
         <Stack>
-          <SegmentedControl
-            data={[
-              { value: 'student', label: t('Student') },
-              { value: 'professor', label: t('Professor') },
-            ]}
-            aria-label={t('I am a')}
-            {...form.getInputProps('role')}
-          />
+          <WithInfo id="signup-role" block>
+            <SegmentedControl
+              data={[
+                { value: 'student', label: t('Student') },
+                { value: 'professor', label: t('Professor') },
+              ]}
+              aria-label={t('I am a')}
+              {...form.getInputProps('role')}
+            />
+          </WithInfo>
           <Group grow align="flex-start">
-            <TextInput label={t('Full name')} required {...form.getInputProps('name')} />
-            <Autocomplete label={t('Pronouns')} placeholder={t('Optional')} data={[...PRONOUNS]} {...form.getInputProps('pronouns')} />
+            <TextInput label={<WithInfo id="signup-name">{t('Full name')}</WithInfo>} required {...form.getInputProps('name')} />
+            <Autocomplete label={<WithInfo id="signup-pronouns">{t('Pronouns')}</WithInfo>} placeholder={t('Optional')} data={[...PRONOUNS]} {...form.getInputProps('pronouns')} />
           </Group>
-          <TextInput label={t('McGill email')} placeholder={professor ? t('jane.doe@mcgill.ca') : t('first.last@mail.mcgill.ca')} required {...form.getInputProps('email')} />
+          <TextInput label={<WithInfo id="signup-email">{t('McGill email')}</WithInfo>} placeholder={professor ? t('jane.doe@mcgill.ca') : t('first.last@mail.mcgill.ca')} required {...form.getInputProps('email')} />
           <Group grow align="flex-start">
-            <Select label={t('Faculty')} required searchable data={FACULTIES.map((f) => ({ value: f, label: t(f) }))} {...form.getInputProps('faculty')} />
+            <Select label={<WithInfo id="signup-faculty">{t('Faculty')}</WithInfo>} required searchable data={FACULTIES.map((f) => ({ value: f, label: t(f) }))} {...form.getInputProps('faculty')} />
             {!professor && (
               <Select
-                label={t('Expected graduation')}
+                label={<WithInfo id="signup-grad">{t('Expected graduation')}</WithInfo>}
                 placeholder="—"
                 clearable
                 data={Array.from({ length: 7 }, (_, i) => String(year + i))}
@@ -272,16 +283,19 @@ export function SignUp() {
           <Text size="xs" c="dimmed" mt={-6}>
             {professor
               ? t('Students in your sections see your name, email, pronouns and faculty.')
-              : t('Classmates see your name, email, pronouns and faculty once you post or reply in a class.')}
+              : t('Classmates see your name, email, pronouns and faculty once you post or reply in a class.')}{' '}
+            <ReqInfo id="signup-visibility" />
           </Text>
           <div>
-            <PasswordInput visibilityToggleButtonProps={{ 'aria-label': t('Show or hide the password') }} label={t('Password')} required mb={6} {...form.getInputProps('password')} />
+            <PasswordInput visibilityToggleButtonProps={{ 'aria-label': t('Show or hide the password') }} label={<WithInfo id="signup-password">{t('Password')}</WithInfo>} required mb={6} {...form.getInputProps('password')} />
             <PasswordChecklist password={form.values.password} email={form.values.email} />
           </div>
-          <PasswordInput visibilityToggleButtonProps={{ 'aria-label': t('Show or hide the password') }} label={t('Confirm password')} required {...form.getInputProps('confirm')} />
-          <Button type="submit" loading={signUp.isPending}>
-            {t('Create account')}
-          </Button>
+          <PasswordInput visibilityToggleButtonProps={{ 'aria-label': t('Show or hide the password') }} label={<WithInfo id="signup-confirm">{t('Confirm password')}</WithInfo>} required {...form.getInputProps('confirm')} />
+          <WithInfo id="signin-create" block>
+            <Button type="submit" loading={signUp.isPending}>
+              {t('Create account')}
+            </Button>
+          </WithInfo>
           <Text size="sm" ta="center">
             {t('Already have an account?')}{' '}
             <Anchor component={Link} to="/">
@@ -322,22 +336,24 @@ export function ResetPassword() {
       ) : (
         <form onSubmit={form.onSubmit((v) => reset.mutate(v))}>
           <Stack>
-            <TextInput label={t('McGill email')} required {...form.getInputProps('email')} />
-            <TextInput label={t('Recovery code')} placeholder="XXXX-XXXX-XXXX" required {...form.getInputProps('recoveryCode')} />
+            <TextInput label={<WithInfo id="reset-form">{t('McGill email')}</WithInfo>} required {...form.getInputProps('email')} />
+            <TextInput label={<WithInfo id="recovery-code">{t('Recovery code')}</WithInfo>} placeholder="XXXX-XXXX-XXXX" required {...form.getInputProps('recoveryCode')} />
             <div>
-              <PasswordInput visibilityToggleButtonProps={{ 'aria-label': t('Show or hide the password') }} label={t('New password')} required mb={6} {...form.getInputProps('password')} />
+              <PasswordInput visibilityToggleButtonProps={{ 'aria-label': t('Show or hide the password') }} label={<WithInfo id="signup-password">{t('New password')}</WithInfo>} required mb={6} {...form.getInputProps('password')} />
               <PasswordChecklist password={form.values.password} email={form.values.email} />
             </div>
             <Group justify="space-between">
               <Anchor component={Link} to="/" size="sm">
                 {t('Back to sign in')}
               </Anchor>
-              <Button type="submit" loading={reset.isPending}>
-                {t('Set new password')}
-              </Button>
+              <WithInfo id="reset-form">
+                <Button type="submit" loading={reset.isPending}>
+                  {t('Set new password')}
+                </Button>
+              </WithInfo>
             </Group>
             <Text size="xs" c="dimmed">
-              {t("Lost your recovery code too? There's no email reset in this version of UniLink. In the demo you can sign up again with another address.")}
+              {t("Lost your recovery code too? There's no email reset in this version of UniLink. In the demo you can sign up again with another address.")} <ReqInfo id="recovery-code" />
             </Text>
           </Stack>
         </form>

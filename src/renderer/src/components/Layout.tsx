@@ -5,6 +5,7 @@ import { useNetwork } from '@mantine/hooks';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { goatFor } from '@shared/goat';
+import type { ReqTopicId } from '../lib/reqTopics';
 import { fmtTime } from '../lib/format';
 import { t, tx } from '../lib/i18n';
 import { useAction, useMe } from '../lib/hooks';
@@ -13,17 +14,18 @@ import { GoatAvatar, GoatSvg } from './Goat';
 import { FocusCheckIn } from './FocusTask';
 import { GlobalSearch } from './GlobalSearch';
 import { NotificationBell } from './NotificationBell';
+import { ReqInfo, WithInfo } from './ReqInfo';
 
 // Top navigation from the wireframes: logo, pill tabs, then the student and their goat.
-const NAV = [
-  { to: '/', label: tx('Home'), match: (p: string) => p === '/' },
-  { to: '/courses', label: tx('Courses'), match: (p: string) => p.startsWith('/courses') || p.startsWith('/classes') },
-  { to: '/calendar', label: tx('Calendar'), match: (p: string) => p.startsWith('/calendar') },
-  { to: '/planner', label: tx('Planner'), match: (p: string) => p.startsWith('/planner'), studentOnly: true },
-  { to: '/calculator', label: tx('Calculator'), match: (p: string) => p.startsWith('/calculator'), studentOnly: true },
-  { to: '/sessions', label: tx('Study Sessions'), match: (p: string) => p.startsWith('/sessions') },
-  { to: '/study-mode', label: tx('Study Mode'), match: (p: string) => p.startsWith('/study-mode'), studentOnly: true },
-  { to: '/settings', label: tx('Settings'), match: (p: string) => p.startsWith('/settings') },
+const NAV: { to: string; label: string; info: ReqTopicId; match: (p: string) => boolean; studentOnly?: boolean }[] = [
+  { to: '/', label: tx('Home'), info: 'nav-home', match: (p: string) => p === '/' },
+  { to: '/courses', label: tx('Courses'), info: 'nav-courses', match: (p: string) => p.startsWith('/courses') || p.startsWith('/classes') },
+  { to: '/calendar', label: tx('Calendar'), info: 'nav-calendar', match: (p: string) => p.startsWith('/calendar') },
+  { to: '/planner', label: tx('Planner'), info: 'nav-planner', match: (p: string) => p.startsWith('/planner'), studentOnly: true },
+  { to: '/calculator', label: tx('Calculator'), info: 'nav-calculator', match: (p: string) => p.startsWith('/calculator'), studentOnly: true },
+  { to: '/sessions', label: tx('Study Sessions'), info: 'nav-sessions', match: (p: string) => p.startsWith('/sessions') },
+  { to: '/study-mode', label: tx('Study Mode'), info: 'nav-study-mode', match: (p: string) => p.startsWith('/study-mode'), studentOnly: true },
+  { to: '/settings', label: tx('Settings'), info: 'nav-settings', match: (p: string) => p.startsWith('/settings') },
 ];
 
 export const initials = (name: string) =>
@@ -54,7 +56,7 @@ function SaveProblem() {
   useEffect(() => void window.unilink.keepData(), []);
   if (!problem) return null;
   return (
-    <Alert color="red" icon={<IconAlertTriangle size={18} />} mb="md" title={t('This browser isn’t saving your work')}>
+    <Alert color="red" icon={<IconAlertTriangle size={18} />} mb="md" title={<WithInfo id="save-problem">{t('This browser isn’t saving your work')}</WithInfo>}>
       <Text size="sm" mb="xs">
         {t('It may be a private window, or its storage may be full. Download a backup before you close this tab, or what you did here will be gone.')}
       </Text>
@@ -92,6 +94,7 @@ function StudyModePill() {
           <IconX size={12} />
         </ActionIcon>
       </Tooltip>
+      <ReqInfo id="study-pill" />
     </Group>
   );
 }
@@ -121,14 +124,17 @@ export function Layout({ children }: { children: ReactNode }) {
       </UnstyledButton>
       <AppShell.Header px={{ base: 'sm', sm: 'lg' }} style={{ borderBottom: '2px solid var(--ul-rule)' }}>
         <Group h="100%" justify="space-between" wrap="nowrap" gap="md">
-          <UnstyledButton component={Link} to="/" aria-label={t('UniLink home')} className="header-logo">
-            <Logo />
-          </UnstyledButton>
+          <WithInfo id="nav-logo">
+            <UnstyledButton component={Link} to="/" aria-label={t('UniLink home')} className="header-logo">
+              <Logo />
+            </UnstyledButton>
+          </WithInfo>
 
           <Group gap={6} wrap="nowrap" component="nav" className="nav-tabs">
             {nav.map((item) => (
               <Link key={item.to} to={item.to} className="nav-pill" data-active={item.match(pathname) || undefined} aria-current={item.match(pathname) ? 'page' : undefined}>
                 {t(item.label)}
+                <ReqInfo id={item.info} />
               </Link>
             ))}
           </Group>
@@ -141,21 +147,25 @@ export function Layout({ children }: { children: ReactNode }) {
                   <Text size="xs" fw={800} visibleFrom="xs">
                     {t('Offline')}
                   </Text>
+                  <ReqInfo id="offline-badge" />
                 </Group>
               </Tooltip>
             )}
             {me.role === 'student' && <StudyModePill />}
             {me.role === 'student' && <FocusCheckIn />}
             {/* Phones and small tablets: the tabs don't fit, so they're in a menu. */}
-            <Menu position="bottom-end" width={220}>
+            <Menu position="bottom-end" width={240}>
               <Menu.Target>
                 <ActionIcon variant="subtle" color="gray" size="lg" className="nav-menu" aria-label={t('Menu')}>
                   <IconMenu2 size={20} />
                 </ActionIcon>
               </Menu.Target>
               <Menu.Dropdown>
+                <Menu.Label>
+                  <WithInfo id="nav-menu">{t('Menu')}</WithInfo>
+                </Menu.Label>
                 {nav.map((item) => (
-                  <Menu.Item key={item.to} component={Link} to={item.to} fw={item.match(pathname) ? 800 : undefined} c={item.match(pathname) ? 'periwinkle' : undefined}>
+                  <Menu.Item key={item.to} component={Link} to={item.to} fw={item.match(pathname) ? 800 : undefined} c={item.match(pathname) ? 'periwinkle' : undefined} rightSection={<ReqInfo id={item.info} />}>
                     {t(item.label)}
                   </Menu.Item>
                 ))}
@@ -176,15 +186,17 @@ export function Layout({ children }: { children: ReactNode }) {
                 </UnstyledButton>
               </Menu.Target>
               <Menu.Dropdown>
-                <Menu.Label>{me.email}</Menu.Label>
-                <Menu.Item component={Link} to="/settings/account" leftSection={<IconUser size={16} />}>
+                <Menu.Label>
+                  <WithInfo id="account-menu">{me.email}</WithInfo>
+                </Menu.Label>
+                <Menu.Item component={Link} to="/settings/account" leftSection={<IconUser size={16} />} rightSection={<ReqInfo id="settings-account" />}>
                   {t('Account')}
                 </Menu.Item>
-                <Menu.Item component={Link} to="/settings/goat" leftSection={<IconSettings size={16} />}>
+                <Menu.Item component={Link} to="/settings/goat" leftSection={<IconSettings size={16} />} rightSection={<ReqInfo id="settings-goat" />}>
                   {t('Customize your goat')}
                 </Menu.Item>
                 <Menu.Divider />
-                <Menu.Item leftSection={<IconLogout size={16} />} onClick={() => signOut.mutate()}>
+                <Menu.Item leftSection={<IconLogout size={16} />} rightSection={<ReqInfo id="sign-out" />} onClick={() => signOut.mutate()}>
                   {t('Sign out')}
                 </Menu.Item>
               </Menu.Dropdown>

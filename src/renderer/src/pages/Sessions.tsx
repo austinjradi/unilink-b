@@ -10,15 +10,18 @@ import { TimePolls } from '../components/TimePolls';
 import { Empty, Loading, PageHeader } from '../components/ui';
 import { rpc } from '../lib/rpc';
 import { t } from '../lib/i18n';
+import { ReqInfo, WithInfo } from '../components/ReqInfo';
 
 function CreateButton() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button size="md" leftSection={<IconPlus size={18} />} onClick={() => setOpen(true)}>
-        {t('Create your study session')}
-      </Button>
-      <Modal opened={open} onClose={() => setOpen(false)} title={t('Create a study session')} size="lg">
+      <WithInfo id="session-create">
+        <Button size="md" leftSection={<IconPlus size={18} />} onClick={() => setOpen(true)}>
+          {t('Create your study session')}
+        </Button>
+      </WithInfo>
+      <Modal opened={open} onClose={() => setOpen(false)} title={<WithInfo id="session-create">{t('Create a study session')}</WithInfo>} size="lg">
         {open && <SessionForm classId={null} existing={null} onDone={() => setOpen(false)} />}
       </Modal>
     </>
@@ -31,13 +34,16 @@ export function SessionsPage() {
   return (
     <>
       <PageHeader
+        info="sessions-mine"
         title={t('My upcoming study sessions')}
         actions={
           <>
             <JoinByCode />
-            <Button size="md" variant="default" component={Link} to="/sessions/search" leftSection={<IconSearch size={18} />}>
-              {t('Search for study sessions')}
-            </Button>
+            <WithInfo id="sessions-search">
+              <Button size="md" variant="default" component={Link} to="/sessions/search" leftSection={<IconSearch size={18} />}>
+                {t('Search for study sessions')}
+              </Button>
+            </WithInfo>
             <CreateButton />
           </>
         }
@@ -87,23 +93,26 @@ export function SessionSearchPage() {
   return (
     <>
       <PageHeader
+        info="sessions-search"
         crumbs={[{ label: t('Study Sessions'), to: '/sessions' }, { label: t('Search for sessions') }]}
         title={t('Search for sessions')}
         subtitle={t('Upcoming open sessions in all your classes. Invite-only sessions need their code.')}
         actions={<CreateButton />}
       />
-      <TextInput
-        size="md"
-        radius="xl"
-        mb="md"
-        maw={520}
-        placeholder={t('Search by course, topic, type or place')}
-        aria-label={t('Search by course, topic, type or place')}
-        leftSection={<IconSearch size={18} />}
-        value={search}
-        onChange={(e) => setSearch(e.currentTarget.value)}
-        autoFocus
-      />
+      <Group gap={4} mb="md" maw={540} wrap="nowrap">
+        <TextInput
+          size="md"
+          radius="xl"
+          style={{ flex: 1 }}
+          placeholder={t('Search by course, topic, type or place')}
+          aria-label={t('Search by course, topic, type or place')}
+          leftSection={<IconSearch size={18} />}
+          value={search}
+          onChange={(e) => setSearch(e.currentTarget.value)}
+          autoFocus
+        />
+        <ReqInfo id="sessions-search-box" />
+      </Group>
       <Group gap="xs" mb="md">
         <Select
           size="xs"
@@ -128,6 +137,7 @@ export function SessionSearchPage() {
         <Chip size="sm" variant="outline" checked={soon} onChange={setSoon}>
           {t('Next 7 days')}
         </Chip>
+        <ReqInfo id="sessions-filters" />
       </Group>
       {found.isPending ? (
         <Loading />
@@ -153,7 +163,7 @@ export function SessionInvitePage() {
   const { code = '' } = useParams();
   return (
     <>
-      <PageHeader crumbs={[{ label: t('Study Sessions'), to: '/sessions' }, { label: t('Invitation') }]} title={t("You're invited")} />
+      <PageHeader info="session-invite-page" crumbs={[{ label: t('Study Sessions'), to: '/sessions' }, { label: t('Invitation') }]} title={t("You're invited")} />
       <SessionInvite code={code} />
     </>
   );

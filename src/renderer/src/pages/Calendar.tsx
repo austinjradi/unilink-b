@@ -1,4 +1,5 @@
 import { createContext, type KeyboardEvent, useContext, useState } from 'react';
+import type { ReqTopicId } from '../lib/reqTopics';
 import {
   ActionIcon,
   Alert,
@@ -49,6 +50,7 @@ import { fmtDateTime, fmtTime, toDate } from '../lib/format';
 import { useAction } from '../lib/hooks';
 import { type Out, rpc, RpcError } from '../lib/rpc';
 import { t, term, tx } from '../lib/i18n';
+import { ReqInfo, WithInfo } from '../components/ReqInfo';
 
 type Deadline = Out<typeof rpc.calendar.deadlines>[number];
 type CalEvent = Out<typeof rpc.calendar.range>[number];
@@ -90,6 +92,7 @@ function ClassFilter({ hidden, onChange }: { hidden: number[]; onChange: (hidden
           {c.code}
         </Chip>
       ))}
+      <ReqInfo id="cal-filter" />
     </Group>
   );
 }
@@ -135,39 +138,44 @@ export function CalendarPage() {
   return (
     <>
       <PageHeader
+        info="calendar-page"
         title={t('Calendar & Planner')}
         actions={
           <>
-            <Menu position="bottom-end">
-              <Menu.Target>
-                <Button variant="default" leftSection={<IconRefresh size={16} />}>
-                  {t('Sync')}
-                </Button>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Item leftSection={<IconDownload size={14} />} onClick={() => exportIcs.mutate(false)}>
-                  {t('Export for Google Calendar (.ics)')}
-                </Menu.Item>
-                <Menu.Item leftSection={<IconDownload size={14} />} onClick={() => exportIcs.mutate(true)}>
-                  {t('Export with my planned tasks (.ics)')}
-                </Menu.Item>
-                <Menu.Item leftSection={<IconUpload size={14} />} onClick={() => importIcs.mutate()}>
-                  {t('Import from myCourses (.ics)')}
-                </Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
-            <Menu position="bottom-end">
-              <Menu.Target>
-                <Button size="md" leftSection={<IconPlus size={18} />}>
-                  {t('Add event/assignment')}
-                </Button>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Item onClick={() => setEditing('new')}>{t('Deadline, exam or quiz')}</Menu.Item>
-                <Menu.Item onClick={() => navigate('/planner?new=1')}>{t('Assignment to plan out')}</Menu.Item>
-                <Menu.Item onClick={() => setImporting(true)}>{t('Dates from a syllabus')}</Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
+            <WithInfo id="cal-sync">
+              <Menu position="bottom-end">
+                <Menu.Target>
+                  <Button variant="default" leftSection={<IconRefresh size={16} />}>
+                    {t('Sync')}
+                  </Button>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Item leftSection={<IconDownload size={14} />} rightSection={<ReqInfo id="cal-export" />} onClick={() => exportIcs.mutate(false)}>
+                    {t('Export for Google Calendar (.ics)')}
+                  </Menu.Item>
+                  <Menu.Item leftSection={<IconDownload size={14} />} rightSection={<ReqInfo id="cal-export-tasks" />} onClick={() => exportIcs.mutate(true)}>
+                    {t('Export with my planned tasks (.ics)')}
+                  </Menu.Item>
+                  <Menu.Item leftSection={<IconUpload size={14} />} rightSection={<ReqInfo id="cal-import" />} onClick={() => importIcs.mutate()}>
+                    {t('Import from myCourses (.ics)')}
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            </WithInfo>
+            <WithInfo id="cal-add">
+              <Menu position="bottom-end">
+                <Menu.Target>
+                  <Button size="md" leftSection={<IconPlus size={18} />}>
+                    {t('Add event/assignment')}
+                  </Button>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Item rightSection={<ReqInfo id="deadline-add" />} onClick={() => setEditing('new')}>{t('Deadline, exam or quiz')}</Menu.Item>
+                  <Menu.Item rightSection={<ReqInfo id="cal-add-plan" />} onClick={() => navigate('/planner?new=1')}>{t('Assignment to plan out')}</Menu.Item>
+                  <Menu.Item rightSection={<ReqInfo id="syllabus-import" />} onClick={() => setImporting(true)}>{t('Dates from a syllabus')}</Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            </WithInfo>
           </>
         }
       />
@@ -203,18 +211,21 @@ export function CalendarPage() {
                     {t('Today')}
                   </Button>
                 )}
+                {view !== 'semester' && view !== 'key' && <ReqInfo id="cal-nav" />}
               </Group>
-              <SegmentedControl
-                size="xs"
-                value={view}
-                onChange={(v) => setView(v as View)}
-                data={[
-                  { value: 'month', label: t('Month') },
-                  { value: 'week', label: t('Week') },
-                  { value: 'semester', label: t('Semester') },
-                  { value: 'key', label: t('Key dates') },
-                ]}
-              />
+              <WithInfo id="cal-views">
+                <SegmentedControl
+                  size="xs"
+                  value={view}
+                  onChange={(v) => setView(v as View)}
+                  data={[
+                    { value: 'month', label: t('Month') },
+                    { value: 'week', label: t('Week') },
+                    { value: 'semester', label: t('Semester') },
+                    { value: 'key', label: t('Key dates') },
+                  ]}
+                />
+              </WithInfo>
             </Group>
             {view !== 'key' && <ClassFilter hidden={hidden} onChange={setHidden} />}
             {view === 'month' && <MonthView cursor={cursor} today={today} selected={selected} onSelect={pick} />}
@@ -232,13 +243,13 @@ export function CalendarPage() {
       </Grid>
       </HiddenClasses.Provider>
 
-      <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing === 'new' ? t('Add deadline') : t('Edit deadline')}>
+      <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing === 'new' ? <WithInfo id="deadline-add">{t('Add deadline')}</WithInfo> : <WithInfo id="deadline-manage">{t('Edit deadline')}</WithInfo>}>
         {editing && <DeadlineForm key={editing === 'new' ? 'new' : editing.id} existing={editing === 'new' ? null : editing} onDone={() => setEditing(null)} />}
       </Modal>
-      <Modal opened={importing} onClose={() => setImporting(false)} title={t('Import dates from a syllabus')} size="xl">
+      <Modal opened={importing} onClose={() => setImporting(false)} title={<WithInfo id="syllabus-import">{t('Import dates from a syllabus')}</WithInfo>} size="xl">
         {importing && <SyllabusImport onDone={() => setImporting(false)} />}
       </Modal>
-      <Modal opened={showAll} onClose={() => setShowAll(false)} title={t('All your deadlines')} size="xl">
+      <Modal opened={showAll} onClose={() => setShowAll(false)} title={<WithInfo id="cal-all-deadlines">{t('All your deadlines')}</WithInfo>} size="xl">
         <AllDeadlines onEdit={(d) => setEditing(d)} />
       </Modal>
     </>
@@ -341,7 +352,7 @@ function MonthView({ cursor, today, selected, onSelect }: { cursor: string } & D
           <KindBadge key={k} kind={k} />
         ))}
         <Text size="xs" c="dimmed">
-          {t('· dot = class times')}
+          {t('· dot = class times')} <ReqInfo id="cal-legend" /> <ReqInfo id="cal-day" />
         </Text>
       </Group>
     </>
@@ -380,6 +391,7 @@ function WeekView({ start, today, selected, onSelect }: { start: string } & DayP
             ))}
         </div>
       ))}
+      <ReqInfo id="cal-day" />
     </div>
   );
 }
@@ -407,7 +419,7 @@ function SemesterView() {
         <Group key={week} align="flex-start" wrap="nowrap" gap="md">
           <div style={{ flex: 'none', width: 110 }}>
             <Text size="sm" fw={800}>
-              {t('Week of {{date}}', { date: dayjs(week).format(t('MMM D')) })}
+              {t('Week of {{date}}', { date: dayjs(week).format(t('MMM D')) })} <ReqInfo id="cal-semester" />
             </Text>
             <BusyWeek week={week} due={items.filter((e) => e.kind === 'deadline' && !e.done && mondayOf(ymd(e.start)) === week)} />
           </div>
@@ -434,11 +446,13 @@ function BusyWeek({ week, due }: { week: string; due: { weight?: number }[] }) {
   if (week < mondayOf(ymd(new Date())) || !isBusyWeek(due)) return null;
   const worth = due.reduce((sum, d) => sum + (d.weight ?? 0), 0);
   return (
-    <Tooltip label={worth ? t('{{count}} things due, worth {{worth}}% across your classes', { count: due.length, worth }) : t('{{count}} things due', { count: due.length })} multiline w={220}>
-      <span>
-        <Tag color="orange">{t('Busy week')}</Tag>
-      </span>
-    </Tooltip>
+    <WithInfo id="cal-busy-week">
+      <Tooltip label={worth ? t('{{count}} things due, worth {{worth}}% across your classes', { count: due.length, worth }) : t('{{count}} things due', { count: due.length })} multiline w={220}>
+        <span>
+          <Tag color="orange">{t('Busy week')}</Tag>
+        </span>
+      </Tooltip>
+    </WithInfo>
   );
 }
 
@@ -466,11 +480,13 @@ function KeyDatesView() {
 
   return (
     <Stack gap="lg">
-      <SegmentedControl size="xs" w="fit-content" value={termName} onChange={setTermName} data={TERMS.map((x) => ({ value: x, label: term(x) }))} />
+      <WithInfo id="key-term">
+        <SegmentedControl size="xs" w="fit-content" value={termName} onChange={setTermName} data={TERMS.map((x) => ({ value: x, label: term(x) }))} />
+      </WithInfo>
 
       <div>
         <Title order={4} mb="xs">
-          {t('Key dates')}
+          {t('Key dates')} <ReqInfo id="key-dates" />
         </Title>
         {dates.map((d) => (
           <Group
@@ -488,20 +504,26 @@ function KeyDatesView() {
               {t(d.title)}
             </Text>
             {d.approximate && (
-              <Tooltip label={t('Not published yet; check Minerva closer to the term.')}>
-                <Badge size="sm" variant="light" color="gray">
-                  {t('approx.')}
-                </Badge>
-              </Tooltip>
+              <WithInfo id="key-approx">
+                <Tooltip label={t('Not published yet; check Minerva closer to the term.')}>
+                  <Badge size="sm" variant="light" color="gray">
+                    {t('approx.')}
+                  </Badge>
+                </Tooltip>
+              </WithInfo>
             )}
-            {d === next && <Badge size="sm">{t('Up next')}</Badge>}
+            {d === next && (
+              <WithInfo id="key-next">
+                <Badge size="sm">{t('Up next')}</Badge>
+              </WithInfo>
+            )}
           </Group>
         ))}
       </div>
 
       <div>
         <Title order={4} mb="xs">
-          {t('Final exam schedule')}
+          {t('Final exam schedule')} <ReqInfo id="final-exam" />
         </Title>
         {!EXAM_SCHEDULE_TERMS.includes(termName) ? (
           <Text size="sm" c="dimmed">
@@ -510,12 +532,12 @@ function KeyDatesView() {
         ) : (
           <Stack gap="sm">
             <Alert variant="light" color="yellow" icon={<IconAlertTriangle size={18} />}>
-              {t('Sample schedule. The official one is on McGill’s exams website; always check it before your exams.')}
+              {t('Sample schedule. The official one is on McGill’s exams website; always check it before your exams.')} <ReqInfo id="final-sample" />
             </Alert>
             {myExams.length > 0 && (
               <Card withBorder padding="sm" style={{ background: 'var(--ul-soft)' }}>
                 <Text fw={800} mb={6}>
-                  {t('Your final exams')}
+                  {t('Your final exams')} <ReqInfo id="final-mine" />
                 </Text>
                 {myExams.map((e) => (
                   <Group key={e.course} gap="sm" wrap="nowrap" py={2}>
@@ -526,9 +548,11 @@ function KeyDatesView() {
                       {day(e.date)} · {e.start}–{e.end}
                     </Text>
                     {conflicts.has(e.course) && (
-                      <Tag color={conflicts.get(e.course)!.overlap ? 'red' : 'orange'}>
-                        {conflicts.get(e.course)!.overlap ? t('Overlaps {{course}}', { course: conflicts.get(e.course)!.with }) : t('Same day as {{course}}', { course: conflicts.get(e.course)!.with })}
-                      </Tag>
+                      <WithInfo id="final-conflict">
+                        <Tag color={conflicts.get(e.course)!.overlap ? 'red' : 'orange'}>
+                          {conflicts.get(e.course)!.overlap ? t('Overlaps {{course}}', { course: conflicts.get(e.course)!.with }) : t('Same day as {{course}}', { course: conflicts.get(e.course)!.with })}
+                        </Tag>
+                      </WithInfo>
                     )}
                     <Text size="sm" c="dimmed">
                       {e.location}
@@ -537,20 +561,28 @@ function KeyDatesView() {
                 ))}
               </Card>
             )}
-            <TextInput
-              placeholder={t('Search by course code or title')}
-              leftSection={<IconSearch size={16} />}
-              radius="xl"
-              value={search}
-              onChange={(e) => setSearch(e.currentTarget.value)}
-            />
+            <WithInfo id="final-search" block>
+              <TextInput
+                placeholder={t('Search by course code or title')}
+                leftSection={<IconSearch size={16} />}
+                radius="xl"
+                value={search}
+                onChange={(e) => setSearch(e.currentTarget.value)}
+              />
+            </WithInfo>
             <Table.ScrollContainer minWidth={520}>
               <Table verticalSpacing={6}>
                 <Table.Thead>
                   <Table.Tr>
-                    <Table.Th>{t('Course')}</Table.Th>
-                    <Table.Th>{t('When')}</Table.Th>
-                    <Table.Th>{t('Location')}</Table.Th>
+                    <Table.Th>
+                      <WithInfo id="final-exam">{t('Course')}</WithInfo>
+                    </Table.Th>
+                    <Table.Th>
+                      <WithInfo id="final-exam">{t('When')}</WithInfo>
+                    </Table.Th>
+                    <Table.Th>
+                      <WithInfo id="final-exam">{t('Location')}</WithInfo>
+                    </Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -595,7 +627,7 @@ function Upcoming({ onViewAll }: { onViewAll: () => void }) {
   return (
     <Card padding={0} h="100%">
       <Text fw={800} size="lg" className="display" px="md" py="sm" style={{ borderBottom: '1.5px solid var(--ul-border)' }}>
-        {t('Upcoming (next 7 days)')}
+        {t('Upcoming (next 7 days)')} <ReqInfo id="cal-upcoming" />
       </Text>
       {upcoming.isPending ? (
         <Loading />
@@ -610,7 +642,7 @@ function Upcoming({ onViewAll }: { onViewAll: () => void }) {
               {i.sub && (
                 <Text size="xs" c="dimmed">
                   {i.sub}
-                  {i.addedBy != null && ` · ${t('shared by {{name}}', { name: i.addedBy || t('a former student') })}`}
+                  {i.addedBy != null && ` · ${t('shared by {{name}}', { name: i.addedBy || t('a former student') })}`} {i.addedBy != null && <ReqInfo id="deadline-shared" />}
                 </Text>
               )}
               <Text size="xs" mt={2}>
@@ -619,9 +651,11 @@ function Upcoming({ onViewAll }: { onViewAll: () => void }) {
               </Text>
             </div>
             {i.deadlineId != null && (
-              <ActionIcon variant="subtle" color="gray" onClick={() => remove.mutate(i.deadlineId!)} aria-label={t('Delete {{name}}', { name: i.title })}>
-                <IconTrash size={16} />
-              </ActionIcon>
+              <WithInfo id="deadline-manage">
+                <ActionIcon variant="subtle" color="gray" onClick={() => remove.mutate(i.deadlineId!)} aria-label={t('Delete {{name}}', { name: i.title })}>
+                  <IconTrash size={16} />
+                </ActionIcon>
+              </WithInfo>
             )}
           </Group>
         ))
@@ -629,9 +663,11 @@ function Upcoming({ onViewAll }: { onViewAll: () => void }) {
         <Empty>{t('Nothing in the next 7 days.')}</Empty>
       )}
       <Box p="sm">
-        <Button variant="default" fullWidth rightSection={<IconArrowRight size={16} />} onClick={onViewAll}>
-          {t('View all deadlines')}
-        </Button>
+        <WithInfo id="cal-all-deadlines" block>
+          <Button variant="default" fullWidth rightSection={<IconArrowRight size={16} />} onClick={onViewAll}>
+            {t('View all deadlines')}
+          </Button>
+        </WithInfo>
       </Box>
     </Card>
   );
@@ -653,7 +689,7 @@ function DayList({ day, today }: { day: string; today: string }) {
   return (
     <Card padding={0} id="day-list" style={{ scrollMarginTop: 90 }}>
       <Text fw={800} size="lg" className="display" px="md" py="sm" style={{ borderBottom: '1.5px solid var(--ul-border)', background: 'var(--ul-soft)' }}>
-        {day === today ? `${t('Today')} · ${dayjs(day).format(t('ddd, MMM D'))}` : dayjs(day).format(t('dddd, MMMM D'))}
+        {day === today ? `${t('Today')} · ${dayjs(day).format(t('ddd, MMM D'))}` : dayjs(day).format(t('dddd, MMMM D'))} <ReqInfo id="cal-day" />
       </Text>
       {events.isPending ? (
         <Loading />
@@ -662,16 +698,18 @@ function DayList({ day, today }: { day: string; today: string }) {
           const taskId = e.kind === 'task' ? Number(e.key.slice(5)) : null;
           return (
             <Group key={e.key} px="md" py="sm" wrap="nowrap" style={{ borderBottom: '1.5px solid var(--ul-border)' }}>
-              <Checkbox
-                disabled={taskId == null && e.deadlineId == null}
-                checked={e.done}
-                onChange={(ev) =>
-                  taskId != null
-                    ? setTask.mutate({ id: taskId, done: ev.currentTarget.checked })
-                    : setDeadline.mutate({ id: e.deadlineId!, done: ev.currentTarget.checked })
-                }
-                aria-label={t('Done: {{title}}', { title: e.title })}
-              />
+              <WithInfo id="cal-check">
+                <Checkbox
+                  disabled={taskId == null && e.deadlineId == null}
+                  checked={e.done}
+                  onChange={(ev) =>
+                    taskId != null
+                      ? setTask.mutate({ id: taskId, done: ev.currentTarget.checked })
+                      : setDeadline.mutate({ id: e.deadlineId!, done: ev.currentTarget.checked })
+                  }
+                  aria-label={t('Done: {{title}}', { title: e.title })}
+                />
+              </WithInfo>
               <div style={{ width: 64 }}>
                 <Text size="sm" fw={800}>
                   {e.allDay ? t('Any time') : fmtTime(e.start)}
@@ -694,6 +732,7 @@ function DayList({ day, today }: { day: string; today: string }) {
               <Badge variant="outline" color={kindColor(eventKind(e))} size="lg" visibleFrom="xs">
                 {t(PILL[e.detail === 'final' ? 'final' : e.kind] ?? e.kind)}
               </Badge>
+              <ReqInfo id="cal-event-kind" />
             </Group>
           );
         })
@@ -712,7 +751,7 @@ function AllDeadlines({ onEdit }: { onEdit: (d: Deadline) => void }) {
   return (
     <>
       <Text size="sm" c="dimmed" mb="sm">
-        {t("Deadlines you add to a class are shared with everyone in that section; ones with no class stay private. Graded work from each course's Grades tab and planner due dates show on the calendar automatically.")}
+        {t("Deadlines you add to a class are shared with everyone in that section; ones with no class stay private. Graded work from each course's Grades tab and planner due dates show on the calendar automatically.")} <ReqInfo id="deadline-shared" />
       </Text>
       <Table verticalSpacing="xs">
         <Table.Tbody>
@@ -742,6 +781,7 @@ function AllDeadlines({ onEdit }: { onEdit: (d: Deadline) => void }) {
                     <ActionIcon variant="subtle" color="red" onClick={() => remove.mutate(d.id)} aria-label={t('Delete')}>
                       <IconTrash size={16} />
                     </ActionIcon>
+                    <ReqInfo id="deadline-manage" />
                   </Group>
                 )}
               </Table.Td>
@@ -813,9 +853,9 @@ export function SyllabusImport({ onDone, initialClassId = null }: { onDone: () =
   return (
     <Stack>
       <Text size="sm" c="dimmed">
-        {t('Read the course outline, or paste its schedule. Each line with a date and something to hand in or write becomes a date you can add.')}
+        {t('Read the course outline, or paste its schedule. Each line with a date and something to hand in or write becomes a date you can add.')} <ReqInfo id="syllabus-import" />
       </Text>
-      <ClassSelect value={classId} onChange={setClassId} />
+      <ClassSelect info="deadline-class" value={classId} onChange={setClassId} />
       <Group gap="xs">
         {info.data?.outlineName && (
           <Button size="xs" variant="light" leftSection={<IconFileText size={14} />} onClick={() => readOutline.mutate()} loading={readOutline.isPending}>
@@ -825,9 +865,10 @@ export function SyllabusImport({ onDone, initialClassId = null }: { onDone: () =
         <Button size="xs" variant="default" leftSection={<IconFileText size={14} />} onClick={() => readFile.mutate()} loading={readFile.isPending}>
           {t('Choose a PDF, Word or text file')}
         </Button>
+        <ReqInfo id="syllabus-read" />
       </Group>
       <Textarea
-        label={t('Syllabus text')}
+        label={<WithInfo id="syllabus-read">{t('Syllabus text')}</WithInfo>}
         placeholder={t('Assignment 1 (10%) due Sept 22 at 11:59 pm')}
         autosize
         minRows={5}
@@ -841,7 +882,7 @@ export function SyllabusImport({ onDone, initialClassId = null }: { onDone: () =
       {cls && text.trim() && (
         <>
           <Text size="sm" fw={700}>
-            {found.length ? t('Found {{count}} dates', { count: found.length }) : t('No dates found yet. Lines need a date like "Oct 6" or "2026-10-06".')}
+            {found.length ? t('Found {{count}} dates', { count: found.length }) : t('No dates found yet. Lines need a date like "Oct 6" or "2026-10-06".')} <ReqInfo id="syllabus-review" />
           </Text>
           {found.map((item, n) => {
             const there = already(item);
@@ -888,19 +929,21 @@ export function SyllabusImport({ onDone, initialClassId = null }: { onDone: () =
         <Text size="xs" c="dimmed" maw={420}>
           {cls ? t('Everyone in {{code}} will see what you add.', { code: cls.code }) : t('Pick the class the syllabus is for.')}
         </Text>
-        <Button onClick={() => add.mutate()} disabled={!picked.length} loading={add.isPending}>
-          {t('Add {{count}} dates', { count: picked.length })}
-        </Button>
+        <WithInfo id="syllabus-add">
+          <Button onClick={() => add.mutate()} disabled={!picked.length} loading={add.isPending}>
+            {t('Add {{count}} dates', { count: picked.length })}
+          </Button>
+        </WithInfo>
       </Group>
     </Stack>
   );
 }
 
-export function ClassSelect({ value, onChange, label = t('Class') }: { value: number | null; onChange: (v: number | null) => void; label?: string }) {
+export function ClassSelect({ value, onChange, label = t('Class'), info }: { value: number | null; onChange: (v: number | null) => void; label?: string; info: ReqTopicId }) {
   const classes = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
   return (
     <Select
-      label={label}
+      label={<WithInfo id={info}>{label}</WithInfo>}
       placeholder={t('None')}
       clearable
       data={classes.data?.map((c) => ({ value: String(c.id), label: `${c.code} · ${c.title}` })) ?? []}
@@ -936,18 +979,18 @@ function DeadlineForm({ existing, onDone }: { existing: Deadline | null; onDone:
   return (
     <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
       <Stack>
-        <TextInput label={t('Title')} placeholder={t('Assignment 3')} data-autofocus {...form.getInputProps('title')} />
+        <TextInput label={<WithInfo id="deadline-add">{t('Title')}</WithInfo>} placeholder={t('Assignment 3')} data-autofocus {...form.getInputProps('title')} />
         <Group grow>
-          <Select label={t('Type')} data={KINDS.map((k) => ({ ...k, label: t(k.label) }))} allowDeselect={false} {...form.getInputProps('kind')} />
-          <DateTimePicker label={t('Due')} valueFormat="ddd D MMM YYYY, HH:mm" {...form.getInputProps('dueAt')} />
+          <Select label={<WithInfo id="deadline-kind">{t('Type')}</WithInfo>} data={KINDS.map((k) => ({ ...k, label: t(k.label) }))} allowDeselect={false} {...form.getInputProps('kind')} />
+          <DateTimePicker label={<WithInfo id="deadline-due">{t('Due')}</WithInfo>} valueFormat="ddd D MMM YYYY, HH:mm" {...form.getInputProps('dueAt')} />
         </Group>
-        <ClassSelect value={form.values.classId} onChange={(v) => form.setFieldValue('classId', v)} />
+        <ClassSelect info="deadline-class" value={form.values.classId} onChange={(v) => form.setFieldValue('classId', v)} />
         <Text size="xs" c="dimmed" mt={-8}>
           {form.values.classId
             ? t('Everyone in this section will see it on their calendar.')
-            : t('With no class, only you see it.')}
+            : t('With no class, only you see it.')} <ReqInfo id="deadline-shared" />
         </Text>
-        <Textarea label={t('Notes')} autosize minRows={2} {...form.getInputProps('notes')} />
+        <Textarea label={<WithInfo id="deadline-notes">{t('Notes')}</WithInfo>} autosize minRows={2} {...form.getInputProps('notes')} />
         <Group justify="flex-end">
           <Button type="submit" loading={save.isPending}>
             {t('Save')}

@@ -67,6 +67,8 @@ import { useAction, useMe } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
 import { GoatAvatar } from './Goat';
 import { Empty, Loading, Tag } from './ui';
+import type { ReqTopicId } from '../lib/reqTopics';
+import { ReqInfo, WithInfo } from './ReqInfo';
 
 // S4 discussion board in the layout of the wireframes (A2Team.pdf p. 9–10): a feed of
 // posts with class and topic tags and 🐐 reactions, filters on the right, and threads.
@@ -104,6 +106,7 @@ function ReactionBar({
   onComments?: () => void;
 }) {
   return (
+    <Group gap={4} wrap="nowrap">
     <div className="reaction-bar">
       <Tooltip label={goated ? t('Take back your goat') : t('Give a goat')}>
         <button type="button" onClick={onGoat} data-on={goated || undefined} aria-label={t('Goat reactions: {{count}}', { count: goats })}>
@@ -116,6 +119,9 @@ function ReactionBar({
         </button>
       )}
     </div>
+    <ReqInfo id="post-goat" />
+    {onComments && <ReqInfo id="post-replies" />}
+    </Group>
   );
 }
 
@@ -150,7 +156,7 @@ function Preview({ text }: { text: string }) {
   return (
     <Box px="sm" py={6} style={{ border: '1.5px dashed var(--ul-border)', borderRadius: 12 }}>
       <Text size="xs" fw={800} c="dimmed" mb={2}>
-        {t('Preview')}
+        {t('Preview')} <ReqInfo id="post-body" />
       </Text>
       <Text size="sm" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
         <Body text={text} />
@@ -167,6 +173,7 @@ function Images({ images, height }: { images: { id: number; name: string }[]; he
       {images.map((image) => (
         <StoredImage key={image.id} image={image} height={height} />
       ))}
+      <ReqInfo id="post-images" />
     </Group>
   );
 }
@@ -205,9 +212,11 @@ function useImageDraft() {
 function ImageDraft({ draft }: { draft: ReturnType<typeof useImageDraft> }) {
   return (
     <Group gap="xs">
-      <Button size="xs" variant="default" leftSection={<IconPhoto size={14} />} onClick={() => draft.choose.mutate()} disabled={draft.images.length >= MAX_IMAGES}>
-        {t('Add image')}
-      </Button>
+      <WithInfo id="post-images">
+        <Button size="xs" variant="default" leftSection={<IconPhoto size={14} />} onClick={() => draft.choose.mutate()} disabled={draft.images.length >= MAX_IMAGES}>
+          {t('Add image')}
+        </Button>
+      </WithInfo>
       {!draft.images.length && (
         <Text size="xs" c="dimmed">
           {t('or paste a screenshot into the text')}
@@ -236,7 +245,7 @@ function ImageDraft({ draft }: { draft: ReturnType<typeof useImageDraft> }) {
 function confirmReport(title: string, onConfirm: (reason: string) => void) {
   let reason = '';
   modals.openConfirmModal({
-    title,
+    title: <WithInfo id="post-report">{title}</WithInfo>,
     children: (
       <Stack gap="sm">
         <Text size="sm">{t('This goes to the section’s professor. They see your reason, not your name.')}</Text>
@@ -251,11 +260,13 @@ function confirmReport(title: string, onConfirm: (reason: string) => void) {
 function ReportButton({ reported, size, onReport }: { reported: boolean; size?: 'sm'; onReport: () => void }) {
   const label = reported ? t('You reported this') : t('Report to the professor');
   return (
-    <Tooltip label={label}>
-      <ActionIcon size={size} variant="subtle" color="gray" disabled={reported} onClick={onReport} aria-label={label}>
-        <IconFlag size={size ? 14 : 16} />
-      </ActionIcon>
-    </Tooltip>
+    <WithInfo id="post-report">
+      <Tooltip label={label}>
+        <ActionIcon size={size} variant="subtle" color="gray" disabled={reported} onClick={onReport} aria-label={label}>
+          <IconFlag size={size ? 14 : 16} />
+        </ActionIcon>
+      </Tooltip>
+    </WithInfo>
   );
 }
 
@@ -264,7 +275,7 @@ function ReportNotice({ reasons, onDismiss }: { reasons: string[]; onDismiss: ()
   if (!reasons.length) return null;
   const written = reasons.filter(Boolean);
   return (
-    <Alert color="orange" variant="light" icon={<IconFlag size={16} />} p="xs" mb="xs" title={t('Reported by {{count}} students', { count: reasons.length })}>
+    <Alert color="orange" variant="light" icon={<IconFlag size={16} />} p="xs" mb="xs" title={<WithInfo id="post-report-notice">{t('Reported by {{count}} students', { count: reasons.length })}</WithInfo>}>
       {written.map((reason, i) => (
         <Text key={i} size="sm" style={{ whiteSpace: 'pre-wrap' }}>
           “{reason}”
@@ -283,7 +294,7 @@ type Author = Pick<FeedPost, 'authorName' | 'authorEmail' | 'authorPronouns' | '
 function confirmRemoval(title: string, onConfirm: (reason: string) => void) {
   let reason = '';
   modals.openConfirmModal({
-    title,
+    title: <WithInfo id="mod-remove">{title}</WithInfo>,
     children: (
       <Stack gap="sm">
         <Text size="sm">{t("Its author is told. This can't be undone.")}</Text>
@@ -301,7 +312,7 @@ function AuthorName({ who, size }: { who: Author; size?: 'sm' }) {
   if (who.formerStudent) {
     return (
       <Text fw={700} size={size}>
-        {t('Former student')}
+        {t('Former student')} <ReqInfo id="former-student" />
       </Text>
     );
   }
@@ -318,6 +329,7 @@ function AuthorName({ who, size }: { who: Author; size?: 'sm' }) {
                 <IconSchool size={12} style={{ verticalAlign: -2 }} /> {t('Professor')}
               </Tag>
             )}
+            <ReqInfo id="author-card" />
           </Group>
         </UnstyledButton>
       </Popover.Target>
@@ -325,7 +337,9 @@ function AuthorName({ who, size }: { who: Author; size?: 'sm' }) {
         <Group wrap="nowrap" align="flex-start" gap="sm">
           <GoatAvatar goat={who.authorGoat} size={56} />
           <div style={{ minWidth: 0 }}>
-            <Text fw={800}>{who.authorName}</Text>
+            <Text fw={800}>
+              {who.authorName} <ReqInfo id="author-card" />
+            </Text>
             {who.authorPronouns && (
               <Text size="xs" c="dimmed">
                 {who.authorPronouns}
@@ -371,40 +385,56 @@ function PostCard({ post, onOpen }: { post: FeedPost; onOpen: () => void }) {
           {/* The tags drop below the name on narrow screens instead of running off the card. */}
           <Group justify="space-between" gap="xs" style={{ rowGap: 4 }}>
             <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
-              {post.deletedAt ? <Text fw={700}>{post.removedByProfessor ? t('Removed post') : t('Deleted post')}</Text> : <AuthorName who={post} />}
+              {post.deletedAt ? <WithInfo id={post.removedByProfessor ? 'mod-remove' : 'post-delete'}><Text fw={700}>{post.removedByProfessor ? t('Removed post') : t('Deleted post')}</Text></WithInfo> : <AuthorName who={post} />}
               <Text size="sm" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
                 {fromNow(post.createdAt)}
               </Text>
               {post.isNew && (
-                <Badge size="xs" variant="filled" style={{ flex: 'none' }}>
-                  {t('New')}
-                </Badge>
+                <WithInfo id="post-new-badge">
+                  <Badge size="xs" variant="filled" style={{ flex: 'none' }}>
+                    {t('New')}
+                  </Badge>
+                </WithInfo>
               )}
             </Group>
             <Group gap={6}>
               {post.visibility === 'selected' && (
-                <Tooltip label={t('Only visible to selected classmates')}>
-                  <IconLock size={14} />
-                </Tooltip>
+                <WithInfo id="post-visibility">
+                  <Tooltip label={t('Only visible to selected classmates')}>
+                    <IconLock size={14} />
+                  </Tooltip>
+                </WithInfo>
               )}
               {post.pinnedAt && (
-                <Tag color="yellow">
-                  <IconPin size={12} style={{ verticalAlign: -2 }} /> {t('Pinned')}
-                </Tag>
+                <WithInfo id="post-pin">
+                  <Tag color="yellow">
+                    <IconPin size={12} style={{ verticalAlign: -2 }} /> {t('Pinned')}
+                  </Tag>
+                </WithInfo>
               )}
               {post.reports > 0 && (
-                <Tag color="red">
-                  <IconFlag size={12} style={{ verticalAlign: -2 }} /> {t('{{count}} reports', { count: post.reports })}
-                </Tag>
+                <WithInfo id="post-report-notice">
+                  <Tag color="red">
+                    <IconFlag size={12} style={{ verticalAlign: -2 }} /> {t('{{count}} reports', { count: post.reports })}
+                  </Tag>
+                </WithInfo>
               )}
               {post.lockedAt && (
-                <Tooltip label={t('Locked: only the professor can reply')}>
-                  <IconMessageOff size={14} />
-                </Tooltip>
+                <WithInfo id="post-lock">
+                  <Tooltip label={t('Locked: only the professor can reply')}>
+                    <IconMessageOff size={14} />
+                  </Tooltip>
+                </WithInfo>
               )}
-              <Tag>{post.classLabel}</Tag>
-              <TopicTag topic={post.topic} />
-              <KindTag post={post} />
+              <WithInfo id="post-class">
+                <Tag>{post.classLabel}</Tag>
+              </WithInfo>
+              <WithInfo id="post-topic">
+                <TopicTag topic={post.topic} />
+              </WithInfo>
+              <WithInfo id="post-kind">
+                <KindTag post={post} />
+              </WithInfo>
             </Group>
           </Group>
           <UnstyledButton display="block" mt={4} className="clickable" onClick={onOpen} style={{ borderRadius: 6 }}>
@@ -413,7 +443,8 @@ function PostCard({ post, onOpen }: { post: FeedPost; onOpen: () => void }) {
                 ? t('A professor removed this post. Its replies are still here.')
                 : post.deletedAt
                   ? t('The author deleted this post. Its replies are still here.')
-                  : post.title}
+                  : post.title}{' '}
+              <ReqInfo id="post-card" />
             </Text>
           </UnstyledButton>
           {!post.deletedAt && (
@@ -443,11 +474,11 @@ const SINCE_OPTIONS: { value: Exclude<Since, null>; label: string }[] = [
   { value: 'month', label: tx('This month') },
 ];
 
-function ChipSection({ title, children }: { title: string; children: ReactNode }) {
+function ChipSection({ title, info, children }: { title: string; info: ReqTopicId; children: ReactNode }) {
   return (
     <div>
       <Text size="sm" fw={800} mb={6} px={8} py={2} w="fit-content" style={{ background: 'var(--ul-soft)', borderRadius: 6 }}>
-        {title}
+        {title} <ReqInfo id={info} />
       </Text>
       {children}
     </div>
@@ -536,18 +567,20 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
   const filters = (
     <Stack gap="md">
       <Text fw={800} size="xl" ta="center" className="display">
-        {t('Filters')}
+        {t('Filters')} <ReqInfo id="feed-filters" />
       </Text>
-      <TextInput
-        placeholder={t('Search posts')}
-        aria-label={t('Search posts')}
-        leftSection={<IconSearch size={16} />}
-        radius="xl"
-        value={search}
-        onChange={(e) => setSearch(e.currentTarget.value)}
-      />
+      <WithInfo id="feed-search" block>
+        <TextInput
+          placeholder={t('Search posts')}
+          aria-label={t('Search posts')}
+          leftSection={<IconSearch size={16} />}
+          radius="xl"
+          value={search}
+          onChange={(e) => setSearch(e.currentTarget.value)}
+        />
+      </WithInfo>
       {!classId && (
-        <ChipSection title={t('Classes')}>
+        <ChipSection title={t('Classes')} info="feed-classes">
           <Chip.Group multiple value={classIds} onChange={setClassIds}>
             <MoreChips
               items={classes.data?.map((c) => String(c.id)) ?? []}
@@ -563,22 +596,24 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
           </Chip.Group>
         </ChipSection>
       )}
-      <ChipSection title={t('Questions')}>
+      <ChipSection title={t('Questions')} info="feed-unanswered">
         <Chip size="sm" variant="outline" checked={unresolved} onChange={setUnresolved}>
           {t('Unanswered only')}
         </Chip>
       </ChipSection>
-      <ChipSection title={t('Threads')}>
+      <ChipSection title={t('Threads')} info="feed-following">
         <Chip size="sm" variant="outline" checked={following} onChange={setFollowing}>
           {t('Ones I follow')}
         </Chip>
         {professor && (
-          <Chip size="sm" variant="outline" mt={6} checked={reported} onChange={setReported}>
-            {t('Reported by students')}
-          </Chip>
+          <WithInfo id="feed-reported">
+            <Chip size="sm" variant="outline" mt={6} checked={reported} onChange={setReported}>
+              {t('Reported by students')}
+            </Chip>
+          </WithInfo>
         )}
       </ChipSection>
-      <ChipSection title={t('Topic')}>
+      <ChipSection title={t('Topic')} info="feed-topic">
         <Chip.Group multiple value={topics} onChange={setTopics}>
           <MoreChips
             items={allTopics.data ?? []}
@@ -590,7 +625,7 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
           />
         </Chip.Group>
       </ChipSection>
-      <ChipSection title={t('Time')}>
+      <ChipSection title={t('Time')} info="feed-time">
         <Chip.Group value={since ?? ''} onChange={(v) => setSince(((v as string) || null) as Since)}>
           <Stack gap={6} align="flex-start">
             {SINCE_OPTIONS.map((o) => (
@@ -610,38 +645,46 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
         {left && <Grid.Col span={{ base: 24, lg: 6 }}>{left}</Grid.Col>}
         <Grid.Col span={{ base: 24, lg: left ? 13 : 18 }}>
           <Group justify="space-between" mb="md">
-            <Title order={3}>{classId ? t('Discussion') : t('Class discussions')}</Title>
+            <Title order={3}>
+              {classId ? t('Discussion') : t('Class discussions')} <ReqInfo id="feed-board" />
+            </Title>
             <Group gap="sm">
               {classId && info.data && (
-                <Tooltip label={info.data.muteReplies ? t('Turn reply notifications from this class back on') : t('Mute reply notifications from this class')}>
-                  <ActionIcon
-                    variant={info.data.muteReplies ? 'light' : 'subtle'}
-                    color={info.data.muteReplies ? 'orange' : 'gray'}
-                    size="lg"
-                    radius="xl"
-                    onClick={() => setMuted.mutate(!info.data.muteReplies)}
-                    aria-label={info.data.muteReplies ? t('Turn reply notifications from this class back on') : t('Mute reply notifications from this class')}
-                  >
-                    {info.data.muteReplies ? <IconBellOff size={18} /> : <IconBell size={18} />}
-                  </ActionIcon>
-                </Tooltip>
+                <WithInfo id="feed-mute">
+                  <Tooltip label={info.data.muteReplies ? t('Turn reply notifications from this class back on') : t('Mute reply notifications from this class')}>
+                    <ActionIcon
+                      variant={info.data.muteReplies ? 'light' : 'subtle'}
+                      color={info.data.muteReplies ? 'orange' : 'gray'}
+                      size="lg"
+                      radius="xl"
+                      onClick={() => setMuted.mutate(!info.data.muteReplies)}
+                      aria-label={info.data.muteReplies ? t('Turn reply notifications from this class back on') : t('Mute reply notifications from this class')}
+                    >
+                      {info.data.muteReplies ? <IconBellOff size={18} /> : <IconBell size={18} />}
+                    </ActionIcon>
+                  </Tooltip>
+                </WithInfo>
               )}
-              <Button hiddenFrom="lg" variant="default" leftSection={<IconFilter size={16} />} onClick={() => setFiltersOpen(true)}>
+              <Button hiddenFrom="lg" variant="default" leftSection={<IconFilter size={16} />} rightSection={<ReqInfo id="feed-filters" />} onClick={() => setFiltersOpen(true)}>
                 {activeFilters ? t('Filters ({{count}})', { count: activeFilters }) : t('Filters')}
               </Button>
-              <SegmentedControl
-                size="xs"
-                value={sort}
-                onChange={(v) => setSort(v as 'new' | 'top')}
-                data={[
-                  { value: 'new', label: t('Newest') },
-                  { value: 'top', label: t('Most 🐐') },
-                ]}
-                aria-label={t('Sort posts')}
-              />
-              <Button leftSection={<IconPlus size={16} />} onClick={() => setComposing('new')} disabled={!classes.data?.length}>
-                {t('New post')}
-              </Button>
+              <WithInfo id="feed-sort">
+                <SegmentedControl
+                  size="xs"
+                  value={sort}
+                  onChange={(v) => setSort(v as 'new' | 'top')}
+                  data={[
+                    { value: 'new', label: t('Newest') },
+                    { value: 'top', label: t('Most 🐐') },
+                  ]}
+                  aria-label={t('Sort posts')}
+                />
+              </WithInfo>
+              <WithInfo id="post-new">
+                <Button leftSection={<IconPlus size={16} />} onClick={() => setComposing('new')} disabled={!classes.data?.length}>
+                  {t('New post')}
+                </Button>
+              </WithInfo>
             </Group>
           </Group>
           {feed.isPending ? (
@@ -682,11 +725,11 @@ export function Feed({ classId, left }: { classId?: number; left?: ReactNode }) 
         {filters}
       </Drawer>
 
-      <Drawer opened={openPost != null} onClose={() => setOpenPost(null)} position="right" size="xl" title={<Text fw={800}>{t('Post')}</Text>}>
+      <Drawer opened={openPost != null} onClose={() => setOpenPost(null)} position="right" size="xl" title={<Text fw={800}>{t('Post')} <ReqInfo id="post-card" /></Text>}>
         {openPost != null && <PostThread postId={openPost} onEdit={(p) => setComposing(p)} onDeleted={() => setOpenPost(null)} />}
       </Drawer>
 
-      <Modal opened={composing != null} onClose={() => setComposing(null)} title={composing === 'new' ? t('New post') : t('Edit post')} size="lg">
+      <Modal opened={composing != null} onClose={() => setComposing(null)} title={composing === 'new' ? <WithInfo id="post-new">{t('New post')}</WithInfo> : <WithInfo id="post-edit">{t('Edit post')}</WithInfo>} size="lg">
         {composing && (
           <PostForm
             key={composing === 'new' ? 'new' : composing.id}
@@ -738,9 +781,11 @@ function ReplyBox({ postId, isQuestion }: { postId: number; isQuestion: boolean 
           onPaste={draft.onPaste}
           style={{ flex: 1 }}
         />
-        <Button onClick={() => send.mutate()} disabled={!body.trim()} loading={send.isPending}>
-          {t('Reply')}
-        </Button>
+        <WithInfo id="reply-box">
+          <Button onClick={() => send.mutate()} disabled={!body.trim()} loading={send.isPending}>
+            {t('Reply')}
+          </Button>
+        </WithInfo>
       </Group>
       <Preview text={body} />
       <ImageDraft draft={draft} />
@@ -773,7 +818,7 @@ function ReplyItem({ reply, postId, canAccept, canModerate, canReport }: { reply
         <Group gap={4} c="teal" mb={6}>
           <IconCircleCheck size={16} />
           <Text size="xs" fw={800}>
-            {t('Accepted answer')}
+            {t('Accepted answer')} <ReqInfo id="reply-accept" />
           </Text>
         </Group>
       )}
@@ -781,7 +826,7 @@ function ReplyItem({ reply, postId, canAccept, canModerate, canReport }: { reply
         <Group gap={4} c="periwinkle" mb={6}>
           <IconSchool size={16} />
           <Text size="xs" fw={800}>
-            {t('Endorsed by the professor')}
+            {t('Endorsed by the professor')} <ReqInfo id="reply-endorse" />
           </Text>
         </Group>
       )}
@@ -816,40 +861,50 @@ function ReplyItem({ reply, postId, canAccept, canModerate, canReport }: { reply
           <Group gap="xs" mt={6}>
             <ReactionBar goats={reply.goats} goated={reply.goated} onGoat={() => react.mutate()} />
             {canAccept && !reply.mine && (
-              <Button size="compact-xs" variant="subtle" color="teal" leftSection={<IconCheck size={12} />} onClick={() => accept.mutate()}>
-                {reply.accepted ? t('Unmark answer') : t('Accept answer')}
-              </Button>
+              <WithInfo id="reply-accept">
+                <Button size="compact-xs" variant="subtle" color="teal" leftSection={<IconCheck size={12} />} onClick={() => accept.mutate()}>
+                  {reply.accepted ? t('Unmark answer') : t('Accept answer')}
+                </Button>
+              </WithInfo>
             )}
             {reply.mine && draft == null && (
-              <ActionIcon size="sm" variant="subtle" onClick={() => setDraft(reply.body)} aria-label={t('Edit reply')}>
-                <IconPencil size={14} />
-              </ActionIcon>
+              <WithInfo id="reply-edit">
+                <ActionIcon size="sm" variant="subtle" onClick={() => setDraft(reply.body)} aria-label={t('Edit reply')}>
+                  <IconPencil size={14} />
+                </ActionIcon>
+              </WithInfo>
             )}
             {reply.mine && (
-              <ActionIcon size="sm" variant="subtle" color="red" onClick={() => remove.mutate()} aria-label={t('Delete reply')}>
-                <IconTrash size={14} />
-              </ActionIcon>
+              <WithInfo id="reply-edit">
+                <ActionIcon size="sm" variant="subtle" color="red" onClick={() => remove.mutate()} aria-label={t('Delete reply')}>
+                  <IconTrash size={14} />
+                </ActionIcon>
+              </WithInfo>
             )}
             {canReport && !reply.mine && (
               <ReportButton size="sm" reported={reply.reportedByMe} onReport={() => confirmReport(t('Report this reply?'), (reason) => report.mutate(reason))} />
             )}
             {canModerate && (
-              <Button size="compact-xs" variant="subtle" leftSection={<IconSchool size={12} />} onClick={() => endorse.mutate()}>
-                {reply.endorsed ? t('Take back endorsement') : t('Endorse')}
-              </Button>
+              <WithInfo id="reply-endorse">
+                <Button size="compact-xs" variant="subtle" leftSection={<IconSchool size={12} />} onClick={() => endorse.mutate()}>
+                  {reply.endorsed ? t('Take back endorsement') : t('Endorse')}
+                </Button>
+              </WithInfo>
             )}
             {canModerate && !reply.mine && (
-              <Tooltip label={t('Remove this reply')}>
-                <ActionIcon
-                  size="sm"
-                  variant="subtle"
-                  color="red"
-                  onClick={() => confirmRemoval(t('Remove this reply?'), (reason) => removeAsProfessor.mutate(reason))}
-                  aria-label={t('Remove this reply')}
-                >
-                  <IconShieldX size={14} />
-                </ActionIcon>
-              </Tooltip>
+              <WithInfo id="mod-remove">
+                <Tooltip label={t('Remove this reply')}>
+                  <ActionIcon
+                    size="sm"
+                    variant="subtle"
+                    color="red"
+                    onClick={() => confirmRemoval(t('Remove this reply?'), (reason) => removeAsProfessor.mutate(reason))}
+                    aria-label={t('Remove this reply')}
+                  >
+                    <IconShieldX size={14} />
+                  </ActionIcon>
+                </Tooltip>
+              </WithInfo>
             )}
           </Group>
         </div>
@@ -884,7 +939,7 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
 
   const confirmDelete = () =>
     modals.openConfirmModal({
-      title: t('Delete this post?'),
+      title: <WithInfo id="post-delete">{t('Delete this post?')}</WithInfo>,
       children: (
         <Text size="sm">
           {p.replies.length ? t("Your post is blanked but its replies stay, so classmates keep the answers.") : t('It has no replies, so it’s removed completely.')}
@@ -903,7 +958,7 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
         <div style={{ flex: 1, minWidth: 0 }}>
           <Group justify="space-between" gap="xs" style={{ rowGap: 4 }}>
             <Group gap="xs">
-              {p.deletedAt ? <Text fw={700}>{p.removedByProfessor ? t('Removed post') : t('Deleted post')}</Text> : <AuthorName who={p} />}
+              {p.deletedAt ? <WithInfo id={p.removedByProfessor ? 'mod-remove' : 'post-delete'}><Text fw={700}>{p.removedByProfessor ? t('Removed post') : t('Deleted post')}</Text></WithInfo> : <AuthorName who={p} />}
               <Text size="sm" c="dimmed">
                 {fromNow(p.createdAt)}
                 {p.editedAt && ` · ${t('edited')}`}
@@ -911,50 +966,68 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
             </Group>
             <Group gap={6}>
               {p.pinnedAt && (
-                <Tag color="yellow">
-                  <IconPin size={12} style={{ verticalAlign: -2 }} /> {t('Pinned')}
-                </Tag>
+                <WithInfo id="post-pin">
+                  <Tag color="yellow">
+                    <IconPin size={12} style={{ verticalAlign: -2 }} /> {t('Pinned')}
+                  </Tag>
+                </WithInfo>
               )}
-              <Tag>{p.classLabel}</Tag>
-              <TopicTag topic={p.topic} />
-              <KindTag post={p} />
+              <WithInfo id="post-class">
+                <Tag>{p.classLabel}</Tag>
+              </WithInfo>
+              <WithInfo id="post-topic">
+                <TopicTag topic={p.topic} />
+              </WithInfo>
+              <WithInfo id="post-kind">
+                <KindTag post={p} />
+              </WithInfo>
               {p.canReport && !p.mine && !p.deletedAt && (
                 <ReportButton reported={p.reportedByMe} onReport={() => confirmReport(t('Report this post?'), (reason) => report.mutate(reason))} />
               )}
               {p.canModerate && !p.deletedAt && (
                 <>
-                  <Tooltip label={p.pinnedAt ? t('Unpin') : t('Pin to the top of the class board')}>
-                    <ActionIcon variant="subtle" onClick={() => pin.mutate(!p.pinnedAt)} aria-label={p.pinnedAt ? t('Unpin') : t('Pin to the top of the class board')}>
-                      {p.pinnedAt ? <IconPinnedOff size={16} /> : <IconPin size={16} />}
-                    </ActionIcon>
-                  </Tooltip>
-                  <Tooltip label={p.lockedAt ? t('Let students reply again') : t('Lock: stop students replying')}>
-                    <ActionIcon variant="subtle" onClick={() => lock.mutate(!p.lockedAt)} aria-label={p.lockedAt ? t('Let students reply again') : t('Lock: stop students replying')}>
-                      {p.lockedAt ? <IconLockOpen size={16} /> : <IconMessageOff size={16} />}
-                    </ActionIcon>
-                  </Tooltip>
-                  {!p.mine && (
-                    <Tooltip label={t('Remove this post')}>
-                      <ActionIcon
-                        variant="subtle"
-                        color="red"
-                        onClick={() => confirmRemoval(t('Remove this post?'), (reason) => removeAsProfessor.mutate(reason))}
-                        aria-label={t('Remove this post')}
-                      >
-                        <IconShieldX size={16} />
+                  <WithInfo id="post-pin">
+                    <Tooltip label={p.pinnedAt ? t('Unpin') : t('Pin to the top of the class board')}>
+                      <ActionIcon variant="subtle" onClick={() => pin.mutate(!p.pinnedAt)} aria-label={p.pinnedAt ? t('Unpin') : t('Pin to the top of the class board')}>
+                        {p.pinnedAt ? <IconPinnedOff size={16} /> : <IconPin size={16} />}
                       </ActionIcon>
                     </Tooltip>
+                  </WithInfo>
+                  <WithInfo id="post-lock">
+                    <Tooltip label={p.lockedAt ? t('Let students reply again') : t('Lock: stop students replying')}>
+                      <ActionIcon variant="subtle" onClick={() => lock.mutate(!p.lockedAt)} aria-label={p.lockedAt ? t('Let students reply again') : t('Lock: stop students replying')}>
+                        {p.lockedAt ? <IconLockOpen size={16} /> : <IconMessageOff size={16} />}
+                      </ActionIcon>
+                    </Tooltip>
+                  </WithInfo>
+                  {!p.mine && (
+                    <WithInfo id="mod-remove">
+                      <Tooltip label={t('Remove this post')}>
+                        <ActionIcon
+                          variant="subtle"
+                          color="red"
+                          onClick={() => confirmRemoval(t('Remove this post?'), (reason) => removeAsProfessor.mutate(reason))}
+                          aria-label={t('Remove this post')}
+                        >
+                          <IconShieldX size={16} />
+                        </ActionIcon>
+                      </Tooltip>
+                    </WithInfo>
                   )}
                 </>
               )}
               {p.mine && !p.deletedAt && (
                 <>
-                  <ActionIcon variant="subtle" onClick={() => onEdit(p)} aria-label={t('Edit post')}>
-                    <IconPencil size={16} />
-                  </ActionIcon>
-                  <ActionIcon variant="subtle" color="red" onClick={confirmDelete} aria-label={t('Delete post')}>
-                    <IconTrash size={16} />
-                  </ActionIcon>
+                  <WithInfo id="post-edit">
+                    <ActionIcon variant="subtle" onClick={() => onEdit(p)} aria-label={t('Edit post')}>
+                      <IconPencil size={16} />
+                    </ActionIcon>
+                  </WithInfo>
+                  <WithInfo id="post-delete">
+                    <ActionIcon variant="subtle" color="red" onClick={confirmDelete} aria-label={t('Delete post')}>
+                      <IconTrash size={16} />
+                    </ActionIcon>
+                  </WithInfo>
                 </>
               )}
             </Group>
@@ -970,7 +1043,7 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
             <Group gap={4} mt={2} c="dimmed">
               <IconLock size={12} />
               <Text size="xs">
-                {t('Visible to {{who}}', { who: p.mine ? p.audience.map((a) => a.name).join(', ') : t('you and a few classmates') })}
+                {t('Visible to {{who}}', { who: p.mine ? p.audience.map((a) => a.name).join(', ') : t('you and a few classmates') })} <ReqInfo id="post-visibility" />
               </Text>
             </Group>
           )}
@@ -980,31 +1053,33 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
           <Images images={p.images} height={220} />
           <Group mt="sm" justify="space-between">
             <ReactionBar goats={p.goats} goated={p.goated} comments={p.replies.length} onGoat={() => react.mutate()} />
-            <Tooltip label={p.following ? t('Stop getting notified of new replies') : t('Get notified of new replies')}>
-              <Button
-                size="xs"
-                variant={p.following ? 'light' : 'default'}
-                leftSection={p.following ? <IconBellRinging size={14} /> : <IconBell size={14} />}
-                onClick={() => follow.mutate(!p.following)}
-                loading={follow.isPending}
-              >
-                {p.following ? t('Following') : t('Follow')}
-              </Button>
-            </Tooltip>
+            <WithInfo id="thread-follow">
+              <Tooltip label={p.following ? t('Stop getting notified of new replies') : t('Get notified of new replies')}>
+                <Button
+                  size="xs"
+                  variant={p.following ? 'light' : 'default'}
+                  leftSection={p.following ? <IconBellRinging size={14} /> : <IconBell size={14} />}
+                  onClick={() => follow.mutate(!p.following)}
+                  loading={follow.isPending}
+                >
+                  {p.following ? t('Following') : t('Follow')}
+                </Button>
+              </Tooltip>
+            </WithInfo>
           </Group>
         </div>
       </Group>
 
       {p.mine && isQuestion && !p.acceptedReplyId && !p.professorAnswered && p.replies.some((r) => !r.mine) && (
         <Text size="xs" c="dimmed">
-          {t('Did a reply answer your question? Accept it so classmates find it first.')}
+          {t('Did a reply answer your question? Accept it so classmates find it first.')} <ReqInfo id="reply-accept" />
         </Text>
       )}
-      <Divider label={isQuestion ? t('Answers') : t('Replies')} labelPosition="left" />
+      <Divider label={<WithInfo id="post-replies">{isQuestion ? t('Answers') : t('Replies')}</WithInfo>} labelPosition="left" />
       {p.lockedAt && (
         <Group gap={6} c="dimmed">
           <IconMessageOff size={14} />
-          <Text size="sm">{p.canModerate ? t("You locked this thread, so students can't reply. You still can.") : t('The professor locked this thread.')}</Text>
+          <Text size="sm">{p.canModerate ? t("You locked this thread, so students can't reply. You still can.") : t('The professor locked this thread.')} <ReqInfo id="post-lock" /></Text>
         </Group>
       )}
       {(!p.lockedAt || p.canModerate) && <ReplyBox key={postId} postId={postId} isQuestion={isQuestion} />}
@@ -1099,7 +1174,7 @@ function PostForm({
         {restored && (
           <Group gap="xs">
             <Text size="xs" c="dimmed">
-              {t('Your draft is back, as you left it.')}
+              {t('Your draft is back, as you left it.')} <ReqInfo id="post-draft" />
             </Text>
             <Anchor
               component="button"
@@ -1115,13 +1190,15 @@ function PostForm({
             </Anchor>
           </Group>
         )}
-        <SegmentedControl
-          data={[
-            { value: 'question', label: t('Question') },
-            { value: 'note', label: professor ? t('Announcement') : t('Note') },
-          ]}
-          {...form.getInputProps('kind')}
-        />
+        <WithInfo id="post-kind" block>
+          <SegmentedControl
+            data={[
+              { value: 'question', label: t('Question') },
+              { value: 'note', label: professor ? t('Announcement') : t('Note') },
+            ]}
+            {...form.getInputProps('kind')}
+          />
+        </WithInfo>
         <Text size="xs" c="dimmed" mt={-8}>
           {form.values.kind === 'question'
             ? t('You can accept the reply that answers it.')
@@ -1131,25 +1208,25 @@ function PostForm({
         </Text>
         <Group grow align="flex-start">
           <Select
-            label={t('Class')}
+            label={<WithInfo id="post-pick-class">{t('Class')}</WithInfo>}
             data={myClasses.data?.map((c) => ({ value: String(c.id), label: c.code })) ?? []}
             disabled={!!existing || !!classId}
             allowDeselect={false}
             {...form.getInputProps('classId')}
           />
           <Select
-            label={t('Topic')}
+            label={<WithInfo id="post-topic">{t('Topic')}</WithInfo>}
             placeholder={t('Pick a topic')}
             data={topics.map((topic) => ({ value: topic, label: t(topic) }))}
             allowDeselect={false}
             {...form.getInputProps('topic')}
           />
         </Group>
-        <TextInput label={t('Title')} data-autofocus {...form.getInputProps('title')} />
+        <TextInput label={<WithInfo id="post-title">{t('Title')}</WithInfo>} data-autofocus {...form.getInputProps('title')} />
         {!existing && !!similar.data?.length && (
           <Card padding="sm" mt={-6} style={{ background: 'var(--ul-soft)' }}>
             <Text size="sm" fw={700} mb={4}>
-              {t('Already asked? Similar posts in this class:')}
+              {t('Already asked? Similar posts in this class:')} <ReqInfo id="post-similar" />
             </Text>
             <Stack gap={4}>
               {similar.data.map((p) => (
@@ -1173,7 +1250,7 @@ function PostForm({
           </Card>
         )}
         <Textarea
-          label={t('Post')}
+          label={<WithInfo id="post-body">{t('Post')}</WithInfo>}
           description={t('Put code between `backticks`, or between lines of ``` for a block. Put math between dollar signs, like $O(n \\log n)$.')}
           autosize
           minRows={5}
@@ -1184,16 +1261,18 @@ function PostForm({
         {!existing && <ImageDraft draft={draft} />}
         {!existing && (
           <>
-            <SegmentedControl
-              data={[
-                { value: 'class', label: t('Whole class') },
-                { value: 'selected', label: t('Selected classmates') },
-              ]}
-              {...form.getInputProps('visibility')}
-            />
+            <WithInfo id="post-visibility" block>
+              <SegmentedControl
+                data={[
+                  { value: 'class', label: t('Whole class') },
+                  { value: 'selected', label: t('Selected classmates') },
+                ]}
+                {...form.getInputProps('visibility')}
+              />
+            </WithInfo>
             {professor && form.values.kind === 'note' && form.values.visibility === 'class' && (myClasses.data?.length ?? 0) > 1 && (
               <MultiSelect
-                label={t('Also post to')}
+                label={<WithInfo id="post-also">{t('Also post to')}</WithInfo>}
                 placeholder={t('Optional')}
                 data={(myClasses.data ?? []).filter((c) => String(c.id) !== form.values.classId).map((c) => ({ value: String(c.id), label: c.code }))}
                 value={also}
@@ -1203,7 +1282,7 @@ function PostForm({
             )}
             {form.values.visibility === 'selected' && (
               <TagsInput
-                label={t('Who can see it')}
+                label={<WithInfo id="post-audience">{t('Who can see it')}</WithInfo>}
                 description={t('Classmates who have posted or replied in this class. Press Enter after each.')}
                 data={classmates.data?.map((c) => ({ value: c.email, label: `${c.name} (${c.email})` })) ?? []}
                 {...form.getInputProps('audienceEmails')}
