@@ -2,6 +2,7 @@ import { type ReactNode, useState } from 'react';
 import {
   ActionIcon,
   Alert,
+  Anchor,
   Badge,
   Button,
   Card,
@@ -27,6 +28,7 @@ import { useForm } from '@mantine/form';
 import { useLocalStorage } from '@mantine/hooks';
 import { IconAlertTriangle, IconCertificate, IconCircleCheck, IconClipboardText, IconDownload, IconListDetails, IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router';
 import { goalOutlook, gpaTrend, OTHER_GRADES, RECORD_GRADES, RECORD_STATUSES, type RecordStatus, summarizeRecord, termOptions, termOrder } from '@shared/academics';
 import { CURRENT_TERM } from '@shared/dates';
 import { whyCantPlan } from '@shared/prereqs';
@@ -643,17 +645,26 @@ function DegreeTab({ onPlan }: { onPlan: (draft: Partial<RecordDraft>) => void }
         <Select
           label={<WithInfo id="degree-program">{t('Your program')}</WithInfo>}
           placeholder={t('Pick a program')}
-          w={360}
-          data={programs.data?.map((p) => ({ value: p.id, label: `${t(p.name)}, ${p.degree}` })) ?? []}
+          w={480}
+          searchable
+          limit={60}
+          data={programs.data?.map((p) => ({ value: p.id, label: p.id.startsWith('sample-') ? `${t(p.name)}, ${p.degree}` : p.name })) ?? []}
           value={data?.program.id ?? null}
           onChange={(v) => select.mutate(v)}
           clearable
         />
       </Group>
+      {data && (!data.program.id.startsWith('sample-') ? (
+        <Alert variant="light" icon={<IconAlertTriangle size={18} />}>
+          {t("From the 2026–2027 Course Catalogue. Rules like \"at least 3 credits from each group\" count as one pool here, so treat this as a guide and check the program's page with your adviser.")}{' '}
+          <Anchor component={Link} to={`/catalogue/programs/${encodeURIComponent(data.program.id)}`}>{t('See the program')}</Anchor>
+        </Alert>
+      ) : (
       <Alert variant="light" color="yellow" icon={<IconAlertTriangle size={18} />}>
         <b>{t('Sample programs.')}</b>{' '}
-        {t("They show how degree planning works and are not official McGill requirements. Real program data needs an import from the McGill eCalendar. Always confirm with your advisor or Minerva's degree evaluation.")} <ReqInfo id="degree-sample" />
+        {t("They show how degree planning works and are not official McGill requirements. Pick a real program from the list for the catalogue's own requirements. Always confirm with your advisor or Minerva's degree evaluation.")} <ReqInfo id="degree-sample" />
       </Alert>
+      ))}
 
       {!data ? (
         <Card withBorder>

@@ -1,7 +1,8 @@
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { RECORD_GRADES, RECORD_STATUSES } from '@shared/academics';
-import { evaluateDegree } from '@shared/degree';
+import { degreeLabel, loadCourses, loadPrograms, toDegreeProgram } from '@shared/catalogue';
+import { evaluateDegree, type Program } from '@shared/degree';
 import { summarize } from '@shared/grades';
 import { CURRENT_TERM } from '@shared/dates';
 import { isOn } from '@shared/variants';
@@ -177,30 +178,41 @@ export const recordRouter = {
   }),
 };
 
-export const degreeRouter = {
-  programs: procedure(z.void(), () =>
-    PROGRAMS.map(({ id, name, degree, totalCredits }) => ({ id, name, degree, totalCredits })),
-  ),
+// The degree check works with the full catalogue's programs; the samples stay for accounts using them.
+const findProgram = async (programId: string | null | undefined): Promise<Program | null> => {
+  const sample = PROGRAMS.find((p) => p.id === programId);
+  if (sample || !programId) return sample ?? null;
+  const found = (await loadPrograms()).find((p) => p.id === programId);
+  if (!found) return null;
+  const credits = new Map((await loadCourses()).map(([code, , value]) => [code, value ?? 3]));
+  return toDegreeProgram(found, (code) => credits.get(code) ?? 3);
+};
 
-  select: procedure(z.object({ programId: z.string().nullable() }), ({ programId }, ctx) => {
-    if (programId && !PROGRAMS.some((p) => p.id === programId)) notFound('program');
+export const degreeRouter = {
+  programs: procedure(z.void(), async () => [
+    ...(await loadPrograms()).map((p) => ({ id: p.id, name: p.name, degree: degreeLabel(p.name, p.degrees), totalCredits: p.credits ?? 0 })),
+    ...PROGRAMS.map(({ id, name, degree, totalCredits }) => ({ id, name, degree, totalCredits })),
+  ]),
+
+  select: procedure(z.object({ programId: z.string().nullable() }), async ({ programId }, ctx) => {
+    if (programId && !(await findProgram(programId))) notFound('program');
     ctx.db.update(users).set({ degreeProgramId: programId }).where(eq(users.id, ctx.userId)).run();
   }),
 
   // A2: the selected program checked against the A1 record.
-  evaluate: procedure(z.void(), (_input, ctx) => {
+  evaluate: procedure(z.void(), async (_input, ctx) => {
     const programId = ctx.db.select({ id: users.degreeProgramId }).from(users).where(eq(users.id, ctx.userId)).get()?.id;
-    const program = PROGRAMS.find((p) => p.id === programId);
+    const program = await findProgram(programId);
     if (!program) return null;
     const records = ctx.db.select().from(courseRecords).where(eq(courseRecords.userId, ctx.userId)).all();
-    const creditsOf = catalogueCredits(ctx.db);
-    const titles = new Map(
-      ctx.db
-        .select({ subject: courses.subject, number: courses.number, title: courses.title })
-        .from(courses)
-        .all()
-        .map((c) => [`${c.subject} ${c.number}`, c.title]),
-    );
+    const rows = await loadCourses();
+    const added = catalogueCredits(ctx.db);
+    const credits = new Map(rows.map(([code, , value]) => [code, value ?? 3]));
+    const creditsOf = (code: string) => credits.get(code) ?? added(code);
+    const titles = new Map<string, string>(rows.map(([code, title]) => [code, title]));
+    for (const c of ctx.db.select({ subject: courses.subject, number: courses.number, title: courses.title }).from(courses).all()) {
+      if (!titles.has(`${c.subject} ${c.number}`)) titles.set(`${c.subject} ${c.number}`, c.title);
+    }
     return {
       program,
       evaluation: evaluateDegree(program, records, creditsOf),

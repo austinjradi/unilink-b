@@ -225,9 +225,9 @@ function assertNoClash(ctx: AuthedContext, classId: number) {
 export const catalogueRouter = {
   terms: procedure(z.void(), () => [...TERMS]),
 
-  // 'add-missing-course': a course the sample catalogue doesn't have, with one section.
+  // A course from the full catalogue (or, with 'add-missing-course', one it doesn't have), with one section.
   addCourse: procedure(
-    z.object({ subject: z.string().trim().toUpperCase().regex(/^[A-Z]{4}$/, 'Use a course code like "COMP 251"'), number: z.string().trim().regex(/^\d{3}$/, 'Use a course code like "COMP 251"'), title: nonEmpty('Title', 200), credits: z.number().min(0).max(12), term: z.string() }),
+    z.object({ subject: z.string().trim().toUpperCase().regex(/^[A-Z][A-Z0-9]{3}$/, 'Use a course code like "COMP 251"'), number: z.string().trim().regex(/^\d{3}(?:[A-Z]\d?)?(?:[A-Z]\d)?$/, 'Use a course code like "COMP 251"'), title: nonEmpty('Title', 200), credits: z.number().min(0).max(30), term: z.string() }),
     ({ subject, number, title, credits, term }, ctx) => {
       const existing = ctx.db.select({ id: courses.id }).from(courses).where(and(eq(courses.subject, subject), eq(courses.number, number))).get();
       const courseId = existing?.id ?? ctx.db.insert(courses).values({ subject, number, title, credits }).returning({ id: courses.id }).get().id;

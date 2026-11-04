@@ -950,7 +950,9 @@ describe('Search', () => {
     const { classId, people } = await classmates('Maya', 'Leo', 'Ana');
     const [maya, leo, ana] = people;
     const outsider = await student('Sam');
-    const search = async (s: { api: RpcClient<AppRouter> }, query: string) => (await s.api.search.everything({ query })).map((r) => `${r.kind}:${r.title}`);
+    // The course catalogue has its own test: this is about what each person can see of their classes.
+    const search = async (s: { api: RpcClient<AppRouter> }, query: string) =>
+      (await s.api.search.everything({ query })).filter((r) => r.kind !== 'program' && r.kind !== 'rule').map((r) => `${r.kind}:${r.title}`);
 
     await maya.api.board.create({ classId, kind: 'question', topic: 'Exams', title: 'Master theorem help', body: 'Case 2?', visibility: 'class', audienceEmails: [] });
     const { id: replied } = await maya.api.board.create({ classId, kind: 'note', topic: 'Logistics', title: 'Room change', body: 'Now in Leacock', visibility: 'class', audienceEmails: [] });

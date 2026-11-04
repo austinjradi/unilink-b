@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, isNull, like, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
+import { loadCourses, loadIndex } from '@shared/catalogue';
 import { isOn } from '@shared/variants';
 import { assessments, chatLinks, classes, courses, enrollments, plannerAssignments, posts, replies, studySessions, users } from '../db/schema';
 import { procedure } from '../rpc/core';
@@ -12,9 +13,10 @@ import { canSeeSession } from './studySessions';
 // only what they can already see elsewhere (private posts and invite-only sessions stay hidden).
 
 const MIN_LENGTH = 2;
+const CATALOGUE_RESULTS = 6;
 
 export const searchRouter = {
-  everything: procedure(z.object({ query: z.string().trim().max(100) }), ({ query }, ctx) => {
+  everything: procedure(z.object({ query: z.string().trim().max(100) }), async ({ query }, ctx) => {
     if (query.length < MIN_LENGTH) return [];
     const { db, userId } = ctx;
     const term = `%${query}%`;
@@ -22,7 +24,7 @@ export const searchRouter = {
     const mine = db.select({ id: enrollments.classId }).from(enrollments).where(eq(enrollments.userId, userId)).all().map((r) => r.id);
     const label = classLabels(db);
     const labelOf = (classId: number | null) => (classId == null ? null : (label.get(classId) ?? null));
-    const results: { kind: 'class' | 'catalogue' | 'person' | 'post' | 'deadline' | 'graded' | 'session' | 'plan' | 'chat'; id: number; title: string; sub: string | null; when?: Date; to: string }[] = [];
+    const results: { kind: 'class' | 'catalogue' | 'person' | 'post' | 'deadline' | 'graded' | 'session' | 'plan' | 'chat' | 'program' | 'rule'; id: number; title: string; sub: string | null; when?: Date; to: string }[] = [];
 
     if (mine.length) {
       for (const c of db
@@ -139,6 +141,29 @@ export const searchRouter = {
         results.push({ kind: 'person', id: p.id, title: p.name, sub: labelOf(p.classId), to: `/classes/${p.classId}` });
       }
     }
+
+    // The full course catalogue, which nobody has to be in a class to look through.
+    const matches = (text: string | null) => !!text && text.toLowerCase().includes(lower);
+    if (isOn('search-catalogue')) {
+      const listed = new Set(results.filter((r) => r.kind === 'catalogue').map((r) => r.title));
+      const compact = lower.replace(/\s+/g, '');
+      let shown = 0;
+      for (const [code, title] of await loadCourses()) {
+        if (shown === CATALOGUE_RESULTS) break;
+        if (listed.has(code) || !(matches(title) || code.toLowerCase().replace(' ', '').includes(compact))) continue;
+        shown++;
+        results.push({ kind: 'catalogue', id: 1_000_000 + shown, title: code, sub: title, to: `/catalogue/courses/${encodeURIComponent(code)}` });
+      }
+    }
+    const index = await loadIndex();
+    index.programs
+      .filter((p) => matches(p.name) || matches(p.unit))
+      .slice(0, CATALOGUE_RESULTS)
+      .forEach((p, i) => results.push({ kind: 'program', id: i, title: p.name, sub: p.faculty, to: `/catalogue/programs/${encodeURIComponent(p.id)}` }));
+    index.guide
+      .filter((g) => matches(g.title))
+      .slice(0, CATALOGUE_RESULTS)
+      .forEach((g, i) => results.push({ kind: 'rule', id: i, title: g.title, sub: g.part, to: `/catalogue/guide/${encodeURIComponent(g.key)}` }));
 
     return results;
   }),

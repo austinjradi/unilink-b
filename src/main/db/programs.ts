@@ -1,8 +1,8 @@
 import type { Program } from '@shared/degree';
 
 // A2: SAMPLE programs for demonstrating degree planning. They are illustrative only and
-// are NOT official McGill requirements; real program data would come from the McGill
-// eCalendar, the same open G2 question as the course catalogue.
+// are NOT official McGill requirements; the real programs are in the imported catalogue
+// (shared/catalogue), and services/academics.ts offers both.
 export const PROGRAMS: Program[] = [
   {
     id: 'sample-cs-major',

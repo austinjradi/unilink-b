@@ -1,0 +1,198 @@
+{
+"40-visiting-iut-students": ["Students from other Québec universities apply online for approval and check their home university's credit and transfer rules. This applies to Nursing among the Health Sciences.", "Once both universities approve, you still have to register yourself in Minerva by McGill's deadlines, and any drop must be done in Minerva and in the IUT application.", "Engineering's Summer courses are for McGill students only. Continuing Studies visitors register in person by appointment. McGill sends your grades to your home university."],
+"40-university-withdrawal": ["Talk to a Faculty adviser in your Student Affairs Office before deciding."],
+"40-student-s-responsibility": [
+  "You start the withdrawal, by form or in writing to Student Affairs. Telling an instructor or not attending doesn't count, and the date in Minerva is the official one.",
+  "Arts, Science and B.A. & Sc.: through Service Point, with a Faculty adviser's help. Law: also speak to Student Affairs. Agriculture: see an adviser after the deadlines. Education, Management and Music: late withdrawal only in exceptional cases.",
+  "Physical and Occupational Therapy: if Minerva blocks you, contact Student Affairs.",
+  "Graduate students: use the request form by the deadline, and not registering means being withdrawn as of September 1, January 1 or May 1. Returning needs a Request for Readmission."
+],
+"41-consequences-of-university-withdrawal": ["Refunds follow the fee rules (p. 46), and your ID card goes back. Withdrawing in Fall takes you out of the whole year, Fall and Winter. Coming back later means readmission (p. 41)."],
+"41-deadlines-for-university-withdrawal": ["Not attending? Withdraw officially by dropping every course in Minerva before the deadlines. Dropping everything between September 1 and the Fall add/drop deadline, or January 1 and the Winter one, also counts.", "If Minerva blocks the last course, your Student Affairs Office will guide you, as long as the deadline hasn't passed. Readmission is how you return."],
+"41-fall-term": ["September 1–22, 2026: dropping all courses is a withdrawal with refund, less the cancellation fee (returning) or deposit (new). Deadline: Tuesday, September 22, 2026.", "Without refund: Tuesday, October 27, 2026."],
+"41-winter-term": ["January 1–19, 2027: same as Fall, with refund. Deadline: Tuesday, January 19, 2027.", "Without refund: Tuesday, February 23, 2027.", "For D1/D2 courses, partial refund ends at the Winter add/drop deadline."],
+"41-deferred-admission": [
+  "Ask in the Applicant Portal by August 31 for Fall or December 31 for Winter, after paying your deposit. Drop any courses first if you've registered. The deposit stays on your account if it's granted.",
+  "Miss the date and you reapply. Registered students who withdraw after add/drop use readmission instead.",
+  "Music doesn't allow deferral. Law normally doesn't, but you may accept, pay and write to the Assistant Dean (Admissions and Recruitment) with reasons. M.D.,C.M. requests go to the Medical Admissions Office by July 1."
+],
+"41-readmission": [
+  "After a withdrawal, apply in Minerva's Faculty Transfer/Readmission menu, explaining your absence and what you did. It isn't guaranteed. New students qualify only if they left after the refund deadline.",
+  "If you left because of illness, give Student Affairs a medical note saying you're ready. Medicine needs one from your physician or counsellor too.",
+  "You normally come back under the requirements then in force, and your faculty decides what remains. A different faculty means a transfer request.",
+  "Fees can change after a break for non-Québec and international students. Graduate students submit a Request for Readmission. Agriculture: Student Affairs. Music: studentaffairs.music@mcgill.ca, including re-audition rules. Law: admissions.law@mcgill.ca."
+],
+"42-faculty-school-specific-information": ["Your faculty's section of the catalogue applies to you too."],
+"42-agricultural-and-environmental-sciences": ["Its courses have no supplemental exams."],
+"42-arts": ["Arts OASIS has the Faculty's course information. Terms after the credit weight show when a course normally runs.", "Courses have limited enrolment. Minerva can't check every rule, so a course breaking them can pass registration, then be marked \"not for credit\" after add/drop, which can delay graduation.", "Check early whether you need permission from the instructor, department or Faculty. To take something that may not count, ask your Associate Dean or Director."],
+"42-education": ["Some courses run only in the evening or in Summer. Watch prerequisites, corequisites and Field Experience registration."],
+"42-engineering": ["Most courses, including Architecture's, are for Engineering students only. Others need permission from the Student Affairs Office in the Engineering Student Centre, and a few ARCH courses are open.", "(3-1-5) under a description means 3 lecture hours, 1 tutorial or lab hour and 5 hours of study a week."],
+"42-extra-courses": ["A course outside your program can be marked \"extra\" when you register (RX, later E), which keeps it out of your GPA. Not possible after add/drop, nor for program or minor requirements."],
+"42-prerequisites-and-corequisites": ["Finish them before registering, or Minerva may drop the course automatically.", "If Advanced Standing or a placement exam covers it but you're blocked, your department or school can give an override."],
+"43-management": ["Important sections: Grading and Credit (p. 909), credit structures (p. 912, p. 913) and the Management Core (p. 914)."],
+"43-science": ["The Faculty's Undergraduate Studies page has its course information. Otherwise, the same as Arts: limited enrolment, and courses that break the rules may be flagged \"not for credit\" after add/drop, delaying graduation.", "Check permissions early, and ask your Associate Dean or Director about courses that may not count."],
+"43-summer-term-studies": [
+  "Over 600 credit courses starting in May, June or July, mostly one-month intensive, and often transferable elsewhere. Finishing your degree in Summer means Fall convocation, usually in November.",
+  "Maximum 12 credits (Music 18) across Summer, here or elsewhere, unless your Associate Dean or Director agrees.",
+  "At most two Arts, Education, Engineering, Management or Science courses in a session, which is already heavy. More takes written permission from your Faculty; visitors need their home university's too.",
+  "IUT students: one course per Summer term, or more with approval through bci-qc.ca."
+],
+"44-fees": ["The published fees can change without notice, and this text was last updated in March 2025. Student Accounts has current rates. Scholarships and Student Aid covers financial support, and graduate students see Graduate Funding."],
+"44-billings-and-due-dates": ["How and when you're billed."],
+"44-access-to-fee-information": ["See your Account Summary by Term in Minerva. Fall fees appear in mid-July."],
+"44-confirmation-of-acceptance-deposit": ["Accept your offer in Minerva's Applicant Menu and pay the deposit, which varies by program, by AMEX, Visa or MasterCard."],
+"44-invoicing-of-fees": [
+  "Billed by term, through e-bills only. They cover tuition, fees, insurance and other charges, normally appear at the start of the month, and are announced to your McGill email. Later charges appear right away in Minerva's account summary.",
+  "Not reading your email doesn't cancel interest or late fees.",
+  "Payment dates as printed: Fall, August 29, 2025; Winter, January 5, 2026 (returning and new). Check Student Accounts for current ones.",
+  "A balance over $100 at the end of October (February for Winter) brings a late fee. When a deferral ends, the next e-bill shows it, and interest and penalties follow if unpaid."
+],
+"44-guest-access-in-minerva": ["You can let a guest see e-bills and tax receipts and pay online, and you can revoke it any time. They're emailed a link, and Service Point can answer their questions.", "Or set an Alternate Student Billing email to send a copy of the notice and balance. Never share your PIN."],
+"44-payment-procedures": ["Student Accounts lists the ways you and guests can pay."],
+"44-yearly-fees-and-charges-undergraduate": ["Undergraduate tuition depends on the credits you take. Rates are on Student Accounts."],
+"44-tuition-fees": ["Rates change yearly and are posted when known.", "Missing documents by December 1 (Fall), April 1 (Winter) or August 1 (Summer) means being billed at the non-Québec Canadian or international rate.", "If your residency status should change during a term, ask Service Point before the first payment about a deferral. Past interest and fines aren't reversed.", "Online students declare their location each term in Minerva. In Québec they pay provincial rates, and outside it deregulated rates."],
+"45-quebec-students-and-non-quebec-canadian-or-permanent-residen": ["Québec rules require proof of your rate; some non-Québec Canadians pay the Québec rate. Exceptions are listed on Student Accounts."],
+"45-international-students": ["Students in certain categories can claim an exemption and pay the Québec rate, or sometimes the Canadian one. Categories and papers are on the Legal Documents site, with more on Student Accounts or at Service Point."],
+"45-tuition-assistance-for-mcgill-staff": ["Staff may get a waiver of up to 100% of eligible tuition. Not completing courses cancels it, and you then pay normally."],
+"45-staff-dependent-waivers": ["Dependants of staff or pensioners may get a reduction, credited to the account once confirmed and shown on a T4A in February. See HR policies or the MUNACA agreement."],
+"45-compulsory-fees": ["Current rates are on Student Accounts."],
+"45-student-services-fees": ["Overseen by a Senate committee with equal student and staff numbers, and topped up by Québec, McGill and donors.", "Pays for the Student Wellness Hub, Counselling and Tutorial Services, Religious and Spiritual Life, CaPS, Scholarships and Student Aid, International Student Services, Student Accessibility and Achievement, Campus Life and Engagement, and First Peoples' House."],
+"45-athletics-and-recreation-fee": ["Covers access to most facilities on both campuses. Courses, intramurals, pay-as-you-go and the Fitness Centre cost extra."],
+"45-student-society-fees": ["Compulsory, collected for student groups and set by referendum, with votes in Spring or Fall.", "Canadians get health and dental cover through these fees, and international students get dental, with health through the compulsory IHI plan."],
+"46-administrative-charges-and-other-fees": [
+  "Registration: charged to everyone in courses and programs. Information technology: for services, training and support.",
+  "Transcripts and diploma: free transcripts while enrolled, plus diplomas and part of convocation. Those away for over 12 months pay per official transcript.",
+  "Copyright: for using protected material, as Québec and Canadian law requires.",
+  "General administrative: indexed the same way as tuition, with part going to Athletics (not in Continuing Studies)."
+],
+"46-other-fees-health-sciences": ["In each section: Dentistry and Medicine (p. 947), Nursing (p. 1064), Physical and Occupational Therapy (p. 1088)."],
+"46-fees-and-withdrawal-from-the-university": ["Withdraw officially (p. 40) or you owe all tuition and fees, even if you stopped attending.", "Dropping your last course from September 1 (or January 1) to the end of the full-refund period counts as withdrawal, with a $200 cancellation fee.", "New students who drop everything for a full refund pay $200, or lose the deposit if they paid one. Student Accounts explains the financial effects."],
+"46-fee-refund-deadlines": ["Refund dates are separate from course withdrawal dates.", "Graduate students generally get no refund for Summer courses; new ones withdrawing from a Summer Term of Residence should see Summer Registration."],
+"46-fall-term-up-to-and-including-september-16": ["100% refund for returning and new students, less the $200 cancellation fee on complete withdrawal."],
+"47-winter-term-after-january-20": ["No refund. Refunds include tuition and compulsory student fees.", "For a special case, undergraduates ask their Student Affairs Office, and graduate students their Graduate Program Director or Coordinator."],
+"47-refund-procedures": ["Credit balances stay on your account unless you ask for them in Minerva, if over $2.00. With awards, you may wait until add/drop ends, as most need full-time status.", "Give Canadian direct deposit details, or a refund charge applies."],
+"47-other-policies-related-to-fees": ["Other fee rules that may apply to you."],
+"47-overdue-accounts": [
+  "You must pay in full or arrange to settle. Unpaid 60 days after billing, your account is delinquent: a hold stops official transcripts and Minerva registration, and may stop diplomas and meal plan top-ups. McGill may ask for a certified cheque or money order.",
+  "Interest is 1.24% a month (14.88% a year), charged within 2–3 days of the due date and reset each Spring.",
+  "McGill needn't issue transcripts or diplomas, or re-register you, while tuition, library, residence fees or loans are unpaid. Check your balance regularly."
+],
+"47-information-for-registered-students": ["Owing from an earlier term? Pay or arrange with Student Accounts before add/drop ends, or your current and later registration is cancelled. If money's tight, start with the Student Aid Office: Brown Building, 3600 McTavish, Room 3200."],
+"47-information-for-students-who-are-no-longer-registered": ["Unsettled debts or out-of-date contact details can lead to a collection agency and possibly a credit bureau report. McGill may use legal means, at your cost."],
+"47-cancelling-registration-for-non-payment-of-previous-term-s": ["Owing more than $100 or being delinquent brings notices from Student Accounts, then cancellation on the last day of add/drop.", "Settling later? Submit the Request for Reinstatement form. Enrolment Services decides, and a Reinstatement Penalty applies."],
+"48-acceptance-of-fees-vs-academic-standing": ["Paying fees doesn't guarantee you can continue. If your standing doesn't allow it, fees paid in advance are refunded."],
+"48-deferred-admission-degree-transfers-break-in-enrolment": [
+  "Deferring means paying the rates for the term you start. Guaranteed rates for international and non-Québec students depend on no break or transfer.",
+  "Transferring degrees means the new-student rate for international undergraduates and non-research graduate students, and for non-Québec Canadians.",
+  "Québec residents absent over two terms (Summer aside) may need to prove status again. Non-Québec Canadians and international students in such programs away over three terms (Summer included) pay the new-student rate.",
+  "Approved leaves, exchanges and study away don't count as a break, but an uncharged withdrawal term does. Visiting and Special students always pay the new year's fees."
+],
+"48-fees-for-students-in-two-programs": ["Expect extra fees for a second program, and possibly both society and faculty fees or more tuition across levels. Bills may be adjusted during term. See Student Accounts."],
+"48-students-taking-courses-extra-to-their-program": ["With permission from your department and Enrolment Services, ask your department in writing to flag the courses as extra. Extra tuition is charged after add/drop. See the Extra Courses policy."],
+"48-quebec-inter-university-transfer-agreements": ["You pay your home university. The agreement only moves credits, and visitors at McGill still pay compulsory course charges such as activities or materials. McGill can refuse registration in non-government-funded activities."],
+"48-senior-citizens": ["Aid is available for students aged 65 or over in need, in full-time degrees. Contact Scholarships and Student Aid."],
+"48-students-with-sponsors": ["With an outside payer, such as Veterans Affairs, CIDA or a foreign government, you need written proof, and the sponsor confirms on letterhead. Notify McGill at least one month before the term.", "If they don't pay within 90 days of invoice, you owe it all with late fees and interest. McGill can insist on payment."],
+"49-students-receiving-mcgill-funding": ["Funding goes to your fee account or bank. Check the schedule in Minerva's Financial Aid/Award menu.", "If awards come in early January, you can reduce your payment by that amount. Resulting credit balances are refundable only after the full-refund withdrawal deadline."],
+"49-external-scholarships": ["Awards from outside bodies usually come to McGill. Give Student Accounts a letter with the terms. Otherwise it's split across two terms, with the second part on the first working day of January, and returned if you don't qualify.", "To count an expected award against your balance, email student.accounts@mcgill.ca at least a week before the deadline with \"External Scholarships\" in the subject, the amount, currency and source. The deferral ends in September (Fall) or January (Winter), and interest follows.", "Refunds are possible only after the full-refund withdrawal deadline."],
+"49-tuition-and-fees-payment-deferral": ["With no older debts, you may defer payment based on funding you report. It's granted by term, with no interest or late fees meanwhile, and then all is due at the next deadline.", "Apply in Minerva from mid-July (Fall), mid-December (Winter) or early April (Summer). Applying by the fee deadline protects you from interest; late applicants can't cancel it.", "It covers tuition, administrative and academic fees, and insurance, but not housing, meal plans or printing. Tuition and student housing come first when aid arrives."],
+"49-tax-slips-receipts": ["T4A, Relevé 1, T2202 and Relevé 8 appear in Minerva by the end of February.", "For Québec returns, give McGill your Permanent Code, SIN and mailing address when registering, as they go to Revenu Québec."],
+"50-scholarships-and-student-aid": ["This office runs merit and need-based awards for new and continuing undergraduates, and all federal, provincial and U.S. government aid. The Undergraduate Scholarships and Awards Calendar has the full list."],
+"50-entrance-awards-for-mcgill-students": ["For first-time, full-time undergraduates. Merit only, worth $3,000 to $12,000.", "Two types: One-Year, on grades alone, and renewable Major, on grades plus leadership."],
+"50-application-procedures": ["One-Year: automatic when you apply, if you meet the minimum.", "Major: apply online by the deadline, after your admission application is acknowledged, with supporting documents. Renewal depends on meeting McGill's standards.", "Dentistry, Law, Medicine and Music run their own entrance awards, so ask their admissions offices."],
+"50-need-based-entrance-financial-aid": ["First-year students from families of modest means can apply in Minerva once accepted. The amount depends on need and your tuition rate, and you're expected to apply for government aid if eligible."],
+"50-in-course-awards-for-mcgill-students": [
+  "Decided by faculty committees, mostly using your Fall and Winter sessional GPA or rank in the top 1–5%, with no application unless stated.",
+  "You need at least 27 graded credits in the regular year, unless your faculty says otherwise. S/U and Summer courses don't count, and up to 6 IUT credits can.",
+  "The Dean's Honour List names at most the top 10% of each faculty, with each setting its minimum GPA. It's on your transcript, with no money.",
+  "Awards go to your account for the next year, apart from convocation prizes, and you must be full-time. Renewable scholarships depend on the standards, and the office can help if you're struggling."
+],
+"51-in-course-financial-aid": ["For full-time undergraduates with demonstrated need: bursaries, short and long-term loans, and Work Study. Apply for the maximum government aid first. Counsellors also advise on budgeting and debt."],
+"51-work-study-program": ["Part-time jobs on campus, from office work to research, based mainly on need and also standing, and useful work experience. Office: Brown Building, 3600 McTavish, Suite 3200."],
+"52-student-records": ["Standing, grading, GPA and transcripts. Check back for changes."],
+"52-credit-system": [
+  "A credit reflects weekly contact hours, and generally a 3-credit course means three lecture hours a week for a term, with labs worth less. Assume two hours of study per contact hour.",
+  "One credit is about 45 hours of total work. Live activity must fit the scheduled time, and accredited programs may set minimum contact hours.",
+  "Multi-term courses earn credit only when all parts are done in order.",
+  "Engineering: a credit is about three hours a week. Summer: a 3-credit course is about 10 lecture hours a week, for five weeks at most, starting in May, June or July."
+],
+"52-transcript-of-academic-record": [
+  "Shows all attempted work and final grades in all programs. McGill never issues partial transcripts.",
+  "Order official ones in Minerva. eTranscripts come through MyCreds™, a secure wallet owned by ARUCC, the same day in as little as 15 minutes if there's no hold, and you pay for share credits.",
+  "Paper takes 3 to 5 working days (5 to 7 at peak) by regular mail, is free while registered, and costs alumni a fee. Pre-1972 records take longer.",
+  "Both are secured against copying. Holds block orders, so check the top of your unofficial transcript."
+],
+"52-unofficial-transcripts": ["View and print in Minerva for records from 1976 on; older ones need an official order.", "You must check that your courses, program and graduation term are right. If you're graduating, check before your last term ends or you could be missed. Ask Student Affairs about problems.", "Once \"Degree Granted\" shows, your record is final, with no more changes.", "Arts and Science requests go through Service Point, 3415 McTavish, with an OASIS or SOUSA adviser. Graduate students ask their Program Director."],
+"53-official-transcripts": ["Current students use Minerva's ES Services menu. Paper is for rare needs.", "Alumni from 1972 on use the same menu, and the IT Service Desk can supply their ID and PIN. Earlier records need a Request for Archived Official Transcript with photo ID and McGill ID.", "Someone else can ask only with your written authorization."],
+"53-course-numbering-on-the-transcript": ["Before September 2002, numbers began with a three-digit unit code, then a three-digit course number whose first digit was the level, then a term letter: 107-200A was Philosophy 200 in Fall, B meant Winter and D both.", "Continuing Studies used X, Y and Z the same way. The Transcript Key maps old codes to subjects."],
+"53-grading-and-grade-point-averages-gpa": [
+  "Your transcript shows letter grades, even if instructors report percentages. Courses with 25 or more grade-point grades across sections show a class average.",
+  "A–C pass, D is a conditional non-continuation pass, F fails. Program courses and prerequisites need C or better, unless the department chair approves in writing.",
+  "Scale: A 4.0 (85–100%), A- 3.7 (80–84), B+ 3.3 (75–79), B 3.0 (70–74), B- 2.7 (65–69), C+ 2.3 (60–64), C 2.0 (55–59), D 1.0 (50–54), F 0 (0–49).",
+  "GPA is credits times grade points, divided by GPA credits, and cut off at two decimals rather than rounded: 3.596 shows as 3.59. P grades add no GPA credits.",
+  "TGPA covers a term at one level, and CGPA your whole record at that level, restarting if you change level. Repeats all count in GPA, with credit given once, and you need a 2.00 CGPA to graduate.",
+  "Outlines arrive in the first week and should say whether there's a final, how term work counts and when it's due, and how supplementals work (required if there's a formal final). In Science and B.A. & Sc., they say whether extra work is possible after D, F, J or U."
+],
+"54-policy-on-pass-fail-grading": [
+  "P/F must be approved by the Program Director, Faculty Curriculum Committee and SCTP, stated in the syllabus, and applied to the whole section.",
+  "P isn't in GPA, so it's rarely used for required courses, while F is. Both count as completed credits for awards.",
+  "Engineering: letter grades follow the professor's scheme, not the numerical scale. D is accepted only for certain complementary and elective courses, never core or technical ones. Departments decide about D in a prerequisite.",
+  "Global Engineering's first two years at CentraleSupélec follow its grading. Law doesn't use this scale. Physical and Occupational Therapy: C+ minimum in OCC1, PHTH and POTH, and C elsewhere.",
+  "Designations: A, A- Very Good. B+, B, B- Good. C+, C Satisfactory. D Conditional Pass. F Fail."
+],
+"54-other-grades": [
+  "Not every grade applies everywhere, and faculty rules decide.",
+  "J: missed the exam or required work, unexcused; counts as failure. K: instructor extended the deadline. KE or K*: further extension, may need the SAO. KF: missed the extension; counts as failure. KK: requirement waived by the Associate Dean; not in GPA.",
+  "L: deferred exam approved. LE or L*: longer deferral. WL: allowed to withdraw from a deferred exam. NR: no grade reported.",
+  "P: pass. S: equal to C or better in an elective. U: equal to D or F in an elective. None count in GPA.",
+  "W: dropped with permission after course change. WF: dropped in an exceptional case while at F level (not used by Music). Neither counts in GPA.",
+  "Q: continued next term, before Fall 2002. NA or &&: not yet available. W-- or --: withdrew from the University, before Fall 2002.",
+  "S/U doesn't apply to Physical and Occupational Therapy. Medicine has its own UGME policies."
+],
+"55-unexcused-absences": [
+  "Missing a final or required work gives you a J. Options: (1) a grade from your work so far, with 0 for the missing part, unless the outline says it's mandatory; (2) a deferred exam with reasons and documents; (3) a supplemental, if your faculty allows.",
+  "Ask for option 1 within four months of the exam period's end, and options 2 and 3 by the deadlines on McGill Exams. Appeal to your Associate Dean or Director.",
+  "No option 1 in Engineering, Law or Music. Law's option 3 needs approval. Graduate students have options 2 and 3, and appeal to associatedeans.gps@mcgill.ca.",
+  "Arts and Science requests go through Service Point, with an OASIS or SOUSA adviser."
+],
+"55-class-averages": ["Calculated on February 15 for Fall, June 15 for Winter and October 15 for Summer, per course, when there are 25 or more letter grades (not W, S, U, P).", "Once on your transcripts they're fixed and later grade changes don't count. Medicine, Dentistry, Graduate Studies and Farm Management don't show them."],
+"55-transfer-credits": [
+  "Credits from approved study or exchange count if your grade meets what the host requires to graduate, and the course has the same purpose as it would at McGill. Student Affairs decides the category.",
+  "Get approval first, and from your adviser too in some faculties. Courses not pre-approved may not transfer. Normally 60 credits must be at McGill, and you need Satisfactory Standing.",
+  "Host grades aren't on your transcript or in your GPA, but failed or withdrawn courses show with zero credit.",
+  "Outside Québec, you arrange for an official transcript and submit your papers within four months. Under the IUT, grades come automatically.",
+  "Transcript deadlines: April 1 to graduate in Winter (Spring convocation), August 15 for Summer (Fall convocation), December 15 for Fall (degree in February, Spring convocation). Late ones wait for the next period.",
+  "Arts and Science discourage study away in your last U3 term, because it delays graduation. B.Eng.: at most 50% transferred. B.Sc.(Arch.): 60 McGill credits needed. Law: at most six non-law and six non-McGill law credits, with approval."
+],
+"56-advanced-standing-transfer-credits": ["Declare IB, AP, A-Levels, French Baccalaureate and similar when applying, and credits or exemptions follow.", "With Advanced Standing you can still do 120 McGill credits over four years, within limits on repeating exempted courses. Ask your Faculty or School advisers."],
+"56-incomplete-courses": [
+  "An instructor may extend term work past the course's end with a K and a date. A grade in time replaces K on your official transcript, while unofficial ones show both. Missing it brings KF, counted as F. The Associate Dean or Director may give a further KE in exceptional cases.",
+  "Arts and Science limits: graduating in June, April 30; otherwise April 30 (Fall), July 30 (Winter and multi-term), November 30 (Summer). Agriculture: January 15 (Fall), and April 30 or May 15 (Winter and spanning). Instructors may set earlier dates, and work must be early enough to grade.",
+  "A KF can change your standing. Ask the instructor, and see an adviser.",
+  "Law: only the Director (Student Life and Learning) can grant the delay, and missing exams or work without excuse gives J."
+],
+"57-academic-standing": ["You start in Satisfactory Standing. After each term, your GPAs and faculty rules decide it, with codes generated in January, May and September and shown on transcripts.", "Unsatisfactory Standing means you can't continue or register and must apply for readmission, which isn't guaranteed."],
+"58-academic-standing-desautels-faculty-of-management": ["See p. 905."],
+"58-academic-standing-faculty-of-agricultural-and-environmental-": ["See p. 88. Farm Management and Technology has its own Academic Rules."],
+"58-academic-standing-faculties-of-arts-and-science-including-b-": ["Based mainly on CGPA and sometimes TGPA, and it sets whether and how you continue.", "Fall decisions are Interim, using grades available in January. They ignore deferred and spanned courses, and don't appear on official transcripts."],
+"58-satisfactory-interim-satisfactory-standing-arts-science-and-": ["CGPA of 2.00 or more. You continue normally."],
+"58-interim-probationary-probationary-standing-arts-science-and-": [
+  "You continue with at most 14 credits a term, seeing your departmental and Faculty advisers. Interim students should do so before Winter withdrawal deadlines. On Probation, raise your CGPA to get back.",
+  "Probationary if your CGPA is 1.50–1.99 after being Satisfactory; or 1.50–1.99 with Fall or Winter TGPA of 2.50+ after Probationary or Interim Unsatisfactory; or still below 2.00 after meeting your readmission conditions."
+],
+"58-unsatisfactory-readmitted-standing-arts-science-and-b-a-sc": ["After being readmitted, you must meet your letter's conditions and carry at most 14 credits, or fewer if it says so. See your departmental and Faculty advisers."],
+"58-unsatisfactory-interim-unsatisfactory-standing-arts-science-": [
+  "Interim (Fall): you continue at 14 credits maximum and should see advisers before the deadlines.",
+  "Unsatisfactory: registration is cancelled. It applies if your CGPA falls or stays below 1.50; if your TGPA is under 2.50 and CGPA under 2.00 after Probationary, Readmitted or Interim Unsatisfactory; or if you missed your readmission conditions.",
+  "Appeal to your faculty by the deadline, with proof of extenuating circumstances. A second time means permanent withdrawal.",
+  "Supplementals are normally not allowed, but you can appeal for one. Appeals go to the Associate Dean (Student Affairs) of Arts or of Science."
+],
+"59-incomplete-standings-arts-science-and-b-a-sc": [
+  "Your standing waits on deferred exams, Ks, Ls or supplementals. You can register for Fall, but it must be settled by the end of course change.",
+  "You continue if it becomes Satisfactory, Probationary or Interim Unsatisfactory. If Unsatisfactory, registration is cancelled unless readmitted: ask right away, with proof, through your Associate Dean (Arts or Science).",
+  "Winter standing is set in June if a K or L won't change it. Otherwise it waits. Requests go through Service Point, 3415 McTavish; B.A. students book with Arts OASIS, and B.Sc. and B.A. & Sc. students with SOUSA."
+],
+"59-academic-standing-faculty-of-education": ["See p. 688."],
+"59-academic-standing-faculty-of-engineering": ["Based on CGPA after each term, ignoring any deferred exam grades."],
+"59-satisfactory-standing-faculty-of-engineering": ["CGPA of 2.00 or more. D or F in a core course must be repeated with C or better, or replaced by an approved course. F elsewhere must be repeated or replaced before graduating."],
+"59-probationary-standing-faculty-of-engineering": ["CGPA from 1.20 to below 2.00, or TGPA of 2.50+ with CGPA under 2.00.", "Take at most 13 credits, and end the term with CGPA 2.00+ or TGPA 2.50+, staying on Probation until your CGPA reaches 2.00. Otherwise you become Unsatisfactory. See an adviser before the withdrawal deadlines."]
+}

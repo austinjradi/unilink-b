@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ActionIcon, Group, Highlight, Modal, Stack, Text, TextInput, Tooltip, UnstyledButton } from '@mantine/core';
 import { useDebouncedValue, useHotkeys } from '@mantine/hooks';
-import { IconBook, IconBooks, IconCalendarDue, IconUser, IconListCheck, IconMessage, IconMessages, IconPercentage, IconSearch, IconUsersGroup } from '@tabler/icons-react';
+import { IconBook, IconBooks, IconCalendarDue, IconCertificate, IconScale, IconUser, IconListCheck, IconMessage, IconMessages, IconPercentage, IconSearch, IconUsersGroup } from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router';
 import { useListOpen } from '../lib/reqView';
@@ -16,6 +16,8 @@ type Result = Out<typeof rpc.search.everything>[number];
 const GROUPS: { kind: Result['kind']; label: string; icon: typeof IconBook }[] = [
   { kind: 'class', label: tx('Courses'), icon: IconBook },
   { kind: 'catalogue', label: 'Course catalogue', icon: IconBooks },
+  { kind: 'program', label: tx('Programs'), icon: IconCertificate },
+  { kind: 'rule', label: tx('Rules and guides'), icon: IconScale },
   { kind: 'person', label: 'Classmates', icon: IconUser },
   { kind: 'post', label: tx('Discussion'), icon: IconMessage },
   { kind: 'deadline', label: tx('Deadlines'), icon: IconCalendarDue },

@@ -25,6 +25,7 @@ const page = <K extends string>(load: () => Promise<Record<K, ComponentType>>, n
   lazy(() => load().catch(reloadForNewVersion).then((m) => ({ default: m[name] })));
 const CalculatorPage = page(() => import('./pages/Calculator'), 'CalculatorPage');
 const CalendarPage = page(() => import('./pages/Calendar'), 'CalendarPage');
+const CataloguePage = page(() => import('./pages/Catalogue'), 'CataloguePage');
 const ClassPage = page(() => import('./pages/ClassPage'), 'ClassPage');
 const CoursesPage = page(() => import('./pages/Classes'), 'CoursesPage');
 const ProfilePage = page(() => import('./pages/Settings'), 'ProfilePage');
@@ -148,6 +149,7 @@ function Root() {
             <Route path="/courses/:tab?" element={<CoursesPage />} />
             <Route path="/classes" element={<Navigate to="/courses" replace />} />
             <Route path="/classes/:classId/:tab?" element={<ClassPage />} />
+            <Route path="/catalogue/:tab?/:id?" element={<CataloguePage />} />
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/planner" element={<PlannerPage />} />
             <Route path="/calculator" element={<CalculatorPage />} />

@@ -35,7 +35,7 @@ The yellow features, with what couldn't be fully built:
 | ID  | Feature                              | Where in the app                         | Code                                          | Limits |
 | --- | ------------------------------------ | ---------------------------------------- | --------------------------------------------- | ------ |
 | A1  | Course, credit and grade tracking    | Courses → Course record (add by hand, from your classes, or by pasting a transcript) | `shared/academics.ts`, `shared/transcript.ts`, `services/academics.ts` | None |
-| A2  | Degree requirements and planning     | Academics → Degree plan                  | `shared/degree.ts`, `db/programs.ts`          | **Sample programs only**: no McGill program data source exists yet |
+| A2  | Degree requirements and planning     | Courses → Degree plan; Catalogue → any program → Check my degree | `shared/degree.ts`, `shared/catalogue/`, `db/programs.ts` | **Group rules are simplified**: all 622 catalogue programs can be picked, but rules like "at least 3 credits from each group" count as one pool, so check with an adviser. Three samples remain as examples |
 | G3  | Notifications / email                | Bell in the sidebar; Profile → Notifications | `services/notifications.ts`              | **Email isn't delivered**: no mail server, so emails wait in an outbox |
 | ST1 | Study mode                           | Study Mode tab; pill in the top bar      | `shared/studyMode.ts`, `services/studyMode.ts` | **Can't block websites**; runs only while a UniLink tab is open; no system Do Not Disturb in a browser |
 | ST3 | To-do list                           | Home (first thing you see); a date typed at the end ("read chapter 3 friday") becomes the due date | `services/todos.ts`, `pages/Home.tsx`, `shared/taskDate.ts` | None |
@@ -249,7 +249,34 @@ notifications and emails go out in the same language. The English text is the tr
   whichever language the reader picks. Errors are `new AppError('English text', code, params)`.
 - `node scripts/i18n-keys.mjs` lists strings that are missing a French translation. `npm test` fails if
   any are missing, if placeholders don't match, or if the French file has entries nothing uses.
-- User content (posts, titles, course names from the catalogue) isn't translated.
+- User content (posts, titles, course names from the catalogue) isn't translated. The imported catalogue
+  stays in the language McGill published it in; only the page around it is translated.
+
+## The course catalogue
+
+The Catalogue page has McGill's whole 2026–27 undergraduate and professional catalogue (1,291 pages): 622
+programs, 4,490 courses, 296 awards and loan funds, 433 contacts, every date and amount, the table of contents,
+and the rules of each faculty. Global search and the degree plan use it too.
+
+- **Facts are copied, prose is not.** Courses, requirements, credits, dates, fees, awards, contacts and links
+  come from the PDF. The running text is McGill's and this site is public, so it's summarized in our own words,
+  much shorter than the original, with the page to check. The official text has the last word.
+- **It isn't in the database.** `seedCatalogue` makes class rows for every course and term each time the database
+  opens, which would be far too slow here, so the data is JSON loaded when first needed. A course becomes a row
+  only when someone adds it. The sample in `db/catalogue.ts` still drives the demo term's classes.
+- **To update it for a new year,** rerun the three steps below, then redo the notes that changed. Python reads
+  the PDF, so use `-I` and keep the scripts away from the download:
+
+  ```
+  python3 -I scripts/catalogue/extract.py <pdf> <work>      # 20 pages at a time, keeps the ligatures
+  python3 -I scripts/catalogue/parse.py <work>              # sections and course tables
+  python3 -I scripts/catalogue/build.py <work> src/shared/catalogue/data
+  python3 -I scripts/catalogue/build.py <work> batch 1 20   # prints the prose still without a summary
+  ```
+
+  Summaries live in `scripts/catalogue/notes/*.json`, as `{ section key: [points] }`. The build reports how much
+  running text is covered. `pdftotext` won't do: the PDF keeps ligatures in the private use area, and "ft" only
+  shows up as a wide "f" (see `extract.py`).
 
 ## Decisions compared: version A vs version B
 
@@ -283,6 +310,7 @@ both versions.
 | S4 | Repeated questions | Nothing | While you write a title, the composer lists up to three **similar posts** in the class you can see (answered ones marked), so you can open the existing thread instead |
 | S4 | Who hears about new replies? | The post's author | **Everyone following the thread**: posting or replying follows it, anyone who can see it can follow or unfollow (unfollowing sticks), and the feed can show only followed threads |
 | S4 | Deleting a post | Deletes its replies too | A post **with replies is blanked** and the thread stays; one without replies is removed |
+| A2/G2 | Course catalogue | A built-in sample | **The whole 2026–27 catalogue** (see [The course catalogue](#the-course-catalogue)): search, programs, courses, rules, awards, dates and amounts, contacts and contents. Any course can be added and any program checked against your record |
 | A3 | Term key dates and final exams? | Not included | **Built in** (`shared/keyDates.ts`): McGill's 2026–27 key dates (classes start and end, add/drop, withdrawal with and without refund, reading breaks, exam period) on everyone's calendar, deadlines among them on Home; **no classes on breaks and holidays** (weekly class times skip them on the calendar, in the .ics export and for study mode); a **sample final exam schedule** per course, with your own finals on your calendar and each class page |
 | A3 | "Imported from my syllabus in a later version" | Not built | **Read the course outline or any PDF, Word or text file, or paste the schedule**: lines with a date and something to hand in or write are found (English or French dates, times, weights) and reviewed before adding. Weighted ones join the section's grading scheme; the rest become class deadlines |
 | A3 | Whose class times and deadlines? | Personal: each student enters their own | **Shared with the section**: one person enters the lecture times or a class deadline and everyone sees it. Deadlines with no class stay private; each student checks deadlines off separately; only whoever added a deadline can edit it |
@@ -310,6 +338,7 @@ the next seven days (nothing if nothing is due; it can be turned off for desktop
 
 | Decision | Code |
 | --- | --- |
+| Catalogue import, data and pages | `scripts/catalogue/`, `shared/catalogue/`, `pages/Catalogue.tsx` |
 | Sections, wildcard search, classmate visibility, time clashes | `db/catalogue.ts` (`sectionsFor`), `services/classes.ts`, `shared/courseQuery.ts`, `shared/meetings.ts` |
 | Link identity, purposes, hiding rule | `shared/links.ts`, `services/links.ts` |
 | Invite codes, waitlist, hand-off, weekly series | `services/studySessions.ts` |
@@ -336,10 +365,12 @@ The database changes are migrations `0004_version_b` (new tables and columns), `
   only runs while a UniLink tab is open.
 - **Official exam schedule (A3).** Key dates follow McGill's published 2026–27 dates (the Winter add/drop and
   withdrawal dates weren't out yet and are marked approximate). The final exam schedule is a sample; the real
-  one is published per course during the term and would need an import, like the catalogue.
-- **Program data (A2).** The three programs in `db/programs.ts` are illustrative samples, not official McGill
-  requirements. Like the course catalogue, real data needs an eCalendar import.
-- **Live integrations (G2).** Google Calendar and myCourses use `.ics` export/import. The course catalogue
-  is a built-in sample (`db/catalogue.ts`), not the full McGill eCalendar.
+  one is published per course during the term and would need its own import.
+- **Program rules (A2).** Catalogue programs are real, but the degree plan counts each program's complementary
+  courses as pools, so rules across groups need an adviser's check. The three programs in `db/programs.ts` are
+  illustrative samples, not official McGill requirements.
+- **Live integrations (G2).** Google Calendar and myCourses use `.ics` export/import. The catalogue is a snapshot
+  of the 2026–27 PDF, not a live feed: course offerings per term, times and rooms aren't in it, so classes and
+  sections in the demo term still come from `db/catalogue.ts`.
 - **Two tabs saving at the same instant.** The last save wins. A save takes milliseconds, so this only
   happens by accident.

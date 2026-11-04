@@ -24,6 +24,7 @@ import { ReqInfo, WithInfo } from './ReqInfo';
 const NAV: { to: string; label: string; info: ReqTopicId; match: (p: string) => boolean; studentOnly?: boolean }[] = [
   { to: '/', label: tx('Home'), info: 'nav-home', match: (p: string) => p === '/' },
   { to: '/courses', label: tx('Courses'), info: 'nav-courses', match: (p: string) => p.startsWith('/courses') || p.startsWith('/classes') },
+  { to: '/catalogue', label: tx('Catalogue'), info: 'nav-courses', match: (p: string) => p.startsWith('/catalogue') },
   { to: '/academics', label: 'Academics', info: 'nav-courses', match: (p: string) => p.startsWith('/academics'), studentOnly: true },
   { to: '/calendar', label: tx('Calendar'), info: 'nav-calendar', match: (p: string) => p.startsWith('/calendar') },
   { to: '/planner', label: tx('Planner'), info: 'nav-planner', match: (p: string) => p.startsWith('/planner'), studentOnly: true },
