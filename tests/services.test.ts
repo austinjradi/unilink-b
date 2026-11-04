@@ -244,10 +244,14 @@ describe('S1 classes', () => {
     const codes = async (query: string, level: number | null = null) =>
       (await api.catalogue.search({ query, term: 'Fall 2026', level })).map((c) => c.code);
     expect(await codes('comp251')).toEqual(['COMP 251-001', 'COMP 251-002']);
-    expect(await codes('COMP 3XX')).toEqual(['COMP 302-001', 'COMP 303-001', 'COMP 307-001', 'COMP 330-001', 'COMP 360-001']);
-    expect(await codes('algorithm')).toEqual(['COMP 251-001', 'COMP 251-002', 'COMP 360-001']);
-    expect(await codes('', 500)).toEqual(['COMP 551-001']);
-    expect((await codes('MATH')).every((c) => c.startsWith('MATH '))).toBe(true);
+    const threeHundreds = await codes('COMP 3XX');
+    expect(threeHundreds).toEqual(expect.arrayContaining(['COMP 302-001', 'COMP 303-001', 'COMP 330-001']));
+    expect(threeHundreds.every((c) => c.startsWith('COMP 3'))).toBe(true);
+    expect(await codes('algorithm')).toEqual(expect.arrayContaining(['COMP 251-001', 'COMP 251-002', 'COMP 360-001']));
+    expect((await codes('', 500)).every((c) => /^\S+ 5/.test(c))).toBe(true);
+    expect(await codes('COMP', 500)).toContain('COMP 551-001');
+    // The subject comes before titles that contain the word.
+    expect((await codes('MATH')).slice(0, 20).every((c) => c.startsWith('MATH '))).toBe(true);
   });
 
   it('joins one section of a course at a time', async () => {
@@ -301,7 +305,8 @@ describe('S1 classes', () => {
     expect(rows.map((r) => [r.label, r.status, r.otherCode])).toEqual([
       ['COMP 251-001', 'other-section', 'COMP 251-002'],
       ['MATH 240-001', 'joined', null],
-      ['COMP 202-009', 'missing', null],
+      // Sections are estimates, so one on someone's own schedule is taken at its word.
+      ['COMP 202-009', 'new', null],
       ['ZZZZ 999', 'missing', null],
     ]);
     const [fresh] = await api.classes.matchSchedule({ term: 'Fall 2026', text: 'COMP 202' });
@@ -945,6 +950,135 @@ describe('G2 calendar export', () => {
   });
 });
 
+describe('The full catalogue in the course features', () => {
+  const inFall = { term: 'Fall 2026', level: null };
+
+  it('finds and joins a course that only the catalogue has', async () => {
+    const { api } = await student('Maya');
+    const [section] = await api.catalogue.search({ query: 'MUEN 560', ...inFall });
+    expect(section).toMatchObject({ code: 'MUEN 560-001', title: 'Chamber Music Ensemble', joined: false });
+    await api.classes.join({ classId: section.id });
+    expect((await api.classes.mine()).map((c) => c.code)).toContain('MUEN 560-001');
+    expect((await api.catalogue.search({ query: 'chamber music', ...inFall })).map((c) => c.code)).toContain('MUEN 560-001');
+  });
+
+  it('reads every kind of course code', async () => {
+    const { api } = await student('Maya');
+    const codes = async (query: string, level: number | null = null) => (await api.catalogue.search({ query, term: 'Fall 2026', level })).map((c) => c.code);
+    expect(await codes('nur1 230')).toEqual(['NUR1 230-001']);
+    expect(await codes('AGRI 410D1')).toEqual(['AGRI 410D1-001']);
+    // A year-long course comes in two parts, and either is found from its plain number.
+    const both = async (query: string, level: number | null = null) => (await api.catalogue.search({ query, term: null, level })).map((c) => c.code);
+    expect(await both('AGRI 410')).toEqual(expect.arrayContaining(['AGRI 410D1-001', 'AGRI 410D2-001']));
+    expect(await both('AGRI', 400)).toEqual(expect.arrayContaining(['AGRI 410D1-001', 'AGRI 410D2-001']));
+  });
+
+  it('gives the same list a page at a time as all at once', async () => {
+    const { api } = await student('Maya');
+    const page = (offset: number) => api.catalogue.search({ query: '', ...inFall, limit: 25, offset });
+    const pages = [await page(0), await page(25), await page(50)];
+    expect(pages.map((p) => p.length)).toEqual([25, 25, 25]);
+    const all = await api.catalogue.search({ query: '', ...inFall, limit: 75 });
+    expect(pages.flat().map((c) => c.id)).toEqual(all.map((c) => c.id));
+    // Past the end there's nothing, which is how the list knows to stop.
+    const code = await api.catalogue.search({ query: 'ANTH 432', ...inFall, limit: 25, offset: 25 });
+    expect(code).toEqual([]);
+  });
+
+  it('lists a course in the terms it runs', async () => {
+    const { api } = await student('Maya');
+    const search = (query: string, term: string) => api.catalogue.search({ query, term, level: null });
+    // The first half of a two-term course runs in Fall and the second in Winter.
+    const fall = (await search('AGRI', 'Fall 2026')).map((c) => c.code);
+    expect(fall).toContain('AGRI 410D1-001');
+    expect(fall).not.toContain('AGRI 410D2-001');
+    expect((await search('AGRI', 'Winter 2027')).map((c) => c.code)).toContain('AGRI 410D2-001');
+    // On the December exam schedule, with its real sections.
+    const accounting = await search('MGCR 211', 'Fall 2026');
+    expect(accounting.map((c) => c.section)).toEqual(['001', '002', '003', '004', '005', '006', '007', '008', '009']);
+    // Someone asking for the exact code still gets it.
+    expect((await search('AGRI 410D2', 'Fall 2026')).map((c) => c.code)).toEqual(['AGRI 410D2-001']);
+  });
+
+  it("takes a section on someone's schedule at its word", async () => {
+    const { api } = await student('Maya');
+    const [row] = await api.classes.matchSchedule({ term: 'Fall 2026', text: 'AGRI 410D2 003' });
+    expect(row).toMatchObject({ label: 'AGRI 410D2-003', status: 'new' });
+  });
+
+  it('stops a plan only for what the catalogue says outright', async () => {
+    const { api } = await student('Maya');
+    setVariant('check-prereqs', true);
+    const plan = (code: string) => api.record.add({ code, title: '', credits: 3, term: 'Winter 2027', status: 'planned', grade: null });
+    await expect(plan('ENVR 400')).rejects.toThrow('ENVR 400 needs ENVR 203 first');
+    // "Probably comes after" is only a hint.
+    await plan('COMP 361D2');
+    await plan('HIST 491');
+    setVariant('check-prereqs', false);
+  });
+
+  it('pages through more than the first screenful', async () => {
+    const { api } = await student('Maya');
+    const first = await api.catalogue.search({ query: '', ...inFall });
+    expect(first.length).toBe(80);
+    const more = await api.catalogue.search({ query: '', ...inFall, limit: 300 });
+    expect(more.length).toBe(300);
+    expect(more.slice(0, 80).map((c) => c.id)).toEqual(first.map((c) => c.id));
+  });
+
+  it('filters by all the subjects and faculties', async () => {
+    const { api } = await student('Maya');
+    const subjects = await api.catalogue.subjects();
+    expect(subjects.length).toBeGreaterThan(190);
+    expect(subjects).toEqual(expect.arrayContaining(['COMP', 'MUEN', 'NUR1']));
+    const music = await api.catalogue.search({ query: '', ...inFall, faculty: 'Music' });
+    expect(music.length).toBeGreaterThan(0);
+    expect(music.every((c) => c.subject.startsWith('MU'))).toBe(true);
+    const stats = await api.catalogue.stats();
+    expect(stats.courses).toBeGreaterThanOrEqual(4490);
+    expect(stats.programs).toBe(622);
+  });
+
+  it('reads a pasted schedule of catalogue courses', async () => {
+    const { api } = await student('Maya');
+    const rows = await api.classes.matchSchedule({ term: 'Fall 2026', text: 'MUEN 560 001\nNUR1 230\nZZZZ 999' });
+    expect(rows.map((r) => [r.label, r.status])).toEqual([
+      ['MUEN 560-001', 'new'],
+      ['NUR1 230-001', 'new'],
+      ['ZZZZ 999', 'missing'],
+    ]);
+    expect(rows[1].title).toBeTruthy();
+  });
+
+  it('fills in the course record from the catalogue', async () => {
+    const { api } = await student('Maya');
+    expect(await api.record.lookup({ code: 'muen560' })).toMatchObject({ subject: 'MUEN', number: '560', title: 'Chamber Music Ensemble' });
+    expect(await api.record.lookup({ code: 'ZZZZ 999' })).toBeNull();
+    await api.record.add({ code: 'nur1230', title: '', credits: 3, term: 'Fall 2026', status: 'planned', grade: null });
+    const [row] = await api.record.list();
+    expect(row.code).toBe('NUR1 230');
+    expect(row.title).toBeTruthy();
+  });
+
+  it('offers every program, and a sample only to an account already using it', async () => {
+    const { api } = await student('Maya');
+    const programs = await api.degree.programs();
+    expect(programs.length).toBe(622);
+    expect(programs.every((p) => p.group)).toBe(true);
+    expect(programs.map((p) => p.id)).toContain('computer-science-major-b-sc');
+    await api.degree.select({ programId: 'sample-cs-major' });
+    expect((await api.degree.programs()).find((p) => p.id === 'sample-cs-major')?.group).toBeNull();
+    await api.degree.select({ programId: 'nursing-b-sc-n' });
+    expect((await api.degree.evaluate())?.program.name).toBe('Nursing (B.Sc.(N.))');
+  });
+
+  it('finds any course from the search box', async () => {
+    const { api } = await student('Maya');
+    const found = await api.search.everything({ query: 'chamber music' });
+    expect(found.filter((r) => r.kind === 'catalogue').map((r) => [r.title, r.to])).toContainEqual(['MUEN 560', '/catalogue/courses/MUEN%20560']);
+  });
+});
+
 describe('Search', () => {
   it('finds things across the app, only in your classes and only what you can see', async () => {
     const { classId, people } = await classmates('Maya', 'Leo', 'Ana');
@@ -952,7 +1086,7 @@ describe('Search', () => {
     const outsider = await student('Sam');
     // The course catalogue has its own test: this is about what each person can see of their classes.
     const search = async (s: { api: RpcClient<AppRouter> }, query: string) =>
-      (await s.api.search.everything({ query })).filter((r) => r.kind !== 'program' && r.kind !== 'rule').map((r) => `${r.kind}:${r.title}`);
+      (await s.api.search.everything({ query })).filter((r) => r.kind !== 'catalogue' && r.kind !== 'program' && r.kind !== 'rule').map((r) => `${r.kind}:${r.title}`);
 
     await maya.api.board.create({ classId, kind: 'question', topic: 'Exams', title: 'Master theorem help', body: 'Case 2?', visibility: 'class', audienceEmails: [] });
     const { id: replied } = await maya.api.board.create({ classId, kind: 'note', topic: 'Logistics', title: 'Room change', body: 'Now in Leacock', visibility: 'class', audienceEmails: [] });
@@ -1145,7 +1279,7 @@ describe('A3–A5 shared section info', () => {
 
     const december = await api.calendar.range({ from: '2026-12-01', to: '2026-12-31' });
     expect(december.filter((e) => e.detail === 'final')).toMatchObject([
-      { title: 'COMP 251 final exam', classLabel: 'COMP 251-001', location: 'Field House', start: new Date(2026, 11, 14, 14, 0), end: new Date(2026, 11, 14, 17, 0) },
+      { title: 'COMP 251 final exam', classLabel: 'COMP 251-001', location: 'Estimated: not on the December schedule', start: new Date(2026, 11, 14, 14, 0), end: new Date(2026, 11, 14, 17, 0) },
     ]);
   });
 
@@ -2171,7 +2305,7 @@ describe('Requirement switches: S1', () => {
     setVariant('search-version-a', true);
     expect(await codes('COMP 3XX')).toEqual([]);
     expect(await codes('comp 251')).toEqual(['COMP 251-001', 'COMP 251-002']);
-    expect(await codes('algorithm')).toEqual(['COMP 251-001', 'COMP 251-002', 'COMP 360-001']);
+    expect(await codes('algorithm')).toEqual(expect.arrayContaining(['COMP 251-001', 'COMP 251-002', 'COMP 360-001']));
   });
 
   it("finds a section by its professor's name, only when switched on", async () => {
@@ -2189,8 +2323,11 @@ describe('Requirement switches: S1', () => {
     const all = await api.catalogue.search({ query: 'COMP 251', term: null, level: null });
     expect(all.map((c) => c.term)).toEqual(['Fall 2026', 'Fall 2026', 'Winter 2027', 'Winter 2027']);
     const filter = (fields: { subject?: string; faculty?: string; credits?: number }) => api.catalogue.search({ query: '', term: 'Fall 2026', level: null, ...fields });
-    expect((await filter({ subject: 'ECON' })).map((c) => c.subject)).toEqual(['ECON', 'ECON', 'ECON', 'ECON']);
-    expect((await filter({ faculty: 'Engineering' })).every((c) => c.subject === 'ECSE')).toBe(true);
+    expect((await filter({ subject: 'ECON' })).every((c) => c.subject === 'ECON')).toBe(true);
+    expect((await filter({ subject: 'ECON' })).length).toBeGreaterThan(4);
+    const engineering = (await filter({ faculty: 'Engineering' })).map((c) => c.subject);
+    expect(engineering.length).toBeGreaterThan(0);
+    expect(engineering).not.toContain('COMP');
     expect((await filter({ credits: 4 })).every((c) => c.credits === 4)).toBe(true);
     expect(await api.catalogue.subjects()).toContain('COMP');
   });
@@ -3635,7 +3772,6 @@ describe('Requirement switches: WEB, WIRE and EXTRA', () => {
     const { people } = await classmates('Maya', 'Leo');
     const [maya] = people;
     const kinds = async (query: string) => (await maya.api.search.everything({ query })).map((r) => r.kind);
-    expect(await kinds('math')).not.toContain('catalogue');
     expect(await kinds('Leo')).not.toContain('person');
     setVariant('search-catalogue', true);
     setVariant('search-classmates', true);

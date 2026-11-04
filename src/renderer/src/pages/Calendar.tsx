@@ -1,5 +1,6 @@
+import { loadCourses, parseOffering } from '@shared/catalogue';
 import { isOn } from '@shared/variants';
-import { createContext, type CSSProperties, type DragEvent, type KeyboardEvent, useContext, useState } from 'react';
+import { createContext, type CSSProperties, type DragEvent, type KeyboardEvent, memo, useContext, useDeferredValue, useMemo, useState } from 'react';
 import type { ReqTopicId } from '../lib/reqTopics';
 import {
   ActionIcon,
@@ -45,8 +46,10 @@ import { modals } from '@mantine/modals';
 import { useNavigate } from 'react-router';
 import { addDays, CURRENT_TERM, eachDay, TERMS, ymd } from '@shared/dates';
 import { isBusyWeek } from '@shared/grades';
-import { EXAM_SCHEDULE_TERMS, examConflicts, FINAL_EXAMS, keyDatesFor, termWithExams } from '@shared/keyDates';
+import { examConflicts, FINAL_EXAMS, type FinalExam, finalExamsFor, keyDatesFor, termWithExams } from '@shared/keyDates';
 import { parseSyllabus, type SyllabusItem } from '@shared/syllabus';
+import { examTime, useOfferings } from '../components/CourseFacts';
+import { LoadOnScroll } from '../components/LoadOnScroll';
 import { chipStyle, Empty, KindBadge, kindColor, Loading, PageHeader, Tag } from '../components/ui';
 import { fmtDateTime, fmtTime, toDate } from '../lib/format';
 import { useAction } from '../lib/hooks';
@@ -658,6 +661,25 @@ function BusyWeek({ week, due }: { week: string; due: { weight?: number }[] }) {
   );
 }
 
+const EXAM_PAGE_SIZE = 50;
+
+// Memoized so scrolling only renders the new rows.
+const ExamRow = memo(function ExamRow({ exam: e, title, mine }: { exam: FinalExam; title?: string; mine: boolean }) {
+  return (
+    <Table.Tr fw={mine ? 800 : undefined}>
+      <Table.Td>
+        {e.course}
+        {e.section && e.section !== '001' && ` (${e.section})`}
+        <Text span size="xs" c="dimmed" ml={6}>
+          {title}
+        </Text>
+      </Table.Td>
+      <Table.Td>{examTime(e)}</Table.Td>
+      <Table.Td>{e.location}</Table.Td>
+    </Table.Tr>
+  );
+});
+
 // A3: the term's key dates and the final exam schedule (shared/keyDates.ts).
 function KeyDatesView() {
   const linkOfficial = useVariant('link-official-dates');
@@ -671,26 +693,31 @@ function KeyDatesView() {
   const [termName, setTermName] = useState<string>(CURRENT_TERM);
   const [search, setSearch] = useState('');
   const mine = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
-  const catalogue = useQuery({
-    queryKey: ['catalogue', 'search', '', termName, null],
-    queryFn: () => rpc.catalogue.search({ query: '', term: termName, level: null }),
-  });
+  const catalogue = useQuery({ queryKey: ['catalogue', 'courses'], queryFn: loadCourses, staleTime: Infinity });
+  const offerings = useOfferings();
+  const [shownExams, setShownExams] = useState(EXAM_PAGE_SIZE);
 
   const dates = keyDatesFor(termName).filter((d) => (!onlyOfficial || !d.approximate) && (!onlyUpcoming || (d.end ?? d.date) >= today));
   const next = dates.find((d) => (d.end ?? d.date) >= today);
-  const titles = new Map((catalogue.data ?? []).map((c) => [`${c.subject} ${c.number}`, c.title]));
-  const myCourses = new Set((mine.data ?? []).filter((c) => c.term === termName).map((c) => `${c.subject} ${c.number}`));
-  const exams = FINAL_EXAMS.filter((e) => e.term === termName).sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`));
-  const myExams = exams.filter((e) => myCourses.has(e.course));
+  const titles = useMemo(() => new Map((catalogue.data ?? []).map(([code, title]) => [code, title])), [catalogue.data]);
+  const myClasses = (mine.data ?? []).filter((c) => c.term === termName);
+  const myCourses = new Set(myClasses.map((c) => `${c.subject} ${c.number}`));
+  const byTime = (a: FinalExam, b: FinalExam) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`);
+  // April's isn't out, so that list is an estimate for each course that probably runs in Winter.
+  const exams = useMemo(
+    () => (termName === TERMS[0] ? FINAL_EXAMS : (catalogue.data ?? []).flatMap(([code]) => (parseOffering(offerings.data?.[code])?.terms.includes(termName) ? finalExamsFor(code, termName) : []))).toSorted(byTime),
+    [termName, catalogue.data, offerings.data],
+  );
+  const myExams = myClasses.flatMap((c) => finalExamsFor(`${c.subject} ${c.number}`, termName, c.section)).sort(byTime);
   const conflicts = new Map([...examConflicts(myExams)].filter(([, conflict]) => !exactConflicts || conflict.overlap));
-  const query = search.trim().toLowerCase().replace(/\s+/g, '');
-  const listed = exams.filter((e) => !query || `${e.course}${titles.get(e.course) ?? ''}`.toLowerCase().replace(/\s+/g, '').includes(query));
+  const query = useDeferredValue(search.trim().toLowerCase().replace(/\s+/g, ''));
+  const listed = useMemo(() => exams.filter((e) => !query || `${e.course}${titles.get(e.course) ?? ''}`.toLowerCase().replace(/\s+/g, '').includes(query)), [exams, titles, query]);
   const day = (date: string) => dayjs(date).format(t('ddd, MMM D'));
 
   return (
     <Stack gap="lg">
       <WithInfo id="key-term">
-        <SegmentedControl size="xs" w="fit-content" value={termName} onChange={setTermName} data={TERMS.map((x) => ({ value: x, label: term(x) }))} />
+        <SegmentedControl size="xs" w="fit-content" value={termName} onChange={(next) => { setTermName(next); setShownExams(EXAM_PAGE_SIZE); }} data={TERMS.map((x) => ({ value: x, label: term(x) }))} />
       </WithInfo>
 
       <div>
@@ -748,14 +775,12 @@ function KeyDatesView() {
         <Title order={4} mb="xs">
           {t('Final exam schedule')} <ReqInfo id="final-exam" />
         </Title>
-        {!EXAM_SCHEDULE_TERMS.includes(termName) ? (
-          <Text size="sm" c="dimmed">
-            {t("The {{term}} exam schedule isn't out yet. McGill publishes it during the term.", { term: term(termName) })}
-          </Text>
-        ) : (
           <Stack gap="sm">
             <Alert variant="light" color="yellow" icon={<IconAlertTriangle size={18} />}>
-              {t('Sample schedule. The official one is on McGill’s exams website; always check it before your exams.')} <ReqInfo id="final-sample" />
+              {termName === TERMS[0]
+                ? t('McGill’s December 2026 schedule, as of October 27. Rooms are posted on November 27 and times can change, so check McGill’s exams website before your exams. Anything marked estimated isn’t on it.')
+                : t('Estimated. McGill hasn’t posted the April schedule, so these dates are guesses inside the exam period, to help you plan until it’s out.')}{' '}
+              <ReqInfo id="final-sample" />
             </Alert>
             {myExams.length > 0 && (
               <Card withBorder padding="sm" style={{ background: 'var(--ul-soft)' }}>
@@ -763,12 +788,12 @@ function KeyDatesView() {
                   {t('Your final exams')} <ReqInfo id="final-mine" />
                 </Text>
                 {myExams.map((e) => (
-                  <Group key={e.course} gap="sm" wrap="nowrap" py={2}>
+                  <Group key={`${e.course}-${e.section}`} gap="sm" wrap="nowrap" py={2}>
                     <Text size="sm" fw={800} w={90} style={{ flex: 'none' }}>
                       {e.course}
                     </Text>
                     <Text size="sm" style={{ flex: 1 }}>
-                      {day(e.date)} · {e.start}–{e.end}
+                      {examTime(e)}
                     </Text>
                     {conflicts.has(e.course) && (
                       <WithInfo id="final-conflict">
@@ -800,7 +825,10 @@ function KeyDatesView() {
                 leftSection={<IconSearch size={16} />}
                 radius="xl"
                 value={search}
-                onChange={(e) => setSearch(e.currentTarget.value)}
+                onChange={(e) => {
+                  setSearch(e.currentTarget.value);
+                  setShownExams(EXAM_PAGE_SIZE);
+                }}
               />
             </WithInfo>
             <Table.ScrollContainer minWidth={520}>
@@ -819,26 +847,15 @@ function KeyDatesView() {
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
-                  {listed.map((e) => (
-                    <Table.Tr key={e.course} fw={myCourses.has(e.course) ? 800 : undefined}>
-                      <Table.Td>
-                        {e.course}
-                        <Text span size="xs" c="dimmed" ml={6}>
-                          {titles.get(e.course)}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td>
-                        {day(e.date)} · {e.start}–{e.end}
-                      </Table.Td>
-                      <Table.Td>{e.location}</Table.Td>
-                    </Table.Tr>
+                  {listed.slice(0, shownExams).map((e) => (
+                    <ExamRow key={`${e.course}-${e.section}`} exam={e} title={titles.get(e.course)} mine={myCourses.has(e.course)} />
                   ))}
                 </Table.Tbody>
               </Table>
             </Table.ScrollContainer>
+            {listed.length > shownExams && <LoadOnScroll label={t('Show more exams')} shown={shownExams} onMore={() => setShownExams(shownExams + EXAM_PAGE_SIZE)} />}
             </>}
           </Stack>
-        )}
       </div>
       )}
     </Stack>

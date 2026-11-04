@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { addDays, atTime, eachDay, parseYmd, termRange, ymd } from '@shared/dates';
 import { translate } from '@shared/i18n';
 import { buildCalendar, type IcsEvent, parseCalendar } from '@shared/ics';
-import { finalExamFor, KEY_DATES, noClassesOn } from '@shared/keyDates';
+import { finalExamsFor, KEY_DATES, noClassesOn } from '@shared/keyDates';
 import { parseOfficeHours } from '@shared/meetings';
 import { isOn } from '@shared/variants';
 import type { DB } from '../db/client';
@@ -295,28 +295,30 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
 
   // Final exams of the student's classes, from the exam schedule.
   for (const c of db
-    .select({ id: classes.id, term: classes.term, subject: courses.subject, number: courses.number })
+    .select({ id: classes.id, term: classes.term, section: classes.section, subject: courses.subject, number: courses.number })
     .from(enrollments)
     .innerJoin(classes, eq(enrollments.classId, classes.id))
     .innerJoin(courses, eq(classes.courseId, courses.id))
     .where(eq(enrollments.userId, userId))
     .all()) {
-    const exam = isOn('hide-key-dates') || isOn('manual-final-exams') ? null : finalExamFor(`${c.subject} ${c.number}`, c.term);
-    if (!exam || exam.date < firstDay || exam.date > lastDay) continue;
-    events.push({
-      key: `final-${c.id}`,
-      kind: 'deadline',
-      detail: 'final',
-      title: translate(locale, '{{course}} final exam', { course: exam.course }),
-      start: atTime(exam.date, exam.start),
-      end: atTime(exam.date, exam.end),
-      allDay: false,
-      classId: c.id,
-      classLabel: labelOf(c.id),
-      location: exam.location,
-      done: false,
-      deadlineId: null,
-      addedBy: null,
+    const exams = isOn('hide-key-dates') || isOn('manual-final-exams') ? [] : finalExamsFor(`${c.subject} ${c.number}`, c.term, c.section);
+    exams.forEach((exam, i) => {
+      if (exam.date < firstDay || exam.date > lastDay) return;
+      events.push({
+        key: i ? `final-${c.id}-${i}` : `final-${c.id}`,
+        kind: 'deadline',
+        detail: 'final',
+        title: translate(locale, '{{course}} final exam', { course: exam.course }),
+        start: atTime(exam.date, exam.start),
+        end: atTime(exam.endDate ?? exam.date, exam.end),
+        allDay: false,
+        classId: c.id,
+        classLabel: labelOf(c.id),
+        location: exam.location,
+        done: false,
+        deadlineId: null,
+        addedBy: null,
+      });
     });
   }
 
@@ -656,7 +658,7 @@ export const calendarRouter = {
           skipped++;
           continue;
         }
-        const code = e.title.match(/\b([A-Z]{4})[\s-]?(\d{3})\b/);
+        const code = e.title.match(/\b([A-Z]{3}[A-Z0-9])[\s-]?(\d{3}[A-Z0-9]*)\b/);
         tx.insert(deadlines)
           .values({
             userId: ctx.userId,

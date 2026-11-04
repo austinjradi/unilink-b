@@ -36,8 +36,8 @@ export function IntegrationsPanel() {
                 <IconBook size={22} />
               </ThemeIcon>
               <WithInfo id="catalogue-sample">
-                <Badge color="yellow" variant="light">
-                  {t('Sample data')}
+                <Badge color="teal" variant="light">
+                  {t('2026–2027 catalogue')}
                 </Badge>
               </WithInfo>
             </Group>
@@ -45,11 +45,11 @@ export function IntegrationsPanel() {
               {t('McGill course catalogue')} <ReqInfo id="integ-catalogue" />
             </Text>
             <Text size="sm" c="dimmed" style={{ flex: 1 }}>
-              {t('Powers class search. UniLink ships with a built-in sample of {{count}} courses for {{terms}}.', {
-                count: stats.data?.courses ?? 0,
+              {t('Powers class search, the course record and the degree plan: {{courses}} courses and {{programs}} programs from the 2026–2027 Course Catalogue, listed for {{terms}}.', {
+                courses: stats.data?.courses ?? 0,
+                programs: stats.data?.programs ?? 0,
                 terms: stats.data?.terms.map((name) => term(name)).join(` ${t('and')} `) ?? '…',
-              })}{' '}
-              {t('A full import from the McGill eCalendar is planned (tech team decision).')}
+              })}
             </Text>
           </Stack>
         </Card>

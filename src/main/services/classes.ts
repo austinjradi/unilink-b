@@ -1,11 +1,12 @@
 import { and, asc, count, eq, inArray, isNull, like, ne, notInArray, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { parseCourseQuery, parseSchedule, SUBJECT_FACULTY } from '@shared/courseQuery';
+import { type CourseRow, loadCourses, loadIndex, loadOfferings, loadSubjects, parseOffering, sectionsIn } from '@shared/catalogue';
+import { courseMatches, parseCourseQuery, parseSchedule } from '@shared/courseQuery';
 import { clashes, type MeetingTime } from '@shared/meetings';
 import { TERMS, ymd } from '@shared/dates';
 import { termWithExams } from '@shared/keyDates';
 import { isOn } from '@shared/variants';
-import type { DB } from '../db/client';
+import { type DB, stockCourses } from '../db/client';
 import { chatLinks, classDetails, classMeetings, classes, courses, deadlines, enrollments, postAudience, posts, replies, studySessionMembers, studySessions, users } from '../db/schema';
 import { AppError, type AuthedContext, idSchema, nonEmpty, procedure } from '../rpc/core';
 import { isMember, isProfessor, notFound, professorsOf, requireMember, sectionCode, teaches, firstSection } from './access';
@@ -222,6 +223,19 @@ function assertNoClash(ctx: AuthedContext, classId: number) {
   }
 }
 
+// With only the sample courses if the catalogue can't load, such as offline before it's been kept.
+const catalogueCourses = () => loadCourses().catch(() => [] as CourseRow[]);
+const catalogueSubjects = () => loadSubjects().catch(() => ({}) as Record<string, string>);
+const catalogueOfferings = () => loadOfferings().catch(() => ({}) as Record<string, string>);
+const toCourse = ([code, title, credits]: CourseRow) => ({ subject: code.split(' ')[0], number: code.split(' ')[1], title, credits: credits ?? 0 });
+
+// A course with the sections to list it under. `extra` is from someone who knows better than
+// the estimate: a term they asked for by the exact code, or a section on their own schedule.
+function withSections(course: ReturnType<typeof toCourse>, offerings: Record<string, string>, extra: { term: string; section: string }[] = []) {
+  const offering = parseOffering(offerings[`${course.subject} ${course.number}`]);
+  return { ...course, sections: [...(offering?.terms ?? TERMS).flatMap((term) => sectionsIn(course.number, offering, term).map((section) => ({ term, section }))), ...extra] };
+}
+
 export const catalogueRouter = {
   terms: procedure(z.void(), () => [...TERMS]),
 
@@ -236,18 +250,14 @@ export const catalogueRouter = {
     },
   ),
 
-  subjects: procedure(z.void(), (_input, ctx) =>
-    ctx.db
-      .selectDistinct({ subject: courses.subject })
-      .from(courses)
-      .orderBy(courses.subject)
-      .all()
-      .map((c) => c.subject),
-  ),
+  subjects: procedure(z.void(), async (_input, ctx) => {
+    const added = ctx.db.selectDistinct({ subject: courses.subject }).from(courses).all().map((c) => c.subject);
+    return [...new Set([...Object.keys(await catalogueSubjects()), ...added])].sort();
+  }),
 
-  stats: procedure(z.void(), (_input, ctx) => ({
-    courses: ctx.db.select({ n: count() }).from(courses).get()?.n ?? 0,
-    sections: ctx.db.select({ n: count() }).from(classes).get()?.n ?? 0,
+  stats: procedure(z.void(), async (_input, ctx) => ({
+    courses: (await catalogueCourses()).length || (ctx.db.select({ n: count() }).from(courses).get()?.n ?? 0),
+    programs: await loadIndex().then((index) => index.programs.length, () => 0),
     terms: [...TERMS],
   })),
 
@@ -262,9 +272,40 @@ export const catalogueRouter = {
       subject: z.string().nullable().default(null),
       faculty: z.string().nullable().default(null),
       credits: z.number().nullable().default(null),
+      // Which sections to list, a page at a time as the list scrolls.
+      limit: z.number().int().min(1).max(1000).nullable().default(null),
+      offset: z.number().int().min(0).default(0),
     }),
-    ({ query, term, level, subject, faculty, credits }, ctx) => {
+    async ({ query, term, level, subject, faculty, credits, limit: asked, offset }, ctx) => {
       const parsed = parseCourseQuery(query);
+      const limit = asked ?? (term ? 80 : 160);
+      const facultyOf = await catalogueSubjects();
+      const versionA = isOn('search-version-a');
+      const lowerQuery = query.toLowerCase();
+      const titleWords = lowerQuery.split(/\s+/).filter(Boolean);
+      // "COMP" lists COMP courses before titles that happen to contain it, like "Comparative Politics".
+      const subjectFirst = !versionA && parsed.kind === 'text' ? parsed.subject : null;
+      // The catalogue courses this search could show get their rows first. They're in the same
+      // order as the results, so these are enough to fill the list up to this page.
+      const offerings = await catalogueOfferings();
+      const askedFor = query.replace(/[\s-]/g, '').toUpperCase();
+      const isExact = (c: { subject: string; number: string }) => askedFor === `${c.subject}${c.number}`;
+      const found = (await catalogueCourses()).map(toCourse).filter((c) => {
+        const offering = parseOffering(offerings[`${c.subject} ${c.number}`]);
+        if (term && offering && !offering.terms.includes(term) && !isExact(c)) return false;
+        if (level && !c.number.startsWith(String(level)[0])) return false;
+        if (subject && c.subject !== subject) return false;
+        if (faculty && facultyOf[c.subject] !== faculty) return false;
+        if (credits && c.credits !== credits) return false;
+        if (!versionA) return courseMatches(parsed, c.subject, c.number, c.title);
+        return !query || `${c.subject} ${c.number}`.toLowerCase().includes(lowerQuery) || titleWords.every((word) => c.title.toLowerCase().includes(word));
+      });
+      stockCourses(
+        ctx.db,
+        [...found.filter((c) => c.subject === subjectFirst), ...found.filter((c) => c.subject !== subjectFirst)]
+          .slice(0, offset + limit)
+          .map((c) => withSections(c, offerings, term && isExact(c) ? sectionsIn(c.number, parseOffering(offerings[`${c.subject} ${c.number}`]), term).map((section) => ({ term, section })) : [])),
+      );
       const myRows = ctx.db
         .select({ classId: enrollments.classId, courseId: classes.courseId, term: classes.term })
         .from(enrollments)
@@ -282,7 +323,7 @@ export const catalogueRouter = {
           ? or(sql`lower(${courses.subject} || ' ' || ${courses.number}) like ${`%${query.toLowerCase()}%`}`, and(...words.map((w) => sql`lower(${courses.title}) like ${`%${w}%`}`)))
           : undefined
         : parsed.kind === 'code'
-          ? and(parsed.subject ? eq(courses.subject, parsed.subject) : undefined, like(courses.number, parsed.number))
+          ? and(parsed.subject ? eq(courses.subject, parsed.subject) : undefined, like(courses.number, `${parsed.number}%`))
           : parsed.words.length
             ? or(
                 parsed.subject ? eq(courses.subject, parsed.subject) : undefined,
@@ -290,20 +331,21 @@ export const catalogueRouter = {
               )
             : undefined;
       const match = query && isOn('search-professors') ? or(wording, taughtBy) : wording;
-      const inFaculty = Object.keys(SUBJECT_FACULTY).filter((s) => SUBJECT_FACULTY[s] === faculty);
+      const inFaculty = Object.keys(facultyOf).filter((s) => facultyOf[s] === faculty);
       const rows = classRows(ctx.db)
         .where(
           and(
             term ? eq(classes.term, term) : undefined,
-            level ? like(courses.number, `${String(level)[0]}__`) : undefined,
+            level ? like(courses.number, `${String(level)[0]}%`) : undefined,
             subject ? eq(courses.subject, subject) : undefined,
             faculty ? inArray(courses.subject, inFaculty) : undefined,
             credits ? eq(courses.credits, credits) : undefined,
             match,
           ),
         )
-        .orderBy(courses.subject, courses.number, classes.term, classes.section)
-        .limit(term ? 80 : 160)
+        .orderBy(sql`${courses.subject} is not ${subjectFirst}`, courses.subject, courses.number, classes.term, classes.section)
+        .limit(limit)
+        .offset(offset)
         .all();
       const schedule = schedules(ctx.db, ctx.userId, rows);
       const oneClass = isOn('one-class-per-course');
@@ -324,9 +366,28 @@ export const catalogueRouter = {
 export const classesRouter = {
   // The sections in a pasted schedule, to review before joining. With no section given it's
   // the course's first one. `missing` is for what the catalogue doesn't have.
-  matchSchedule: procedure(z.object({ text: z.string().max(20_000), term: z.string() }), ({ text, term }, ctx) => {
+  matchSchedule: procedure(z.object({ text: z.string().max(20_000), term: z.string() }), async ({ text, term }, ctx) => {
     const professor = isProfessor(ctx.db, ctx.userId);
-    return parseSchedule(text).map(({ subject, number, section }) => {
+    const pasted = parseSchedule(text);
+    const codes = new Set(pasted.map((c) => `${c.subject} ${c.number}`));
+    const offerings = await catalogueOfferings();
+    stockCourses(
+      ctx.db,
+      (await catalogueCourses())
+        .filter(([code]) => codes.has(code))
+        .map(toCourse)
+        .map((c) =>
+          withSections(
+            c,
+            offerings,
+            // It's on their schedule, so it runs then whatever the estimate says.
+            pasted
+              .filter((p) => p.subject === c.subject && p.number === c.number)
+              .flatMap((p) => (p.section ? [{ term, section: p.section }] : sectionsIn(c.number, parseOffering(offerings[`${c.subject} ${c.number}`]), term).map((section) => ({ term, section })))),
+          ),
+        ),
+    );
+    return pasted.map(({ subject, number, section }) => {
       const label = `${subject} ${number}${section ? `-${section}` : ''}`;
       const sections = classRows(ctx.db)
         .where(and(eq(courses.subject, subject), eq(courses.number, number), eq(classes.term, term)))

@@ -81,7 +81,7 @@ const ALT = {
   'student-mod': 'Let students moderate together, with posts hidden after enough reports.',
   'section-a': 'Version A: one class per course per term, shared by all its sections.',
   'section-many': 'Allow being in several sections of one course, such as a lecture and a lab.',
-  'catalogue-live': 'Import the real McGill eCalendar instead of a built-in sample.',
+  'catalogue-live': 'Keep the catalogue in step with a live McGill feed instead of importing the yearly PDF.',
   'shared-a': 'Version A: personal; each student enters their own, and only they see it.',
   'shared-official': 'Take this from an official McGill source, so nobody has to enter it.',
   'shared-review': 'Keep it shared, but have a classmate approve changes before everyone sees them.',
@@ -114,7 +114,7 @@ const ALT = {
   'marks-share': "Let students compare marks with the section's anonymous average.",
   'a1-minerva': "Read the record from Minerva, so it doesn't have to be entered.",
   'a1-none': 'Leave this out: Minerva already keeps the official record.',
-  'a2-real': 'Use real McGill program requirements from the eCalendar.',
+  'a2-real': "Use McGill's own requirement data instead of working out rules from the catalogue's text.",
   'a2-audit': "Send students to Minerva's degree evaluation instead of calculating here.",
   'st1-block': 'Block distracting websites with a companion browser extension, the planned route.',
   'st1-manual': 'Make study mode manual only, with nothing automatic.',
@@ -715,8 +715,8 @@ export const REQ_TOPICS = {
   'tab-degree': {
     title: 'Degree plan',
     board: ['A2'],
-    how: "Which of your courses count toward your program and what's left. It uses sample programs only, because no McGill program data source exists yet.",
-    alternatives: ["Import real requirements from McGill's eCalendar.", "Link to McGill's degree audit instead of building a plan here."],
+    how: "Which of your courses count toward your program and what's left, for any of the catalogue's programs. Rules like \"at least 3 credits from each group\" are worked out from the program's text, so it's a guide.",
+    alternatives: [ALT['a2-real'], "Link to McGill's degree audit instead of building a plan here."],
   },
   'course-card': {
     title: 'Course card',
@@ -791,9 +791,9 @@ export const REQ_TOPICS = {
     alternatives: [ALT['section-a'], ALT['section-many']],
   },
   'catalogue-sample': {
-    title: 'Sample catalogue',
+    title: 'Course catalogue',
     board: ['G2', 'S1'],
-    how: "The board's McGill course catalogue integration is a built-in sample of courses here, not the full McGill eCalendar.",
+    how: "Every course in McGill's 2026–27 catalogue can be found and joined. Fall sections on the December exam schedule are real. Other terms and sections are estimates from course codes, titles and program lists.",
     alternatives: [ALT['catalogue-live'], "Let students add a course that's missing from the catalogue."],
   },
   'class-page': {
@@ -913,7 +913,7 @@ export const REQ_TOPICS = {
   'final-exam': {
     title: 'Final exam',
     board: ['A3'],
-    how: "Your final from the exam schedule, on your calendar and each class page. It's a sample schedule for now, because the real one is published per course during the term.",
+    how: "Your final from the exam schedule, on your calendar and each class page. Fall is McGill's December 2026 schedule. Winter is an estimate until April's is posted.",
     alternatives: ["Version A: term key dates and final exams aren't included.", 'Have students enter final exams by hand, like any exam date.'],
   },
   'classmates-card': {
@@ -1457,9 +1457,9 @@ export const REQ_TOPICS = {
     alternatives: ['Show only upcoming dates and hide the ones that have passed.'],
   },
   'final-sample': {
-    title: 'Sample exam schedule',
+    title: 'Where exam dates come from',
     board: ['A3'],
-    how: 'The real schedule is published per course during the term and would need an import, like the catalogue. This is a sample until then.',
+    how: "Fall comes from McGill's December 2026 schedule, imported like the catalogue. Winter dates are estimates inside the exam period, for courses likely to run then and have a final. A demo course that isn't on the schedule is marked as an estimate too.",
     alternatives: [ALT['key-a'], "Import the official schedule when it's published."],
   },
   'final-mine': {
@@ -2029,7 +2029,7 @@ export const REQ_TOPICS = {
   'degree-sample': {
     title: 'Sample programs',
     board: ['A2'],
-    how: "They show how degree planning works and aren't official. No McGill program data source exists yet.",
+    how: "They show how degree planning works and aren't official. Only accounts that already picked one see them; everyone else picks from the catalogue's programs.",
     alternatives: [ALT['a2-real'], ALT['a2-audit']],
   },
   'degree-result': {
@@ -2053,7 +2053,7 @@ export const REQ_TOPICS = {
   'degree-group': {
     title: 'Requirement group',
     board: ['A2'],
-    how: 'Required courses, or a number of credits to choose from a list, with what counts so far.',
+    how: "Required courses, or a number of credits to choose from a list, with what counts so far and how you stand on the rules in the program's text.",
     alternatives: [ALT['a2-real'], "List only what's left, and leave out what's done."],
   },
   'degree-plan-it': {
@@ -2209,7 +2209,7 @@ export const REQ_TOPICS = {
   'integ-catalogue': {
     title: 'McGill course catalogue',
     board: ['G2', 'S1'],
-    how: "Powers class search. It's a built-in sample for now, and the board calls the full import a tech team decision.",
+    how: "Powers class search, the course record and the degree plan, from a snapshot of the 2026–27 catalogue.",
     alternatives: [ALT['catalogue-live']],
   },
   'integ-gcal': {

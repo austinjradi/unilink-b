@@ -1,7 +1,7 @@
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { RECORD_GRADES, RECORD_STATUSES } from '@shared/academics';
-import { degreeLabel, loadCourses, loadPrograms, toDegreeProgram } from '@shared/catalogue';
+import { courseParts, degreeLabel, loadCourses, loadIndex, loadPrereqs, loadPrograms, toDegreeProgram } from '@shared/catalogue';
 import { evaluateDegree, type Program } from '@shared/degree';
 import { summarize } from '@shared/grades';
 import { CURRENT_TERM } from '@shared/dates';
@@ -21,14 +21,14 @@ const code = z
   .string()
   .trim()
   .toUpperCase()
-  .transform((s) => s.replace(/^([A-Z]{4})\s*-?\s*(\d{3}[A-Z0-9]*)$/, '$1 $2'))
-  .refine((s) => /^[A-Z]{4} \d{3}[A-Z0-9]*$/.test(s), 'Use a course code like "COMP 251"');
+  .transform((s) => s.replace(/^([A-Z]{3}[A-Z0-9])\s*-?\s*(\d{3}[A-Z0-9]*)$/, '$1 $2'))
+  .refine((s) => /^[A-Z]{3}[A-Z0-9] \d{3}[A-Z0-9]*$/.test(s), 'Use a course code like "COMP 251"');
 
 const recordFields = z
   .object({
     code,
     title: z.string().trim().max(200),
-    credits: z.number().min(0).max(12),
+    credits: z.number().min(0).max(30),
     term: z.string().regex(/^(Winter|Summer|Fall) \d{4}$/, 'Pick a term'),
     status: z.enum(RECORD_STATUSES),
     grade: z.enum(RECORD_GRADES as [string, ...string[]]).nullable(),
@@ -42,10 +42,10 @@ const checkUnlocked = (record: { status: string }) => {
 };
 
 // 'check-prereqs': the sample rules stop a plan that can't happen.
-function checkPlan(db: DB, userId: number, fields: { code: string; term: string; status: string }, id?: number) {
+async function checkPlan(db: DB, userId: number, fields: { code: string; term: string; status: string }, id?: number) {
   if (!isOn('check-prereqs') || fields.status !== 'planned') return;
   const record = db.select().from(courseRecords).where(eq(courseRecords.userId, userId)).all().filter((r) => r.id !== id);
-  const reason = whyCantPlan(fields.code, fields.term, record);
+  const reason = whyCantPlan(fields.code, fields.term, record, await loadPrereqs().catch(() => undefined));
   if (reason) throw new AppError(reason, 'BAD_INPUT');
 }
 
@@ -74,6 +74,9 @@ function catalogueTitle(db: DB, courseCode: string) {
       .get()?.title ?? ''
   );
 }
+
+// A course in the full catalogue that nobody has added yet isn't in the database.
+const inFullCatalogue = async (compact: string) => (await loadCourses().catch(() => [])).find(([courseCode]) => courseCode.replace(' ', '') === compact);
 
 function myClasses(db: DB, userId: number) {
   return db
@@ -120,8 +123,8 @@ export const recordRouter = {
     });
   }),
 
-  add: procedure(recordFields, (fields, ctx) => {
-    checkPlan(ctx.db, ctx.userId, fields);
+  add: procedure(recordFields, async (fields, ctx) => {
+    await checkPlan(ctx.db, ctx.userId, fields);
     const dup = ctx.db
       .select({ id: courseRecords.id })
       .from(courseRecords)
@@ -130,12 +133,12 @@ export const recordRouter = {
     if (dup) throw new AppError('{{code}} is already in your record for {{term}}.', 'CONFLICT', { code: fields.code, term: { term: fields.term } });
     ctx.db
       .insert(courseRecords)
-      .values({ ...fields, title: fields.title || catalogueTitle(ctx.db, fields.code), userId: ctx.userId })
+      .values({ ...fields, title: fields.title || catalogueTitle(ctx.db, fields.code) || ((await inFullCatalogue(fields.code.replace(' ', '')))?.[1] ?? ''), userId: ctx.userId })
       .run();
   }),
 
-  update: procedure(z.object({ id: idSchema }).and(recordFields), ({ id, ...fields }, ctx) => {
-    checkPlan(ctx.db, ctx.userId, fields, id);
+  update: procedure(z.object({ id: idSchema }).and(recordFields), async ({ id, ...fields }, ctx) => {
+    await checkPlan(ctx.db, ctx.userId, fields, id);
     checkUnlocked(ownRecord(ctx.db, ctx.userId, id));
     ctx.db.update(courseRecords).set(fields).where(eq(courseRecords.id, id)).run();
   }),
@@ -166,15 +169,16 @@ export const recordRouter = {
   }),
 
   // Catalogue lookup for the "add course" form.
-  lookup: procedure(z.object({ code: z.string() }), ({ code: raw }, ctx) => {
-    const compact = raw.replace(/\s+/g, '').toUpperCase();
-    return (
-      ctx.db
-        .select({ subject: courses.subject, number: courses.number, title: courses.title, credits: courses.credits })
-        .from(courses)
-        .where(sql`upper(${courses.subject} || ${courses.number}) = ${compact}`)
-        .get() ?? null
-    );
+  lookup: procedure(z.object({ code: z.string() }), async ({ code: raw }, ctx) => {
+    const compact = raw.replace(/[\s-]+/g, '').toUpperCase();
+    const added = ctx.db
+      .select({ subject: courses.subject, number: courses.number, title: courses.title, credits: courses.credits })
+      .from(courses)
+      .where(sql`upper(${courses.subject} || ${courses.number}) = ${compact}`)
+      .get();
+    if (added) return added;
+    const row = await inFullCatalogue(compact);
+    return row ? { ...courseParts(row[0]), title: row[1], credits: row[2] ?? 3 } : null;
   }),
 };
 
@@ -189,10 +193,16 @@ const findProgram = async (programId: string | null | undefined): Promise<Progra
 };
 
 export const degreeRouter = {
-  programs: procedure(z.void(), async () => [
-    ...(await loadPrograms()).map((p) => ({ id: p.id, name: p.name, degree: degreeLabel(p.name, p.degrees), totalCredits: p.credits ?? 0 })),
-    ...PROGRAMS.map(({ id, name, degree, totalCredits }) => ({ id, name, degree, totalCredits })),
-  ]),
+  // Every program, under the part of the catalogue it's in. A sample only shows for an account using it.
+  programs: procedure(z.void(), async (_input, ctx) => {
+    const [programs, index] = await Promise.all([loadPrograms(), loadIndex()]);
+    const partOf = new Map(index.programs.map((p) => [p.id, p.part]));
+    const current = ctx.db.select({ id: users.degreeProgramId }).from(users).where(eq(users.id, ctx.userId)).get()?.id;
+    return [
+      ...programs.map((p) => ({ id: p.id, name: p.name, degree: degreeLabel(p.name, p.degrees), totalCredits: p.credits ?? 0, group: partOf.get(p.id) ?? null })),
+      ...PROGRAMS.filter((p) => p.id === current).map(({ id, name, degree, totalCredits }) => ({ id, name, degree, totalCredits, group: null })),
+    ];
+  }),
 
   select: procedure(z.object({ programId: z.string().nullable() }), async ({ programId }, ctx) => {
     if (programId && !(await findProgram(programId))) notFound('program');

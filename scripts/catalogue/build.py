@@ -11,6 +11,9 @@ while reading the catalogue 20 pages at a time (see next_batch.py).
 import collections, glob, json, os, re, sys, unicodedata
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.dont_write_bytecode = True
+sys.path.insert(0, HERE)
+import infer
 # The catalogue's parts and where each starts. Its contents pages indent these inconsistently.
 PARTS = [
     ('About this publication', 1), ('University Regulations', 20), ('University and Facilities', 71), ('Agricultural & Environmental Sciences', 87),
@@ -144,8 +147,9 @@ def section_kind(title):
         return 'required'
     return 'choose'
 
-def build_programs(sections):
+def build_programs(sections, lines_of=None):
     programs, ids = [], collections.Counter()
+    lines_of = {} if lines_of is None else lines_of
     i = 0
     while i < len(sections):
         section = sections[i]
@@ -187,6 +191,8 @@ def build_programs(sections):
                     lines = []
                 else:
                     text = block['text']
+                    if current is not None:
+                        lines_of.setdefault((pid, len(program['parts']) - 1), []).append(text)
                     if current is not None and len(text.split()) <= SHORT_LINE and re.search(r'(?i)credit|crédit|one of|from|or$|^or\b', text):
                         lines.append(text)
                     elif not re.match(r'^(Offered by:|Expand all)', text) and not title.startswith('Degree Requirements'):
@@ -263,6 +269,53 @@ def build_awards(sections, toc_of):
         kind = next((k for k, p in [('Loan', 'Loan Fund'), ('Loan', 'Aid Fund'), ('Medal', 'Medal'), ('Prize', 'Prize'), ('Bursary', 'Bursar'), ('Scholarship', 'Scholarship'), ('Award', 'Award'), ('Fellowship', 'Fellowship')] if p.lower() in section['title'].lower()), 'Award')
         out.append({'name': section['title'], 'kind': kind, 'value': value.group(1).strip() if value else None, 'faculty': path, 'page': section['page'], 'key': section['key']})
     return out
+
+# --- Which faculty each subject belongs to ------------------------------------------------------
+
+FACULTY_NAMES = {
+    'Faculty of Arts': 'Arts', 'Arts': 'Arts',
+    'Faculty of Science': 'Science', 'Science': 'Science',
+    'Faculty of Agricultural and Environmental Sciences': 'Agricultural and Environmental Sciences',
+    'Agricultural & Environmental Sciences': 'Agricultural and Environmental Sciences',
+    'Desautels Faculty of Management': 'Management', 'Management': 'Management',
+    'Faculty of Engineering': 'Engineering', 'Engineering': 'Engineering',
+    'Schulich School of Music': 'Music', 'Music': 'Music',
+    'Faculty of Education': 'Education', 'Education': 'Education',
+    'Environment': 'Environment',
+    'Faculty of Medicine and Health Sciences': 'Medicine and Health Sciences', 'Medicine & Health Sciences': 'Medicine and Health Sciences',
+    'Nursing': 'Medicine and Health Sciences', 'Physical & Occupational Therapy': 'Medicine and Health Sciences',
+    'Faculty of Dental Medicine and Oral Health Sciences': 'Dental Medicine and Oral Health Sciences',
+    'Dental Medicine & Oral Health Sciences': 'Dental Medicine and Oral Health Sciences',
+    'Faculty of Law': 'Law', 'Law': 'Law',
+}
+
+# Subjects other faculties' programs list more often than the faculty that runs them.
+SUBJECT_FACULTY_FIXES = {
+    'ENVB': 'Agricultural and Environmental Sciences', 'NRSC': 'Agricultural and Environmental Sciences', 'WILD': 'Agricultural and Environmental Sciences',
+    'FRSL': 'Arts', 'INDR': 'Arts', 'WCOM': 'Arts', 'FSCI': 'Science', 'URBP': 'Engineering', 'NUR2': 'Medicine and Health Sciences',
+    # Only on the December exam schedule, and all from the School of Continuing Studies.
+    **{subject: 'Continuing Studies' for subject in 'CACC CACF CCAU CCCS CCFA CCFC CCLW CCMA CCTX CEC2 CGMG CMIS CMR2 CMRK CMSC CORG CPL2 CTPT'.split()},
+}
+
+def build_subjects(programs, sections, top_of):
+    """The catalogue doesn't say who runs each subject, so it's whichever faculty's programs list it most."""
+    votes, by_part = {}, {}
+    for program in programs:
+        faculty = FACULTY_NAMES.get(program['faculty'])
+        for part in program['parts']:
+            for course_list in part['lists']:
+                for code in course_list['courses']:
+                    if faculty:
+                        votes.setdefault(code.split()[0], collections.Counter())[faculty] += 1
+    # A subject in no program, like Anesthesia's, goes with the part of the catalogue that lists it.
+    for section in sections:
+        faculty = FACULTY_NAMES.get(top_of(section))
+        for block in section['blocks']:
+            if block['type'] == 'courses' and faculty:
+                for row in block['rows']:
+                    by_part.setdefault(row['code'].split()[0], faculty)
+    subjects = {**by_part, **{subject: tally.most_common(1)[0][0] for subject, tally in votes.items()}, **SUBJECT_FACULTY_FIXES}
+    return dict(sorted(subjects.items()))
 
 # --- Everything else: the guide ---------------------------------------------------------------
 
@@ -349,16 +402,26 @@ def print_batch(work, first, last):
     left = sum(1 for s in sections if s['shared'] == s['key'] and s['key'] not in notes and needs_note(s) and s['page'] > last)
     print(f'--- {left} sections left after page {last}')
 
+def sample_courses():
+    # The demo's courses, in both terms because its people and their classes rely on that.
+    with open(f'{HERE}/../../src/main/db/catalogue.ts', encoding='utf8') as f:
+        return {f'{a} {b}' for a, b in re.findall(r"\['([A-Z0-9]{4})', '(\w+)', '", f.read())}
+
 def main(work, out):
     os.makedirs(out, exist_ok=True)
     sections = load(work)
     toc = read_toc(work)
-    programs = build_programs(sections)
+    lines_of = {}
+    programs = build_programs(sections, lines_of)
+    print('program rules:', dict(infer.add_rules(programs, lines_of)))
     for program in programs:
         program['part'] = top_of(program)
         if not program['faculty'] or ';' in program['faculty'] or not program['faculty'].startswith(('Faculty', 'Desautels', 'Schulich', 'School', 'Ingram')):
             program['faculty'] = program['part']
     courses = build_courses(sections)
+    exam_rows = infer.read_exams(work)
+    infer.add_scheduled_courses(courses, exam_rows, NO_TITLE)
+    subjects = build_subjects(programs, sections, top_of)
     contacts = build_contacts(sections, top_of)
     awards = build_awards(sections, top_of)
     notes = load_notes()
@@ -442,6 +505,10 @@ def main(work, out):
     write('awards', awards)
     write('guide', guide)
     write('contents', toc)
+    write('subjects', subjects)
+    write('exams', infer.build_exams(exam_rows, courses))
+    write('offerings', infer.build_offerings(courses, exam_rows, programs, sample_courses()))
+    write('prereqs', infer.build_prereqs(courses))
     print(f'summarized {words_done}/{words_total} words of running text ({100 * words_done // max(words_total, 1)}%), {missing} sections to go')
 
 if __name__ == '__main__':

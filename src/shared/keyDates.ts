@@ -1,10 +1,12 @@
+import schedule from './catalogue/data/exams.json';
+
 // A3: the term's key dates and the final exam schedule. Like the course catalogue (G2),
 // these are built in until there's an import from McGill.
 //
 // Key dates follow McGill's published 2026–2027 dates (mcgill.ca/importantdates); the
 // Winter course-change and withdrawal deadlines weren't out yet, so they're marked
-// approximate. The exam schedule is a SAMPLE: McGill publishes the real one per course
-// during the term (mcgill.ca/exams).
+// approximate. Fall exams are McGill's December 2026 schedule, in catalogue/data/exams.json.
+// April's isn't out, so Winter exams are estimates, each marked as one.
 
 // Breaks and holidays have no classes; weekly class times skip them.
 export type KeyDateType = 'deadline' | 'milestone' | 'break' | 'holiday';
@@ -62,12 +64,15 @@ export function termWithExams(term: string): { start: string; end: string } | nu
 }
 
 export interface FinalExam {
-  course: string; // "COMP 251": every section writes the same exam
+  course: string; // "COMP 251"
   term: string;
   date: string;
   start: string; // "HH:mm"
   end: string;
+  endDate?: string; // for an exam that runs over several days, like a take-home
   location: string;
+  section?: string; // "001", or "001L" for its lab exam
+  estimated?: boolean; // not from McGill's schedule
 }
 
 // Three sittings a day, as in McGill's exam timetables.
@@ -75,57 +80,76 @@ const MORNING = ['09:00', '12:00'] as const;
 const AFTERNOON = ['14:00', '17:00'] as const;
 const EVENING = ['18:30', '21:30'] as const;
 
-const exam = (course: string, date: string, [start, end]: readonly [string, string], location: string): FinalExam => ({
+const NOT_ON_SCHEDULE = 'Estimated: not on the December schedule';
+const NOT_POSTED = 'Estimated: April schedule not posted';
+
+// The demo's courses that aren't on the December schedule. Its people are in them, so they keep a date.
+const estimate = (course: string, date: string, [start, end]: readonly [string, string]): FinalExam => ({
   course,
   term: 'Fall 2026',
   date,
   start,
   end,
-  location,
+  location: NOT_ON_SCHEDULE,
+  estimated: true,
 });
 
-// SAMPLE Fall 2026 schedule for the built-in catalogue.
+// Rows are [course, section, kind, start date, start time, end date, end time].
+const onSchedule: FinalExam[] = (schedule.rows as [string, string, number, string, string, string, string][]).map(([course, section, kind, date, start, endDate, end]) => ({
+  course,
+  term: 'Fall 2026',
+  date,
+  start,
+  end,
+  ...(endDate === date ? {} : { endDate }),
+  location: schedule.kinds[kind],
+  section,
+}));
+
+// Every Fall 2026 final.
 export const FINAL_EXAMS: FinalExam[] = [
-  exam('BIOL 111', '2026-12-10', MORNING, 'Currie Gym'),
-  exam('BIOL 112', '2026-12-16', AFTERNOON, 'Currie Gym'),
-  exam('CHEM 110', '2026-12-08', MORNING, 'Field House'),
-  exam('CHEM 120', '2026-12-18', MORNING, 'Field House'),
-  exam('COMP 202', '2026-12-11', AFTERNOON, 'Field House'),
-  exam('COMP 206', '2026-12-15', MORNING, 'Leacock 132'),
-  exam('COMP 250', '2026-12-09', EVENING, 'Currie Gym'),
-  exam('COMP 251', '2026-12-14', AFTERNOON, 'Field House'),
-  exam('COMP 273', '2026-12-17', MORNING, 'Leacock 132'),
-  exam('COMP 302', '2026-12-08', AFTERNOON, 'Leacock 132'),
-  exam('COMP 303', '2026-12-19', MORNING, 'Trottier 0100'),
-  exam('COMP 307', '2026-12-12', AFTERNOON, 'Trottier 0060'),
-  exam('COMP 330', '2026-12-21', AFTERNOON, 'Trottier 0100'),
-  exam('COMP 360', '2026-12-16', EVENING, 'Trottier 0060'),
-  exam('COMP 421', '2026-12-10', AFTERNOON, 'Stewart Biology S1/4'),
-  exam('COMP 424', '2026-12-18', AFTERNOON, 'Stewart Biology S1/4'),
-  exam('COMP 551', '2026-12-22', MORNING, 'Leacock 132'),
-  exam('ECON 208', '2026-12-07', MORNING, 'Currie Gym'),
-  exam('ECON 209', '2026-12-14', MORNING, 'Currie Gym'),
-  exam('ECSE 200', '2026-12-09', MORNING, 'McConnell 204'),
-  exam('ECSE 202', '2026-12-12', MORNING, 'McConnell 204'),
-  exam('ECSE 205', '2026-12-15', AFTERNOON, 'Rutherford Physics 112'),
-  exam('ECSE 222', '2026-12-18', EVENING, 'McConnell 204'),
-  exam('MATH 133', '2026-12-07', AFTERNOON, 'Field House'),
-  exam('MATH 140', '2026-12-10', EVENING, 'Field House'),
-  exam('MATH 141', '2026-12-17', AFTERNOON, 'Field House'),
-  exam('MATH 222', '2026-12-11', MORNING, 'Currie Gym'),
-  exam('MATH 223', '2026-12-19', AFTERNOON, 'Burnside 1B45'),
-  exam('MATH 235', '2026-12-14', EVENING, 'Burnside 1B36'),
-  exam('MATH 240', '2026-12-16', MORNING, 'Leacock 132'),
-  exam('MATH 323', '2026-12-21', MORNING, 'Leacock 132'),
-  exam('MATH 324', '2026-12-09', AFTERNOON, 'Burnside 1B45'),
-  exam('MGCR 211', '2026-12-12', EVENING, 'Bronfman 151'),
-  exam('PHYS 131', '2026-12-15', EVENING, 'Field House'),
-  exam('PHYS 142', '2026-12-08', EVENING, 'Rutherford Physics 112'),
-  exam('PSYC 100', '2026-12-19', EVENING, 'Field House'),
+  ...onSchedule,
+  estimate('BIOL 112', '2026-12-16', AFTERNOON),
+  estimate('CHEM 120', '2026-12-18', MORNING),
+  estimate('COMP 202', '2026-12-11', AFTERNOON),
+  estimate('COMP 251', '2026-12-14', AFTERNOON),
+  estimate('COMP 421', '2026-12-10', AFTERNOON),
+  estimate('ECSE 202', '2026-12-12', MORNING),
+  estimate('PHYS 142', '2026-12-08', EVENING),
 ];
 
-// Terms whose exam schedule is out (the rest show "not published yet").
-export const EXAM_SCHEDULE_TERMS = ['Fall 2026'];
+const fallExams = new Map<string, FinalExam[]>();
+for (const exam of FINAL_EXAMS) fallExams.set(exam.course, [...(fallExams.get(exam.course) ?? []), exam]);
+const noFinal = new Set(schedule.noFinal);
+
+// The April exam period without its Sundays, and a sitting picked from the code. McGill's schedule
+// will differ; this is so a Winter course has something to plan around until it's out.
+const APRIL_DAYS = Array.from({ length: 15 }, (_, i) => `2027-04-${16 + i}`).filter((d) => new Date(`${d}T12:00`).getDay() !== 0);
+const SITTINGS = [MORNING, AFTERNOON, EVENING];
+
+function aprilExam(course: string): FinalExam | null {
+  const level = Number(course.split(' ')[1]?.[0]);
+  if (noFinal.has(course) || (level >= 5 && !fallExams.has(course))) return null;
+  const hash = [...course].reduce((sum, letter) => (sum * 31 + letter.charCodeAt(0)) % 9973, 7);
+  const [start, end] = SITTINGS[hash % SITTINGS.length];
+  return { course, term: 'Winter 2027', date: APRIL_DAYS[hash % APRIL_DAYS.length], start, end, location: NOT_POSTED, estimated: true };
+}
+
+// A course's finals in a term: for one section with its lab exam, or the first section when that one isn't listed.
+export function finalExamsFor(course: string, term: string, section?: string): FinalExam[] {
+  if (term === 'Winter 2027') {
+    const exam = aprilExam(course);
+    return exam ? [exam] : [];
+  }
+  if (term !== 'Fall 2026') return [];
+  const rows = fallExams.get(course) ?? [];
+  const lectures = rows.filter((e) => !e.section?.endsWith('L')).map((e) => e.section);
+  if (!lectures.length) return rows;
+  const mine = section && lectures.includes(section) ? section : lectures[0];
+  return rows.filter((e) => e.section === mine || e.section === `${mine}L`);
+}
+
+export const finalExamFor = (course: string, term: string, section?: string): FinalExam | null => finalExamsFor(course, term, section)[0] ?? null;
 
 // A student's exams that overlap, or at least fall on the same day, by course.
 export function examConflicts(exams: Pick<FinalExam, 'course' | 'date' | 'start' | 'end'>[]) {
@@ -138,5 +162,3 @@ export function examConflicts(exams: Pick<FinalExam, 'course' | 'date' | 'start'
   }
   return conflicts;
 }
-
-export const finalExamFor = (course: string, term: string) => FINAL_EXAMS.find((e) => e.course === course && e.term === term) ?? null;

@@ -79,7 +79,7 @@ export function Overview({ classId, cls }: { classId: number; cls: Out<typeof rp
               </Button>
             </SectionCard>
           ) : (
-            <ComingUp classId={classId} exam={noFinal ? null : finalExamFor(`${cls.subject} ${cls.number}`, cls.term)} />
+            <ComingUp classId={classId} exam={noFinal ? null : finalExamFor(`${cls.subject} ${cls.number}`, cls.term, cls.section)} />
           )}
           <MembershipCard cls={cls} />
         </Stack>

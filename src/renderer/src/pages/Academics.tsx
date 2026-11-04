@@ -1,8 +1,9 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import {
   ActionIcon,
   Alert,
   Anchor,
+  Autocomplete,
   Badge,
   Button,
   Card,
@@ -29,18 +30,21 @@ import { useLocalStorage } from '@mantine/hooks';
 import { IconAlertTriangle, IconCertificate, IconCircleCheck, IconClipboardText, IconDownload, IconListDetails, IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
+import { loadCourses } from '@shared/catalogue';
 import { goalOutlook, gpaTrend, OTHER_GRADES, RECORD_GRADES, RECORD_STATUSES, type RecordStatus, summarizeRecord, termOptions, termOrder } from '@shared/academics';
 import { CURRENT_TERM } from '@shared/dates';
 import { whyCantPlan } from '@shared/prereqs';
-import { graduationPace } from '@shared/degree';
+import { type RuleResult, graduationPace } from '@shared/degree';
 import { letterFor } from '@shared/grades';
 import { parseTranscript } from '@shared/transcript';
+import { PlanHint, usePrereqs } from '../components/CourseFacts';
 import { GpaTrend } from '../components/GpaTrend';
 import type { ReqTopicId } from '../lib/reqTopics';
 import { Covered, Empty, Loading, SectionCard } from '../components/ui';
 import { useAction, useMe } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
 import { t, term, tx } from '../lib/i18n';
+import { CatalogueLink } from '../components/CatalogueLink';
 import { ReqInfo, WithInfo } from '../components/ReqInfo';
 import { useVariant } from '../lib/variants';
 
@@ -501,7 +505,7 @@ function RecordTab({ onEdit }: { onEdit: (r: CourseRecord) => void }) {
                     .map((r) => (
                       <Table.Tr key={r.id}>
                         <Table.Td w={110} fw={600}>
-                          {r.code}
+                          <CatalogueLink code={r.code}>{r.code}</CatalogueLink>
                         </Table.Td>
                         <Table.Td>{r.title}</Table.Td>
                         <Table.Td w={90}>{t('{{credits}} cr', { credits: r.credits })}</Table.Td>
@@ -562,7 +566,7 @@ function RecordForm({ record, draft, onDone }: { record: CourseRecord | null; dr
   const form = useForm({
     initialValues: draft,
     validate: {
-      code: (v) => (/^[A-Za-z]{4}\s*-?\s*\d{3}/.test(v.trim()) ? null : t('Use a course code like "COMP 251"')),
+      code: (v) => (/^[A-Za-z]{3}[A-Za-z0-9]\s*-?\s*\d{3}/.test(v.trim()) ? null : t('Use a course code like "COMP 251"')),
       grade: (v, values) => ((fromTerm ? statusFor(values.term) : values.status) === 'completed' && !v ? t('Add the final grade') : null),
     },
   });
@@ -583,12 +587,46 @@ function RecordForm({ record, draft, onDone }: { record: CourseRecord | null; dr
     if (found) form.setValues({ code: `${found.subject} ${found.number}`, title: found.title, credits: found.credits });
   };
 
+  // Every course in the catalogue, found by its code or title.
+  const catalogue = useQuery({ queryKey: ['catalogue', 'courses'], queryFn: loadCourses, staleTime: Infinity });
+  const typed = form.values.code.trim().toLowerCase();
+  const suggestions = useMemo(() => {
+    if (typed.length < 2) return [];
+    const compact = typed.replace(/[\s-]+/g, '');
+    return (catalogue.data ?? []).filter(([code, title]) => code.toLowerCase().replace(' ', '').includes(compact) || title.toLowerCase().includes(typed)).slice(0, 8);
+  }, [catalogue.data, typed]);
+  const pick = (code: string) => {
+    const row = catalogue.data?.find(([found]) => found === code);
+    if (row) form.setValues({ title: row[1], credits: row[2] ?? form.values.credits });
+  };
+  const records = useQuery({ queryKey: ['record'], queryFn: () => rpc.record.list() });
+  const planned = (fromTerm ? statusFor(form.values.term) : form.values.status) === 'planned';
+
   return (
     <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
       <Stack>
         <Group grow align="flex-start">
-          <TextInput label={<WithInfo id="record-code">{t('Course code')}</WithInfo>} placeholder="COMP 251" data-autofocus {...form.getInputProps('code')} onBlur={lookup} />
-          <NumberInput label={<WithInfo id="record-code">{t('Credits')}</WithInfo>} min={0} max={12} step={0.5} decimalScale={1} {...form.getInputProps('credits')} />
+          <Autocomplete
+            label={<WithInfo id="record-code">{t('Course code')}</WithInfo>}
+            placeholder="COMP 251"
+            data-autofocus
+            data={suggestions.map(([code]) => code)}
+            filter={({ options }) => options}
+            renderOption={({ option }) => (
+              <div>
+                <Text size="sm" fw={600}>
+                  {option.value}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {suggestions.find(([code]) => code === option.value)?.[1]}
+                </Text>
+              </div>
+            )}
+            onOptionSubmit={pick}
+            {...form.getInputProps('code')}
+            onBlur={lookup}
+          />
+          <NumberInput label={<WithInfo id="record-code">{t('Credits')}</WithInfo>} min={0} max={30} step={0.5} decimalScale={1} {...form.getInputProps('credits')} />
         </Group>
         <TextInput label={<WithInfo id="record-code">{t('Title')}</WithInfo>} placeholder={t('Algorithms and Data Structures')} {...form.getInputProps('title')} />
         <Select label={<WithInfo id="record-term-field">{t('Term')}</WithInfo>} data={[...(noTerm ? [{ value: NO_TERM, label: 'No term yet' }] : []), ...termOptionsData()]} searchable allowDeselect={false} {...form.getInputProps('term')} />
@@ -606,6 +644,7 @@ function RecordForm({ record, draft, onDone }: { record: CourseRecord | null; dr
         {!asPercent && (fromTerm ? statusFor(form.values.term) : form.values.status) === 'completed' && (
           <Select label={<WithInfo id="record-grade">{t('Final grade')}</WithInfo>} data={gradeOptions()} {...form.getInputProps('grade')} />
         )}
+        {planned && <PlanHint code={form.values.code.trim().toUpperCase()} planTerm={form.values.term} record={records.data ?? []} />}
         <Group justify="flex-end">
           <Button type="submit" loading={save.isPending}>
             {t('Save')}
@@ -623,6 +662,14 @@ function DegreeTab({ onPlan }: { onPlan: (draft: Partial<RecordDraft>) => void }
   const programs = useQuery({ queryKey: ['degree', 'programs'], queryFn: () => rpc.degree.programs() });
   const result = useQuery({ queryKey: ['degree', 'evaluate'], queryFn: () => rpc.degree.evaluate() });
   const select = useAction((programId: string | null) => rpc.degree.select({ programId }));
+  const programGroups = useMemo(() => {
+    const groups = new Map<string, { value: string; label: string }[]>();
+    for (const p of programs.data ?? []) {
+      const group = p.group ?? t('Samples');
+      groups.set(group, [...(groups.get(group) ?? []), { value: p.id, label: p.group ? p.name : `${t(p.name)}, ${p.degree}` }]);
+    }
+    return [...groups].map(([group, items]) => ({ group, items }));
+  }, [programs.data]);
 
   if (linkOnly) {
     return (
@@ -645,10 +692,10 @@ function DegreeTab({ onPlan }: { onPlan: (draft: Partial<RecordDraft>) => void }
         <Select
           label={<WithInfo id="degree-program">{t('Your program')}</WithInfo>}
           placeholder={t('Pick a program')}
-          w={480}
+          description={programs.data ? t('All {{count}} programs in the catalogue. Type to search.', { count: programs.data.filter((p) => p.group).length }) : undefined}
+          style={{ flex: '1 1 320px', maxWidth: 560 }}
           searchable
-          limit={60}
-          data={programs.data?.map((p) => ({ value: p.id, label: p.id.startsWith('sample-') ? `${t(p.name)}, ${p.degree}` : p.name })) ?? []}
+          data={programGroups}
           value={data?.program.id ?? null}
           onChange={(v) => select.mutate(v)}
           clearable
@@ -656,7 +703,7 @@ function DegreeTab({ onPlan }: { onPlan: (draft: Partial<RecordDraft>) => void }
       </Group>
       {data && (!data.program.id.startsWith('sample-') ? (
         <Alert variant="light" icon={<IconAlertTriangle size={18} />}>
-          {t("From the 2026–2027 Course Catalogue. Rules like \"at least 3 credits from each group\" count as one pool here, so treat this as a guide and check the program's page with your adviser.")}{' '}
+          {t("From the 2026–2027 Course Catalogue. Rules like \"at least 3 credits from each group\" are worked out from the program's text, so treat them as estimates and check the program's page with your adviser.")}{' '}
           <Anchor component={Link} to={`/catalogue/programs/${encodeURIComponent(data.program.id)}`}>{t('See the program')}</Anchor>
         </Alert>
       ) : (
@@ -677,13 +724,36 @@ function DegreeTab({ onPlan }: { onPlan: (draft: Partial<RecordDraft>) => void }
   );
 }
 
+// A rule from the program's text and where the plan stands on it.
+function RuleLine({ rule }: { rule: RuleResult }) {
+  const unit = { credits: t('credits'), courses: '', subjects: t('subjects') }[rule.unit];
+  const status = !rule.checked
+    ? t('Check this one yourself')
+    : rule.need != null
+      ? `${t('{{have}} of {{need}}', { have: rule.have, need: rule.need })} ${unit}`
+      : `${t('{{have}} of at most {{limit}}', { have: rule.have, limit: rule.limit ?? 0 })} ${unit}`;
+  const color = !rule.checked || rule.need == null ? 'var(--mantine-color-gray-6)' : rule.met ? 'var(--mantine-color-teal-6)' : 'var(--mantine-color-orange-6)';
+  return (
+    <Group gap={6} wrap="nowrap" align="flex-start">
+      {rule.checked && rule.met ? <IconCircleCheck size={16} color={color} style={{ flex: 'none', marginTop: 2 }} /> : <IconAlertTriangle size={16} color={color} style={{ flex: 'none', marginTop: 2 }} />}
+      <Text size="sm" style={{ flex: 1 }}>
+        {rule.text}{' '}
+        <Text span size="xs" c="dimmed">
+          {status}
+        </Text>
+      </Text>
+    </Group>
+  );
+}
+
 function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.degree.evaluate>>; onPlan: (d: Partial<RecordDraft>) => void }) {
   const checksPlans = useVariant('check-prereqs');
   const onlyLeft = useVariant('degree-only-left');
   const over15 = useVariant('warn-over-15');
   const paceLimit = over15 ? 15 : 18;
   const records = useQuery({ queryKey: ['record'], queryFn: () => rpc.record.list() });
-  const cantPlan = (code: string) => (checksPlans ? whyCantPlan(code, NEXT_TERM, records.data ?? []) : null);
+  const prereqs = usePrereqs();
+  const cantPlan = (code: string) => (checksPlans ? whyCantPlan(code, NEXT_TERM, records.data ?? [], prereqs.data) : null);
   const { program, evaluation: e, titles } = result;
   const suggest = useVariant('suggest-term-schedule');
   const gradYear = useMe().gradYear;
@@ -695,10 +765,12 @@ function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.d
   const missingChoose = e.groups
     .filter((g) => g.kind === 'choose')
     .reduce((n, g) => n + Math.max(0, g.neededCredits - g.credits.completed - g.credits['in-progress'] - g.credits.planned), 0);
+  const unmetRules = e.groups.flatMap((g) => g.rules).filter((r) => !r.met).length;
   const gaps = [
     e.missingCredits > 0 && t('{{count}} credits toward the total', { count: e.missingCredits }),
     missingRequired > 0 && t('{{count}} required courses', { count: missingRequired }),
     missingChoose > 0 && t('{{count}} complementary credits', { count: missingChoose }),
+    unmetRules > 0 && t('{{count}} program rules', { count: unmetRules }),
   ].filter(Boolean);
 
   return (
@@ -768,7 +840,7 @@ function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.d
               <Group gap="xs">
                 <Text size="sm" c="dimmed">
                   {g.kind === 'choose'
-                    ? t('{{done}} of {{count}} credits', { done: Math.min(counted, g.neededCredits), count: g.neededCredits })
+                    ? g.neededCredits > 0 && t('{{done}} of {{count}} credits', { done: Math.min(counted, g.neededCredits), count: g.neededCredits })
                     : t('{{done}} of {{count}} courses', {
                         done: g.courses.filter((c) => c.state !== 'missing' && c.state !== 'below-minimum').length,
                         count: g.courses.length,
@@ -778,10 +850,17 @@ function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.d
               </Group>
             }
           >
-            {g.kind === 'choose' && (
+            {g.kind === 'choose' && g.neededCredits > 0 && (
               <Text size="sm" c="dimmed" mb="sm">
                 {t('Choose {{count}} credits from:', { count: g.neededCredits })}
               </Text>
+            )}
+            {g.rules.length > 0 && (
+              <Stack gap={4} mb="sm">
+                {g.rules.map((r) => (
+                  <RuleLine key={r.text} rule={r} />
+                ))}
+              </Stack>
             )}
             <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="xs">
               {g.courses.filter((c) => !onlyLeft || c.state === 'missing' || c.state === 'below-minimum').map((c) => {
@@ -791,7 +870,7 @@ function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.d
                     <Group justify="space-between" wrap="nowrap" gap="xs">
                       <div style={{ minWidth: 0 }}>
                         <Text size="sm" fw={600}>
-                          {c.code}{' '}
+                          <CatalogueLink code={c.code}>{c.code}</CatalogueLink>{' '}
                           <Text span size="xs" c="dimmed">
                             · {t('{{credits}} cr', { credits: c.credits })}
                           </Text>
@@ -826,6 +905,7 @@ function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.d
                         {cantPlan(c.code)}
                       </Text>
                     )}
+                    {open && !cantPlan(c.code) && <PlanHint code={c.code} planTerm={NEXT_TERM} record={records.data ?? []} />}
                     {c.state === 'below-minimum' && (
                       <Text size="xs" c="red" mt={4}>
                         {t('Grade below {{grade}}: retake to count it', { grade: program.minProgramGrade })} <ReqInfo id="degree-below-min" />

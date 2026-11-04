@@ -1880,7 +1880,7 @@ export interface CoreSeed {
 
 export const CORE: Record<Who, CoreSeed> = {
   alex: {
-    program: 'sample-cs-major',
+    program: 'computer-science-major-b-sc',
     weekly: [240, 150, 120, 150, 120, 60, 240],
     records: [
       ['COMP 202', 'Fall 2025', 'A'],
@@ -1950,7 +1950,7 @@ export const CORE: Record<Who, CoreSeed> = {
     ],
   },
   priya: {
-    program: 'sample-software-eng',
+    program: 'software-engineering-major-b-sc',
     weekly: [240, 150, 180, 150, 180, 90, 240],
     records: [
       ['MATH 133', 'Fall 2025', 'A'],
@@ -2015,7 +2015,7 @@ export const CORE: Record<Who, CoreSeed> = {
     privateDeadlines: [{ kind: 'other', title: 'Engineering co-op résumé review', inDays: 6, time: '12:00', notes: 'Engineering Career Centre, Frank Dawson Adams 22.' }],
   },
   samuel: {
-    program: 'sample-math-major',
+    program: 'mathematics-major-b-sc',
     weekly: [120, 120, 90, 120, 90, 60, 180],
     records: [
       ['MATH 133', 'Fall 2024', 'A'],

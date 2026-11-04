@@ -141,13 +141,13 @@ function weekAhead(ctx: AuthedContext, locale: Locale) {
     due.push({ title: a.name, classId: a.classId, at: a.dueAt });
   }
   for (const c of db
-    .select({ id: classes.id, term: classes.term, subject: courses.subject, number: courses.number })
+    .select({ id: classes.id, term: classes.term, section: classes.section, subject: courses.subject, number: courses.number })
     .from(enrollments)
     .innerJoin(classes, eq(enrollments.classId, classes.id))
     .innerJoin(courses, eq(classes.courseId, courses.id))
     .where(eq(enrollments.userId, userId))
     .all()) {
-    const exam = finalExamFor(`${c.subject} ${c.number}`, c.term);
+    const exam = finalExamFor(`${c.subject} ${c.number}`, c.term, c.section);
     const startsAt = exam && atTime(exam.date, exam.start);
     if (exam && startsAt && startsAt > now && startsAt <= until) {
       due.push({ title: translate(locale, '{{course}} final exam', { course: exam.course }), classId: c.id, at: startsAt });
@@ -313,13 +313,13 @@ export function sweepReminders(ctx: AuthedContext) {
   for (const c of teaching
     ? []
     : db
-        .select({ id: classes.id, term: classes.term, subject: courses.subject, number: courses.number })
+        .select({ id: classes.id, term: classes.term, section: classes.section, subject: courses.subject, number: courses.number })
         .from(enrollments)
         .innerJoin(classes, eq(enrollments.classId, classes.id))
         .innerJoin(courses, eq(classes.courseId, courses.id))
         .where(eq(enrollments.userId, userId))
         .all()) {
-    const exam = finalExamFor(`${c.subject} ${c.number}`, c.term);
+    const exam = finalExamFor(`${c.subject} ${c.number}`, c.term, c.section);
     const startsAt = exam && atTime(exam.date, exam.start);
     if (!exam || !startsAt) continue;
     const name = { key: '{{course}} final exam', params: { course: exam.course } };

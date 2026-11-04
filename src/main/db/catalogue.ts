@@ -1,5 +1,5 @@
 // G2: the sample of courses behind the demo term's classes and sections. The whole catalogue
-// is in shared/catalogue, loaded on demand; a course from it becomes a row only when someone adds it.
+// is in shared/catalogue, loaded on demand; a course from it gets its rows from stockCourses when needed.
 export const CATALOGUE: [subject: string, number: string, title: string, credits: number][] = [
   ['BIOL', '111', 'Principles: Organismal Biology', 3],
   ['BIOL', '112', 'Cell and Molecular Biology', 3],

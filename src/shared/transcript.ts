@@ -16,7 +16,7 @@ export interface TranscriptCourse {
 
 const TERM = /\b(Fall|Winter|Summer|Automne|Hiver|[ÉE]t[ée])\s+(\d{4})\b/i;
 const SEASON: Record<string, string> = { fall: 'Fall', automne: 'Fall', winter: 'Winter', hiver: 'Winter', summer: 'Summer', été: 'Summer', ete: 'Summer' };
-const COURSE = /\b([A-Z]{4})[\s-]?(\d{3}[A-Z0-9]*)\b/;
+const COURSE = /\b([A-Z]{3}[A-Z0-9])[\s-]?(\d{3}[A-Z0-9]*)\b/;
 const GRADES = new Set(RECORD_GRADES);
 
 export function parseTranscript(text: string): TranscriptCourse[] {

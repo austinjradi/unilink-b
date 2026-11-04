@@ -6,7 +6,7 @@ import { examConflicts, noClassesOn } from '@shared/keyDates';
 import { isHidden, parseChatLink } from '@shared/links';
 import { DEFAULT_WEEKLY_MINUTES, minutesAroundClasses, minutesOn, planTasks, type PlannableTask, weeklyMinutes } from '@shared/planner';
 import { passwordProblems } from '@shared/validation';
-import { parseCourseQuery, parseSchedule } from '@shared/courseQuery';
+import { courseMatches, parseCourseQuery, parseSchedule } from '@shared/courseQuery';
 import { goalOutlook, gpaTrend, summarizeRecord, termOrder } from '@shared/academics';
 import { evaluateDegree, graduationPace, type Program } from '@shared/degree';
 import { focusSummary, type FocusWindow, studyModeStatus } from '@shared/studyMode';
@@ -200,6 +200,20 @@ describe('course search (S1)', () => {
     expect(parseCourseQuery('math 24')).toEqual({ kind: 'code', subject: 'MATH', number: '24_' });
     expect(parseCourseQuery('COMP')).toEqual({ kind: 'text', words: ['comp'], subject: 'COMP' });
     expect(parseCourseQuery('linear algebra')).toEqual({ kind: 'text', words: ['linear', 'algebra'], subject: null });
+    expect(parseCourseQuery('nur1 230')).toEqual({ kind: 'code', subject: 'NUR1', number: '230' });
+    expect(parseCourseQuery('COMP 361D1')).toEqual({ kind: 'code', subject: 'COMP', number: '361d1' });
+    expect(parseCourseQuery('NUR1')).toEqual({ kind: 'text', words: ['nur1'], subject: 'NUR1' });
+  });
+
+  it('matches catalogue courses the way the database does', () => {
+    const matches = (query: string, subject: string, number: string, title: string) => courseMatches(parseCourseQuery(query), subject, number, title);
+    expect(matches('COMP 2XX', 'COMP', '251', 'Algorithms')).toBe(true);
+    expect(matches('COMP 2XX', 'COMP', '361D1', 'Software')).toBe(false);
+    expect(matches('COMP 361', 'COMP', '361D1', 'Software')).toBe(true);
+    expect(matches('algo', 'COMP', '251', 'Algorithms')).toBe(true);
+    expect(matches('COMP', 'COMP', '251', 'Algorithms')).toBe(true);
+    expect(matches('MATH', 'COMP', '251', 'Algorithms')).toBe(false);
+    expect(matches('', 'COMP', '251', 'Algorithms')).toBe(true);
   });
 });
 
@@ -541,6 +555,11 @@ COMP 251 Tutorial`;
     expect(parseSchedule('Algorithms and Data Structures - COMP 251 - 001\nDiscrete Structures - MATH 240 - 002')).toEqual([
       { subject: 'COMP', number: '251', section: '001' },
       { subject: 'MATH', number: '240', section: '002' },
+    ]);
+    // Subjects can end in a digit, and year-long courses have a suffix.
+    expect(parseSchedule('NUR1 230 001\nAGRI 410D1')).toEqual([
+      { subject: 'NUR1', number: '230', section: '001' },
+      { subject: 'AGRI', number: '410D1', section: null },
     ]);
     // A year or a CRN after the code isn't a section.
     expect(parseSchedule('COMP 251 2026\nMATH 240 12345')).toEqual([

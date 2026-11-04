@@ -1,22 +1,24 @@
-import { useState, useEffect } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Card, Checkbox, Group, Modal, Select, SimpleGrid, Stack, Table, Tabs, Text, Textarea, TextInput, Tooltip } from '@mantine/core';
 import { useDebouncedValue } from '@mantine/hooks';
 import { IconCalendarDue, IconCertificate, IconClipboardText, IconClock, IconListDetails, IconMessageQuestion, IconSchool, IconSearch, IconUsers } from '@tabler/icons-react';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
-import { LEVELS, SUBJECT_FACULTY } from '@shared/courseQuery';
+import { LEVELS } from '@shared/courseQuery';
 import { addDays, CURRENT_TERM, TERMS, ymd } from '@shared/dates';
 import { termWithExams } from '@shared/keyDates';
 import type { MeetingTime } from '@shared/meetings';
 import { ClashNote, Empty, Loading, PageHeader, SectionCard, Tag } from '../components/ui';
 import { fmtMeetings } from '../lib/format';
 import { useAction, useMe } from '../lib/hooks';
-import { rpc } from '../lib/rpc';
+import { type Out, rpc } from '../lib/rpc';
 import { classFromJoinCode } from '@shared/joinCode';
 import { useShowCount, useVariant } from '../lib/variants';
 import { AcademicsPanel } from './Academics';
-import { t, term } from '../lib/i18n';
+import { t, term, tx } from '../lib/i18n';
+import { CatalogueLink } from '../components/CatalogueLink';
+import { LoadOnScroll } from '../components/LoadOnScroll';
 import { ReqInfo, WithInfo } from '../components/ReqInfo';
 
 const TABS = ['mine', 'find', 'record', 'degree'] as const;
@@ -277,12 +279,12 @@ function JoinByCode() {
   );
 }
 
-// 'add-missing-course': a course the sample catalogue doesn't have.
+// 'add-missing-course': a course the catalogue doesn't have.
 function AddCourse({ term: termName }: { term: string }) {
   const [code, setCode] = useState('');
   const [title, setTitle] = useState('');
   const [credits, setCredits] = useState('3');
-  const parts = code.trim().toUpperCase().match(/^([A-Z]{4})\s*-?\s*(\d{3})$/);
+  const parts = code.trim().toUpperCase().match(/^([A-Z]{3}[A-Z0-9])\s*-?\s*(\d{3}[A-Z0-9]*)$/);
   const add = useAction(() => rpc.catalogue.addCourse({ subject: parts![1], number: parts![2], title, credits: Number(credits), term: termName }), {
     success: () => 'Added to the catalogue',
     onSuccess: () => {
@@ -304,7 +306,85 @@ function AddCourse({ term: termName }: { term: string }) {
 
 // 'filter-day-time': the part of the day a class starts in.
 const timeOfDay = (m: MeetingTime) => (m.startTime < '12:00' ? 'morning' : m.startTime < '17:00' ? 'afternoon' : 'evening');
-const FACULTIES_IN_CATALOGUE = [...new Set(Object.values(SUBJECT_FACULTY))].sort();
+const FACULTIES_IN_CATALOGUE = [
+  tx('Agricultural and Environmental Sciences'),
+  tx('Arts'),
+  tx('Continuing Studies'),
+  tx('Dental Medicine and Oral Health Sciences'),
+  tx('Education'),
+  tx('Engineering'),
+  tx('Environment'),
+  tx('Law'),
+  tx('Management'),
+  tx('Medicine and Health Sciences'),
+  tx('Music'),
+  tx('Science'),
+];
+const COURSE_PAGE_SIZE = 25;
+
+// Memoized so loading another page only renders that page.
+const SectionRow = memo(function SectionRow({
+  section: c,
+  allTerms,
+  knowsTimes,
+  blockClashes,
+  professor,
+  showMembers,
+  joining,
+  switching,
+  onJoin,
+  onSwitch,
+}: {
+  section: Out<typeof rpc.catalogue.search>[number];
+  allTerms: boolean;
+  knowsTimes: boolean;
+  blockClashes: boolean;
+  professor: boolean;
+  showMembers: boolean;
+  joining: boolean;
+  switching: boolean;
+  onJoin: (classId: number) => void;
+  onSwitch: (classId: number) => void;
+}) {
+  return (
+    <Table.Tr>
+      <Table.Td fw={700} style={{ whiteSpace: 'nowrap' }}>
+        {c.code} {allTerms && <Tag>{term(c.term)}</Tag>}
+      </Table.Td>
+      <Table.Td>
+        <CatalogueLink code={`${c.subject} ${c.number}`}>{c.title}</CatalogueLink>
+        {knowsTimes && c.times.length > 0 && (
+          <Text size="xs" c="dimmed">
+            {fmtMeetings(c.times)}
+          </Text>
+        )}
+        {c.professors.length > 0 && (
+          <Text size="xs" c="dimmed">
+            {t('Taught by {{names}}', { names: c.professors.join(', ') })}
+          </Text>
+        )}
+        {!c.joined && knowsTimes && <ClashNote codes={c.clashesWith} />}
+      </Table.Td>
+      <Table.Td>{c.credits}</Table.Td>
+      <Table.Td>{showMembers ? c.memberCount : '–'}</Table.Td>
+      <Table.Td ta="right">
+        {c.joined ? (
+          <Button size="xs" variant="light" component={Link} to={`/classes/${c.id}`}>
+            {t('Open')}
+          </Button>
+        ) : c.otherSectionId ? (
+          <Button size="xs" variant="default" disabled={blockClashes && c.clashesWith.length > 0} onClick={() => onSwitch(c.id)} loading={switching}>
+            {t('Switch here')}
+          </Button>
+        ) : (
+          <Button size="xs" disabled={blockClashes && !professor && c.clashesWith.length > 0} onClick={() => onJoin(c.id)} loading={joining}>
+            {professor ? t('Teach') : t('Join')}
+          </Button>
+        )}
+      </Table.Td>
+    </Table.Tr>
+  );
+});
 
 function FindCourses() {
   const professor = useMe().role === 'professor';
@@ -354,11 +434,15 @@ function FindCourses() {
     faculty: facultyCredits ? faculty : null,
     credits: facultyCredits && credits ? Number(credits) : null,
   };
-  const results = useQuery({
+  // A page at a time, so a long list costs only what's been scrolled to. A new search starts from the top.
+  const results = useInfiniteQuery({
     queryKey: ['catalogue', 'search', filters],
-    queryFn: () => rpc.catalogue.search(filters),
+    queryFn: ({ pageParam }) => rpc.catalogue.search({ ...filters, limit: COURSE_PAGE_SIZE, offset: pageParam }),
+    initialPageParam: 0,
+    getNextPageParam: (page, _pages, offset) => (page.length ? offset + COURSE_PAGE_SIZE : undefined),
     placeholderData: keepPreviousData,
   });
+  const sections = useMemo(() => results.data?.pages.flat(), [results.data]);
   const join = useAction((classId: number) => rpc.classes.join({ classId }), {
     success: () => (professor ? t('You now teach this section, and your name is on its course details.') : t('Joined! Your classmates are here.')),
     onSuccess: (_data, classId) => navigate(`/classes/${classId}`),
@@ -370,7 +454,7 @@ function FindCourses() {
 
   const showFits = !professor && knowsTimes && !noClashNotes;
   const inSlot = (m: MeetingTime) => (!day || m.weekday === Number(day)) && (!slot || timeOfDay(m) === slot);
-  const shown = results.data?.filter((c) => (!showFits || !fits || c.joined || !c.clashesWith.length) && (!dayTime || (!day && !slot) || c.times.some(inSlot)));
+  const shown = sections?.filter((c) => (!showFits || !fits || c.joined || !c.clashesWith.length) && (!dayTime || (!day && !slot) || c.times.some(inSlot)));
 
   return (
     <SectionCard
@@ -405,7 +489,7 @@ function FindCourses() {
           <Select label={<WithInfo id="find-term">{t('Term')}</WithInfo>} radius="xl" data={terms.data ?? [CURRENT_TERM]} value={termName} onChange={(v) => v && setTermName(v)} w={160} allowDeselect={false} />
         )}
         {bySubject ? (
-          <Select label={<WithInfo id="find-level">Subject</WithInfo>} radius="xl" placeholder={t('Any')} data={subjects.data ?? []} value={subject} onChange={setSubject} clearable w={140} />
+          <Select label={<WithInfo id="find-level">Subject</WithInfo>} radius="xl" placeholder={t('Any')} data={subjects.data ?? []} value={subject} onChange={setSubject} clearable searchable w={140} />
         ) : (
           <Select
             label={<WithInfo id="find-level">{t('Level')}</WithInfo>}
@@ -420,8 +504,8 @@ function FindCourses() {
         )}
         {facultyCredits && (
           <>
-            <Select label={<WithInfo id="find-level">{t('Faculty')}</WithInfo>} radius="xl" placeholder={t('Any')} data={FACULTIES_IN_CATALOGUE.map((f) => ({ value: f, label: t(f) }))} value={faculty} onChange={setFaculty} clearable w={170} />
-            <Select label={<WithInfo id="find-level">{t('Credits')}</WithInfo>} radius="xl" placeholder={t('Any')} data={['3', '4']} value={credits} onChange={setCredits} clearable w={110} />
+            <Select label={<WithInfo id="find-level">{t('Faculty')}</WithInfo>} radius="xl" placeholder={t('Any')} data={FACULTIES_IN_CATALOGUE.map((f) => ({ value: f, label: t(f) }))} value={faculty} onChange={setFaculty} clearable searchable w={220} />
+            <Select label={<WithInfo id="find-level">{t('Credits')}</WithInfo>} radius="xl" placeholder={t('Any')} data={['1', '2', '3', '4', '6', '9', '12']} value={credits} onChange={setCredits} clearable w={110} />
           </>
         )}
         {dayTime && (
@@ -486,57 +570,41 @@ function FindCourses() {
             </Table.Thead>
             <Table.Tbody>
               {shown.map((c) => (
-                <Table.Tr key={c.id}>
-                  <Table.Td fw={700} style={{ whiteSpace: 'nowrap' }}>
-                    {c.code} {allTerms && <Tag>{term(c.term)}</Tag>}
-                  </Table.Td>
-                  <Table.Td>
-                    {c.title}
-                    {knowsTimes && c.times.length > 0 && (
-                      <Text size="xs" c="dimmed">
-                        {fmtMeetings(c.times)}
-                      </Text>
-                    )}
-                    {c.professors.length > 0 && (
-                      <Text size="xs" c="dimmed">
-                        {t('Taught by {{names}}', { names: c.professors.join(', ') })}
-                      </Text>
-                    )}
-                    {!c.joined && knowsTimes && <ClashNote codes={c.clashesWith} />}
-                  </Table.Td>
-                  <Table.Td>{c.credits}</Table.Td>
-                  <Table.Td>{showCount(c.memberCount) ? c.memberCount : '–'}</Table.Td>
-                  <Table.Td ta="right">
-                    {c.joined ? (
-                      <Button size="xs" variant="light" component={Link} to={`/classes/${c.id}`}>
-                        {t('Open')}
-                      </Button>
-                    ) : c.otherSectionId ? (
-                      <Button size="xs" variant="default" disabled={blockClashes && c.clashesWith.length > 0} onClick={() => switchTo.mutate(c.id)} loading={switchTo.isPending && switchTo.variables === c.id}>
-                        {t('Switch here')}
-                      </Button>
-                    ) : (
-                      <Button size="xs" disabled={blockClashes && !professor && c.clashesWith.length > 0} onClick={() => join.mutate(c.id)} loading={join.isPending && join.variables === c.id}>
-                        {professor ? t('Teach') : t('Join')}
-                      </Button>
-                    )}
-                  </Table.Td>
-                </Table.Tr>
+                <SectionRow
+                  key={c.id}
+                  section={c}
+                  allTerms={allTerms}
+                  knowsTimes={knowsTimes}
+                  blockClashes={blockClashes}
+                  professor={professor}
+                  showMembers={showCount(c.memberCount)}
+                  joining={join.isPending && join.variables === c.id}
+                  switching={switchTo.isPending && switchTo.variables === c.id}
+                  onJoin={join.mutate}
+                  onSwitch={switchTo.mutate}
+                />
               ))}
             </Table.Tbody>
           </Table>
         </Table.ScrollContainer>
       ) : (
         <Empty>
-          {versionA
-            ? 'No sections match. Try a code like "MATH 240". The built-in catalogue is a sample of McGill courses for now.'
-            : t('No sections match. Try a code like "MATH 240" or "COMP 2XX". The built-in catalogue is a sample of McGill courses for now.')}
-          <Badge ml={6} size="xs" variant="light" color="yellow">
-            {t('sample')}
-          </Badge>{' '}
-          <ReqInfo id="catalogue-sample" />
+          {versionA ? 'No sections match. Try a code like "MATH 240".' : t('No sections match. Try a code like "MATH 240" or "COMP 2XX".')} <ReqInfo id="catalogue-sample" />
         </Empty>
       )}
+      {results.hasNextPage && !results.isPlaceholderData && (
+        <LoadOnScroll
+          label={t('Show more courses')}
+          shown={results.data?.pages.length ?? 0}
+          loading={results.isFetchingNextPage}
+          onMore={() => {
+            if (!results.isFetchingNextPage) void results.fetchNextPage();
+          }}
+        />
+      )}
+      <Text size="xs" c="dimmed" mt="sm">
+        {t('Fall sections on McGill’s December exam schedule are real. Other terms and sections are estimates from course codes, titles and program lists. If a course is missing from a term, search its exact code, and check the Minerva Class Schedule to be sure.')} <ReqInfo id="catalogue-sample" />
+      </Text>
     </SectionCard>
   );
 }

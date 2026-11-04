@@ -2,6 +2,7 @@ import { Box, Button, Card, Group, Stack, Tabs, Text } from '@mantine/core';
 import { IconBrandWhatsapp, IconFileText, IconInfoCircle, IconMessages, IconPercentage, IconUsersGroup } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router';
+import { CatalogueLink } from '../components/CatalogueLink';
 import { ClashNote, Loading, PageHeader, Tag } from '../components/ui';
 import { fmtMeetings } from '../lib/format';
 import { useAction, useMe } from '../lib/hooks';
@@ -60,7 +61,7 @@ export function ClassPage() {
             {c.title} · {t('{{count}} credits', { count: c.credits })}
             {showCount(c.memberCount) && ` · ${t('{{count}} students on UniLink', { count: c.memberCount })}`}
             {c.professors.length > 0 && ` · ${t('Taught by {{names}}', { names: c.professors.map((p) => p.name).join(', ') })}`}{' '}
-            <Tag>{term(c.term)}</Tag>
+            <Tag>{term(c.term)}</Tag> <CatalogueLink code={`${c.subject} ${c.number}`} />
           </>
         }
       />

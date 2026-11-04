@@ -144,16 +144,14 @@ export const searchRouter = {
 
     // The full course catalogue, which nobody has to be in a class to look through.
     const matches = (text: string | null) => !!text && text.toLowerCase().includes(lower);
-    if (isOn('search-catalogue')) {
-      const listed = new Set(results.filter((r) => r.kind === 'catalogue').map((r) => r.title));
-      const compact = lower.replace(/\s+/g, '');
-      let shown = 0;
-      for (const [code, title] of await loadCourses()) {
-        if (shown === CATALOGUE_RESULTS) break;
-        if (listed.has(code) || !(matches(title) || code.toLowerCase().replace(' ', '').includes(compact))) continue;
-        shown++;
-        results.push({ kind: 'catalogue', id: 1_000_000 + shown, title: code, sub: title, to: `/catalogue/courses/${encodeURIComponent(code)}` });
-      }
+    const listed = new Set(results.filter((r) => r.kind === 'catalogue').map((r) => r.title));
+    const compact = lower.replace(/\s+/g, '');
+    let shown = 0;
+    for (const [code, title] of await loadCourses()) {
+      if (shown === CATALOGUE_RESULTS) break;
+      if (listed.has(code) || !(matches(title) || code.toLowerCase().replace(' ', '').includes(compact))) continue;
+      shown++;
+      results.push({ kind: 'catalogue', id: 1_000_000 + shown, title: code, sub: title, to: `/catalogue/courses/${encodeURIComponent(code)}` });
     }
     const index = await loadIndex();
     index.programs

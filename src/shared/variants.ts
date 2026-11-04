@@ -448,7 +448,7 @@ export type VariantId = keyof typeof VARIANTS;
 export const NOT_SWITCHABLE: Record<string, string> = {
   'Fill the list from Minerva automatically instead of having students join by hand.': 'This needs access to Minerva, which the site doesn’t have.',
   'Connect to Minerva directly, so classes appear without pasting.': 'This needs access to Minerva, which the site doesn’t have.',
-  'Import the real McGill eCalendar instead of a built-in sample.': 'This needs the real catalogue data, which the site doesn’t have.',
+  'Keep the catalogue in step with a live McGill feed instead of importing the yearly PDF.': 'This needs a live McGill data source, which the site doesn’t have.',
   'Take this from an official McGill source, so nobody has to enter it.': 'This needs an official McGill data source, which the site doesn’t have.',
   'Sync live with Google Calendar in both directions instead of exporting a file.': 'This needs access to a Google account, which the site doesn’t have.',
   'Import the official schedule when it\'s published.': 'This needs McGill’s published schedule as data, which the site doesn’t have.',
@@ -474,8 +474,7 @@ export const NOT_SWITCHABLE: Record<string, string> = {
   'Import assignments from myCourses instead of posting them twice.': 'This needs access to myCourses, which the site doesn’t have.',
   'Sign in through McGill\'s own login (single sign-on) instead of a UniLink password.': 'This needs McGill’s login service, which the site can’t reach.',
   'Have a person at McGill reset the password after checking the student\'s ID.': 'This needs people at McGill to do it, so the site can’t switch to it alone.',
-  'Import real requirements from McGill\'s eCalendar.': 'This needs the real program data, which the site doesn’t have.',
-  'Use real McGill program requirements from the eCalendar.': 'This needs the real program data, which the site doesn’t have.',
+  "Use McGill's own requirement data instead of working out rules from the catalogue's text.": "McGill doesn't publish its requirements as data the site could read.",
 };
 
 const IDS = Object.keys(VARIANTS) as VariantId[];

@@ -1,9 +1,9 @@
-import { type ReactNode, useDeferredValue, useMemo, useState } from 'react';
+import { memo, type ReactNode, useDeferredValue, useMemo, useState } from 'react';
 import { Alert, Anchor, Badge, Button, Card, Group, List, Paper, Select, SimpleGrid, Stack, Table, Tabs, Text, TextInput, Title } from '@mantine/core';
 import { IconAward, IconBook2, IconCalendarEvent, IconCertificate, IconCoin, IconInfoCircle, IconListSearch, IconListTree, IconMail, IconMapPin, IconPhone, IconScale, IconSearch, IconWorld } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
-import { CURRENT_TERM } from '@shared/dates';
+import { CURRENT_TERM, TERMS } from '@shared/dates';
 import {
   type Award,
   type CatalogueIndex,
@@ -24,12 +24,14 @@ import {
   type ProgramListing,
   type SectionFacts,
 } from '@shared/catalogue';
+import { CourseFacts } from '../components/CourseFacts';
+import { LoadOnScroll } from '../components/LoadOnScroll';
 import { Empty, Loading, PageHeader } from '../components/ui';
 import { useAction } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
 import { t, tx } from '../lib/i18n';
 
-const PAGE_SIZE = 60;
+const PAGE_SIZE = 40;
 
 const TABS: { value: string; label: string; icon: typeof IconBook2 }[] = [
   { value: 'overview', label: tx('Search'), icon: IconListSearch },
@@ -68,11 +70,7 @@ function PageBadge({ page }: { page: number }) {
 
 function ShowMore({ shown, total, onMore }: { shown: number; total: number; onMore: () => void }) {
   if (shown >= total) return null;
-  return (
-    <Button variant="default" radius="xl" onClick={onMore} style={{ alignSelf: 'center' }}>
-      {t('Show more ({{left}} left)', { left: total - shown })}
-    </Button>
-  );
+  return <LoadOnScroll label={t('Show more ({{left}} left)', { left: total - shown })} shown={shown} onMore={onMore} />;
 }
 
 const asLink = (link: string) => (/^https?:\/\//.test(link) ? link : `https://${link}`);
@@ -506,11 +504,30 @@ function Crumbs({ items }: { items: { label: string; to?: string }[] }) {
 
 // --- Courses ------------------------------------------------------------------------------------
 
+// Memoized so scrolling only renders the new rows.
+const CourseListRow = memo(function CourseListRow({ row: [code, title, credits] }: { row: CourseRow }) {
+  return (
+    <Table.Tr>
+      <Table.Td w={120}>
+        <Anchor component={Link} to={courseLink(code)} fw={700} size="sm" style={{ whiteSpace: 'nowrap' }}>
+          {code}
+        </Anchor>
+      </Table.Td>
+      <Table.Td>
+        <Text size="sm">{title}</Text>
+      </Table.Td>
+      <Table.Td w={90} ta="right">
+        {credits != null && <Text size="sm" c="dimmed" style={{ whiteSpace: 'nowrap' }}>{t('{{count}} credits', { count: credits })}</Text>}
+      </Table.Td>
+    </Table.Tr>
+  );
+});
+
 function CourseList() {
   const [params, setParams] = useSearchParams();
   const courses = useCourses();
   const [limit, setLimit] = useState(PAGE_SIZE);
-  const query = (params.get('q') ?? '').trim().toLowerCase();
+  const query = useDeferredValue((params.get('q') ?? '').trim().toLowerCase());
   const subject = params.get('subject');
   const level = params.get('level');
   const subjects = useMemo(() => [...new Set(courses.data?.map((row) => courseParts(row[0]).subject))].sort(), [courses.data]);
@@ -521,11 +538,15 @@ function CourseList() {
     setParams(next, { replace: true });
     setLimit(PAGE_SIZE);
   };
-  if (!courses.data) return <Loading />;
-  const found = courses.data.filter(([code, title]) => {
+  const found = useMemo(
+    () =>
+      (courses.data ?? []).filter(([code, title]) => {
     const parts = courseParts(code);
     return (!subject || parts.subject === subject) && (!level || parts.level === Number(level)) && (!query || has(code, query) || has(code.replace(' ', ''), query) || has(title, query));
-  });
+  }),
+    [courses.data, subject, level, query],
+  );
+  if (!courses.data) return <Loading />;
   return (
     <Stack>
       <Group align="flex-end">
@@ -540,20 +561,8 @@ function CourseList() {
         <Table.ScrollContainer minWidth={420}>
           <Table verticalSpacing={6} striped highlightOnHover>
             <Table.Tbody>
-              {found.slice(0, limit).map(([code, title, credits]) => (
-                <Table.Tr key={code}>
-                  <Table.Td w={120}>
-                    <Anchor component={Link} to={courseLink(code)} fw={700} size="sm" style={{ whiteSpace: 'nowrap' }}>
-                      {code}
-                    </Anchor>
-                  </Table.Td>
-                  <Table.Td>
-                    <Text size="sm">{title}</Text>
-                  </Table.Td>
-                  <Table.Td w={90} ta="right">
-                    {credits != null && <Text size="sm" c="dimmed" style={{ whiteSpace: 'nowrap' }}>{t('{{count}} credits', { count: credits })}</Text>}
-                  </Table.Td>
-                </Table.Tr>
+              {found.slice(0, limit).map((row) => (
+                <CourseListRow key={row[0]} row={row} />
               ))}
             </Table.Tbody>
           </Table>
@@ -583,6 +592,10 @@ function CoursePage({ code }: { code: string }) {
     },
     { success: 'Added to your courses', onSuccess: (classId) => navigate(`/classes/${classId}`) },
   );
+  const plan = useAction(() => rpc.record.add({ code, title: row![1], credits: row![2] ?? 0, term: TERMS[TERMS.indexOf(CURRENT_TERM) + 1], status: 'planned', grade: null }), {
+    success: 'Added to your plan',
+    onSuccess: () => navigate('/courses/record'),
+  });
   if (!courses.data) return <Loading />;
   if (!row) return <Empty>{t('That course is not in the catalogue.')}</Empty>;
   return (
@@ -603,10 +616,16 @@ function CoursePage({ code }: { code: string }) {
             </Badge>
           </Group>
         </div>
-        <Button radius="xl" onClick={() => add.mutate()} loading={add.isPending}>
-          {t('Add to my courses')}
-        </Button>
+        <Group gap="xs">
+          <Button radius="xl" variant="default" onClick={() => plan.mutate()} loading={plan.isPending}>
+            {t('Plan it')}
+          </Button>
+          <Button radius="xl" onClick={() => add.mutate()} loading={add.isPending}>
+            {t('Add to my courses')}
+          </Button>
+        </Group>
       </Group>
+      <CourseFacts code={code} />
       <Paper withBorder radius="lg" p="md">
         <Text fw={700} mb={6}>
           {t('Programs that list it')} <Text span c="dimmed" size="sm">{usedIn.length}</Text>

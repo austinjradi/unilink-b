@@ -35,7 +35,7 @@ The yellow features, with what couldn't be fully built:
 | ID  | Feature                              | Where in the app                         | Code                                          | Limits |
 | --- | ------------------------------------ | ---------------------------------------- | --------------------------------------------- | ------ |
 | A1  | Course, credit and grade tracking    | Courses → Course record (add by hand, from your classes, or by pasting a transcript) | `shared/academics.ts`, `shared/transcript.ts`, `services/academics.ts` | None |
-| A2  | Degree requirements and planning     | Courses → Degree plan; Catalogue → any program → Check my degree | `shared/degree.ts`, `shared/catalogue/`, `db/programs.ts` | **Group rules are simplified**: all 622 catalogue programs can be picked, but rules like "at least 3 credits from each group" count as one pool, so check with an adviser. Three samples remain as examples |
+| A2  | Degree requirements and planning     | Courses → Degree plan; Catalogue → any program → Check my degree | `shared/degree.ts`, `shared/catalogue/`, `db/programs.ts` | **Group rules are estimates**: all 622 catalogue programs can be picked, and rules like "at least 3 credits from each group" are worked out from each program's text, so check with an adviser |
 | G3  | Notifications / email                | Bell in the sidebar; Profile → Notifications | `services/notifications.ts`              | **Email isn't delivered**: no mail server, so emails wait in an outbox |
 | ST1 | Study mode                           | Study Mode tab; pill in the top bar      | `shared/studyMode.ts`, `services/studyMode.ts` | **Can't block websites**; runs only while a UniLink tab is open; no system Do Not Disturb in a browser |
 | ST3 | To-do list                           | Home (first thing you see); a date typed at the end ("read chapter 3 friday") becomes the due date | `services/todos.ts`, `pages/Home.tsx`, `shared/taskDate.ts` | None |
@@ -256,20 +256,35 @@ notifications and emails go out in the same language. The English text is the tr
 
 The Catalogue page has McGill's whole 2026–27 undergraduate and professional catalogue (1,291 pages): 622
 programs, 4,490 courses, 296 awards and loan funds, 433 contacts, every date and amount, the table of contents,
-and the rules of each faculty. Global search and the degree plan use it too.
+and the rules of each faculty. The rest of the app uses it too: Find courses, pasted schedules, the course
+record's search and lookup, the degree plan, global search and the Integrations panel all work from every course
+and program, and a class, record or degree line links to its catalogue page.
 
 - **Facts are copied, prose is not.** Courses, requirements, credits, dates, fees, awards, contacts and links
   come from the PDF. The running text is McGill's and this site is public, so it's summarized in our own words,
   much shorter than the original, with the page to check. The official text has the last word.
-- **It isn't in the database.** `seedCatalogue` makes class rows for every course and term each time the database
-  opens, which would be far too slow here, so the data is JSON loaded when first needed. A course becomes a row
-  only when someone adds it. The sample in `db/catalogue.ts` still drives the demo term's classes.
+- **It isn't all in the database.** `seedCatalogue` makes class rows for every course and term each time the
+  database opens, which would be far too slow here, so the data is JSON loaded when first needed. A course gets
+  its row and sections from `stockCourses` the first time a search could show it or a schedule names it, so
+  everything that works on classes works on it. The sample in `db/catalogue.ts` still drives the demo term's classes.
+- **What the PDF doesn't have, and what fills in.** It gives no terms, sections, times or exam dates, and only a few
+  prerequisites. `scripts/catalogue/infer.py` fills those in, and the notes on each screen say which is which:
+  - **Exams**: Fall is McGill's real December 2026 schedule (833 sittings, `exams.json`). Winter is an estimated date
+    in the April exam period for courses that probably run then and have a final.
+  - **Terms and sections** (`offerings.json`): real for Fall courses on the December schedule; otherwise from the code
+    (D1 in Fall, D2 in Winter), program lists, titles (part 1 in Fall, part 2 in Winter) and, for courses with a
+    likely final that aren't on the schedule, Winter. Searching an exact code, or pasting a schedule, overrides this.
+  - **Prerequisites** (`prereqs.json`, `shared/prereqs.ts`): sentences the catalogue states, which can stop a plan under
+    `check-prereqs`, and hints: the other half of a two-term course, an earlier part by title, a lower level in the subject.
+  - **Program rules** (`rules` on each part of `programs.json`, `shared/degree.ts`): limits read from the program's text
+    and checked in the degree plan. About a fifth are sentences it can't check, which it shows for the student to check.
 - **To update it for a new year,** rerun the three steps below, then redo the notes that changed. Python reads
   the PDF, so use `-I` and keep the scripts away from the download:
 
   ```
   python3 -I scripts/catalogue/extract.py <pdf> <work>      # 20 pages at a time, keeps the ligatures
   python3 -I scripts/catalogue/parse.py <work>              # sections and course tables
+  pdftotext -layout <december exam schedule pdf> <work>/exams.txt
   python3 -I scripts/catalogue/build.py <work> src/shared/catalogue/data
   python3 -I scripts/catalogue/build.py <work> batch 1 20   # prints the prose still without a summary
   ```
@@ -311,7 +326,7 @@ both versions.
 | S4 | Who hears about new replies? | The post's author | **Everyone following the thread**: posting or replying follows it, anyone who can see it can follow or unfollow (unfollowing sticks), and the feed can show only followed threads |
 | S4 | Deleting a post | Deletes its replies too | A post **with replies is blanked** and the thread stays; one without replies is removed |
 | A2/G2 | Course catalogue | A built-in sample | **The whole 2026–27 catalogue** (see [The course catalogue](#the-course-catalogue)): search, programs, courses, rules, awards, dates and amounts, contacts and contents. Any course can be added and any program checked against your record |
-| A3 | Term key dates and final exams? | Not included | **Built in** (`shared/keyDates.ts`): McGill's 2026–27 key dates (classes start and end, add/drop, withdrawal with and without refund, reading breaks, exam period) on everyone's calendar, deadlines among them on Home; **no classes on breaks and holidays** (weekly class times skip them on the calendar, in the .ics export and for study mode); a **sample final exam schedule** per course, with your own finals on your calendar and each class page |
+| A3 | Term key dates and final exams? | Not included | **Built in** (`shared/keyDates.ts`): McGill's 2026–27 key dates (classes start and end, add/drop, withdrawal with and without refund, reading breaks, exam period) on everyone's calendar, deadlines among them on Home; **no classes on breaks and holidays** (weekly class times skip them on the calendar, in the .ics export and for study mode); **McGill's December 2026 final exam schedule** per course and section, with estimated April dates until that one's out, and your own finals on your calendar and each class page |
 | A3 | "Imported from my syllabus in a later version" | Not built | **Read the course outline or any PDF, Word or text file, or paste the schedule**: lines with a date and something to hand in or write are found (English or French dates, times, weights) and reviewed before adding. Weighted ones join the section's grading scheme; the rest become class deadlines |
 | A3 | Whose class times and deadlines? | Personal: each student enters their own | **Shared with the section**: one person enters the lecture times or a class deadline and everyone sees it. Deadlines with no class stay private; each student checks deadlines off separately; only whoever added a deadline can edit it |
 | A5 | Whose course details? | Personal ("only you see these") | Professor, email, office hours, room and the **course outline file** are **shared, wiki-style** (anyone in the section edits; "edited by Priya 2 days ago"), until a [professor](#professors) teaches the section. Notes stay private |
@@ -364,13 +379,13 @@ The database changes are migrations `0004_version_b` (new tables and columns), `
 - **Website blocking (ST1).** Needs a browser extension that asks UniLink whether study mode is on. Study mode
   only runs while a UniLink tab is open.
 - **Official exam schedule (A3).** Key dates follow McGill's published 2026–27 dates (the Winter add/drop and
-  withdrawal dates weren't out yet and are marked approximate). The final exam schedule is a sample; the real
-  one is published per course during the term and would need its own import.
-- **Program rules (A2).** Catalogue programs are real, but the degree plan counts each program's complementary
-  courses as pools, so rules across groups need an adviser's check. The three programs in `db/programs.ts` are
-  illustrative samples, not official McGill requirements.
+  withdrawal dates weren't out yet and are marked approximate). Fall finals are McGill's December 2026 schedule as of
+  October 27, without rooms (posted November 27). Winter finals are estimates until April's is published.
+- **Program rules (A2).** Catalogue programs are real, but the rules are worked out from their text, and some can
+  only be shown, so the degree plan needs an adviser's check. The three samples in `db/programs.ts` only
+  show for accounts that had already picked one.
 - **Live integrations (G2).** Google Calendar and myCourses use `.ics` export/import. The catalogue is a snapshot
-  of the 2026–27 PDF, not a live feed: course offerings per term, times and rooms aren't in it, so classes and
-  sections in the demo term still come from `db/catalogue.ts`.
+  of the 2026–27 PDF, not a live feed: course offerings per term, times and rooms aren't in it, so sections and
+  terms are placeholders until someone enters real ones.
 - **Two tabs saving at the same instant.** The last save wins. A save takes milliseconds, so this only
   happens by accident.

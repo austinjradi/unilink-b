@@ -7,7 +7,8 @@ export type CourseQuery =
   // Every word must appear in the title. A lone four-letter word may also be a subject ("COMP").
   | { kind: 'text'; words: string[]; subject: string | null };
 
-const CODE = /^([a-z]{4})?\s*-?\s*([0-9x*?]{1,3})$/i;
+// A subject can end in a digit (NUR1), and a number can carry a term suffix (361D1).
+const CODE = /^([a-z]{3}[a-z0-9])?\s*-?\s*([0-9x*?]{1,3}(?:[a-z]\d?){0,2})$/i;
 
 export function parseCourseQuery(input: string): CourseQuery {
   const query = input.trim();
@@ -17,23 +18,21 @@ export function parseCourseQuery(input: string): CourseQuery {
     return { kind: 'code', subject: code[1]?.toUpperCase() ?? null, number };
   }
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  return { kind: 'text', words, subject: words.length === 1 && /^[a-z]{4}$/.test(words[0]) ? words[0].toUpperCase() : null };
+  return { kind: 'text', words, subject: words.length === 1 && /^[a-z]{3}[a-z0-9]$/.test(words[0]) ? words[0].toUpperCase() : null };
+}
+
+// The search's own rule, for catalogue courses that aren't in the database yet.
+export function courseMatches(query: CourseQuery, subject: string, number: string, title: string) {
+  if (query.kind === 'code') {
+    if (query.subject && query.subject !== subject) return false;
+    return new RegExp(`^${query.number.replace(/_/g, '.')}`, 'i').test(number);
+  }
+  if (!query.words.length) return true;
+  const lower = title.toLowerCase();
+  return query.subject === subject || query.words.every((word) => lower.includes(word));
 }
 
 export const LEVELS = [100, 200, 300, 400, 500] as const;
-
-// The faculty each subject in the sample catalogue belongs to.
-export const SUBJECT_FACULTY: Record<string, string> = {
-  BIOL: 'Science',
-  CHEM: 'Science',
-  COMP: 'Science',
-  ECON: 'Arts',
-  ECSE: 'Engineering',
-  MATH: 'Science',
-  MGCR: 'Management',
-  PHYS: 'Science',
-  PSYC: 'Science',
-};
 
 export interface ScheduleEntry {
   subject: string;
@@ -46,7 +45,7 @@ export interface ScheduleEntry {
 // Subjects are matched in capitals only, so "room 101" isn't a course. Each course counts once.
 export function parseSchedule(text: string): ScheduleEntry[] {
   const found = new Map<string, ScheduleEntry>();
-  for (const m of text.matchAll(/\b([A-Z]{4})[ -]?(\d{3})\b(?:[ \t-]+(?:[Ss]ec(?:tion)?\.?[ \t]*)?(\d{3})\b)?/g)) {
+  for (const m of text.matchAll(/\b([A-Z]{3}[A-Z0-9])[ -]?(\d{3}(?:[A-Z]\d?)*)\b(?:[ \t-]+(?:[Ss]ec(?:tion)?\.?[ \t]*)?(\d{3})\b)?/g)) {
     const key = `${m[1]} ${m[2]}`;
     const known = found.get(key);
     if (!known || (!known.section && m[3])) found.set(key, { subject: m[1], number: m[2], section: m[3] ?? null });

@@ -2,7 +2,7 @@ import type { Program } from '@shared/degree';
 
 // A2: SAMPLE programs for demonstrating degree planning. They are illustrative only and
 // are NOT official McGill requirements; the real programs are in the imported catalogue
-// (shared/catalogue), and services/academics.ts offers both.
+// (shared/catalogue), and only an account that already picked a sample still sees it.
 export const PROGRAMS: Program[] = [
   {
     id: 'sample-cs-major',
