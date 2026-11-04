@@ -414,6 +414,10 @@ h3,
   font-weight: 400;
 }
 
+.req-info[hidden] {
+  display: none;
+}
+
 .req-info:hover,
 .req-info:focus-visible {
   color: var(--mantine-color-periwinkle-light-color);

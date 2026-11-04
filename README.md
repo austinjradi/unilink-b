@@ -104,7 +104,7 @@ The interface follows the team's wireframes in `A2Team.pdf`:
 - **Course record:** a chart of **GPA by term** (`components/GpaTrend.tsx`), credits and CGPA, plus a **CGPA goal**: type the CGPA you're aiming for and see what your next credits
   have to average, or how far straight A's would get you if it's out of reach (`goalOutlook` in `shared/academics.ts`).
 - **Settings:** sections down the side.
-- **Info icons:** every feature and control has a small ⓘ. It opens a popup with the requirements that element implements (the board's own wording, or a note that it isn't on the board), what this version decided, and other requirements someone could have asked for instead (`components/ReqInfo.tsx`, `lib/reqTopics.ts`). Table columns have the icon in their heading rather than on every row.
+- **Info icons:** every feature and control has a small ⓘ. It opens a popup with the requirements that element implements (the board's own wording, or a note that it isn't on the board), what this version decided, and other requirements someone could have asked for instead (`components/ReqInfo.tsx`, `lib/reqTopics.ts`). The popups stay in English when the app is in French. Each icon shows once per screen, so in a list of posts only the first has them, and a modal, drawer or menu counts as its own screen. Table columns have the icon in their heading rather than on every row.
 
 The design uses rounded fonts (Nunito, with Fredoka for headings), bundled locally through Fontsource, and
 works in light and dark mode. Text meets WCAG AA contrast in both (the colours are set in `theme.ts`), controls have accessible names,

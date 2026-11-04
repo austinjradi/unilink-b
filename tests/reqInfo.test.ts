@@ -1,10 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
-
-vi.mock('../src/renderer/src/lib/i18n', () => ({ tx: (key: string) => key }));
-
-const { BOARD, REQ_TOPICS } = await import('../src/renderer/src/lib/reqTopics');
+import { describe, expect, it } from 'vitest';
+import { BOARD, REQ_TOPICS } from '../src/renderer/src/lib/reqTopics';
 
 function sources(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {

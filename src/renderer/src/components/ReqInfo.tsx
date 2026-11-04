@@ -1,8 +1,10 @@
-import { type ReactNode, type SyntheticEvent, useSyncExternalStore } from 'react';
+import { type ReactNode, type SyntheticEvent, useLayoutEffect, useSyncExternalStore } from 'react';
 import { Badge, Group, List, Modal, Stack, Text } from '@mantine/core';
 import { IconInfoCircle } from '@tabler/icons-react';
-import { t, tx } from '../lib/i18n';
 import { BOARD, type BoardId, type BoardItem, REQ_TOPICS, type ReqTopic, type ReqTopicId } from '../lib/reqTopics';
+
+// The popups are about the requirements, for whoever's reviewing them, so they stay in English
+// even when the app is in French.
 
 // One popup for the whole app. An icon can sit in a menu or popover that closes and unmounts
 // as soon as you click elsewhere, so it can't own what it opens.
@@ -31,9 +33,52 @@ window.addEventListener(
   { capture: true },
 );
 
+// The same popup twice on a screen adds nothing, so only the first icon for each topic shows: the
+// first post in a list has its icons and the rest don't. A modal, drawer or menu counts as its own
+// screen, since it covers the page's icons. An icon that's not on display, like one in the nav on a
+// phone, doesn't count, so it can't take the place of one you can see.
+const SCREEN = '[role="dialog"], .mantine-Popover-dropdown';
+
+function showFirstIcons() {
+  const seen = new Map<Element, Set<string>>();
+  const repeats = new Map<HTMLElement, boolean>();
+  for (const icon of document.querySelectorAll<HTMLElement>('.req-info')) {
+    if (!icon.parentElement?.getClientRects().length) {
+      repeats.set(icon, false);
+      continue;
+    }
+    const screen = icon.closest(SCREEN) ?? document.body;
+    const topics = seen.get(screen) ?? new Set<string>();
+    seen.set(screen, topics);
+    repeats.set(icon, topics.has(icon.dataset.topic!));
+    topics.add(icon.dataset.topic!);
+  }
+  repeats.forEach((repeat, icon) => {
+    icon.hidden = repeat;
+  });
+}
+
+// At most once per update, and before the browser paints it.
+let queued = false;
+function queueShowFirst() {
+  if (queued) return;
+  queued = true;
+  queueMicrotask(() => {
+    queued = false;
+    showFirstIcons();
+  });
+}
+
+window.addEventListener('resize', queueShowFirst);
+
 // The icon that opens the popup. It's a span so it can sit inside links, tabs, labels and menu
 // items, none of which should react to it.
 export function ReqInfo({ id }: { id: ReqTopicId }) {
+  // After every render, not just on mount: a list can reorder without anything mounting.
+  useLayoutEffect(() => {
+    queueShowFirst();
+    return queueShowFirst;
+  });
   const open = (event: SyntheticEvent) => {
     event.preventDefault();
     event.stopPropagation();
@@ -44,7 +89,9 @@ export function ReqInfo({ id }: { id: ReqTopicId }) {
       role="button"
       tabIndex={0}
       className="req-info"
-      aria-label={t('Requirements for {{title}}', { title: t(REQ_TOPICS[id].title) })}
+      data-topic={id}
+      lang="en"
+      aria-label={`Requirements for ${REQ_TOPICS[id].title}`}
       onClick={open}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') open(event);
@@ -67,13 +114,13 @@ export function WithInfo({ id, block, children }: { id: ReqTopicId; block?: bool
   );
 }
 
-const PRIORITY = { must: tx('Must have'), should: tx('Should have') };
-const STATUS = { draft: tx('Draft'), question: tx('Open question') };
-const KIND = { feature: tx('Feature story'), named: tx('Named on the board'), beyond: tx('Not on the board') };
+const PRIORITY = { must: 'Must have', should: 'Should have' };
+const STATUS = { draft: 'Draft', question: 'Open question' };
+const KIND = { feature: 'Feature story', named: 'Named on the board', beyond: 'Not on the board' };
 
 function BoardEntry({ id }: { id: BoardId }) {
   const item: BoardItem = BOARD[id];
-  const fallback = item.kind === 'named' ? tx('The board names this feature but gives no detail.') : tx('The board gives this requirement a title only.');
+  const fallback = item.kind === 'named' ? 'The board names this feature but gives no detail.' : 'The board gives this requirement a title only.';
   const onBoard = item.kind !== 'beyond';
   return (
     <div>
@@ -84,26 +131,26 @@ function BoardEntry({ id }: { id: BoardId }) {
           </Badge>
         )}
         <Text span fw={700} size="sm">
-          {t(item.title)}
+          {item.title}
         </Text>
         {item.priority && (
           <Badge variant="light" size="xs" color={item.priority === 'must' ? 'periwinkle' : 'gray'}>
-            {t(PRIORITY[item.priority])}
+            {PRIORITY[item.priority]}
           </Badge>
         )}
         {item.status && (
           <Badge variant="light" size="xs" color={item.status === 'question' ? 'orange' : 'gray'}>
-            {t(STATUS[item.status])}
+            {STATUS[item.status]}
           </Badge>
         )}
         {item.kind !== 'requirement' && (
           <Badge variant="light" size="xs" color={onBoard ? 'gray' : 'orange'}>
-            {t(KIND[item.kind])}
+            {KIND[item.kind]}
           </Badge>
         )}
       </Group>
       <Text size="sm" c="dimmed">
-        {t(item.text ?? fallback)}
+        {item.text ?? fallback}
       </Text>
     </div>
   );
@@ -125,7 +172,8 @@ export function ReqInfoHost() {
     <Modal
       opened={!!current?.opened}
       onClose={() => current && setShown({ ...current, opened: false })}
-      title={topic && t(topic.title)}
+      title={topic?.title}
+      lang="en"
       size="lg"
       zIndex={500}
       closeOnEscape={false}
@@ -133,21 +181,21 @@ export function ReqInfoHost() {
       {topic && (
         <Stack gap="lg">
           <div>
-            <Heading>{t('Requirements it implements')}</Heading>
+            <Heading>Requirements it implements</Heading>
             <Stack gap="sm">
               {topic.board.map((id) => (
                 <BoardEntry key={id} id={id} />
               ))}
             </Stack>
             <Text size="sm" mt="sm">
-              <b>{t('In this version:')}</b> {t(topic.how)}
+              <b>In this version:</b> {topic.how}
             </Text>
           </div>
           <div>
-            <Heading>{t('Potential different requirements')}</Heading>
+            <Heading>Potential different requirements</Heading>
             <List size="sm" spacing={6}>
               {topic.alternatives.map((alternative) => (
-                <List.Item key={alternative}>{t(alternative)}</List.Item>
+                <List.Item key={alternative}>{alternative}</List.Item>
               ))}
             </List>
           </div>
