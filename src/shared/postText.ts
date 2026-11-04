@@ -1,3 +1,6 @@
+// 'edit-window': how long after posting something can still be changed.
+export const EDIT_WINDOW_MS = 15 * 60_000;
+
 // S4: posts and replies are plain text with a little Ed-style formatting: ``` fenced ``` code
 // blocks, `inline code`, web links, and math between dollar signs. Anything else shows exactly as
 // it was typed.
@@ -49,3 +52,30 @@ export function parsePost(text: string): PostPart[] {
   parts.push(...inlineParts(text.slice(from)));
   return parts;
 }
+
+// 'typed-search-filters': "topic:exams is:unanswered graphs" as filters plus the words left over.
+export interface TypedSearch {
+  words: string;
+  topic: string | null;
+  classCode: string | null;
+  unanswered: boolean;
+  following: boolean;
+  since: 'today' | 'week' | 'month' | null;
+}
+
+export function parseTypedSearch(text: string): TypedSearch {
+  const found: TypedSearch = { words: '', topic: null, classCode: null, unanswered: false, following: false, since: null };
+  const words: string[] = [];
+  for (const piece of text.trim().split(/\s+/).filter(Boolean)) {
+    const [key, value] = piece.toLowerCase().split(/:(.*)/);
+    if (key === 'topic' && value) found.topic = value;
+    else if (key === 'class' && value) found.classCode = value;
+    else if (key === 'is' && value === 'unanswered') found.unanswered = true;
+    else if (key === 'is' && value === 'following') found.following = true;
+    else if (key === 'since' && (value === 'today' || value === 'week' || value === 'month')) found.since = value;
+    else words.push(piece);
+  }
+  found.words = words.join(' ');
+  return found;
+}
+

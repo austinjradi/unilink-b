@@ -1,4 +1,4 @@
-import { and, eq, gt, gte, isNull, lt } from 'drizzle-orm';
+import { inArray, and, eq, gt, gte, isNull, lt } from 'drizzle-orm';
 import { z } from 'zod';
 import { addDays, atTime, parseYmd, termRange, ymd } from '@shared/dates';
 import { noClassesOn } from '@shared/keyDates';
@@ -15,11 +15,16 @@ import {
   studyModeSettings,
   studySessionMembers,
   studySessions,
+  users,
 } from '../db/schema';
-import { type AuthedContext, type Context, idSchema, procedure } from '../rpc/core';
+import { AppError, type AuthedContext, type Context, idSchema, procedure } from '../rpc/core';
+import { isOn } from '@shared/variants';
 import { isProfessor, requireMember, sectionCode } from './access';
 import { m, notify, sweepReminders, takeDesktopNotifications } from './notifications';
 import { ownTask } from './planner';
+
+// Switches stay in English, so this isn't written where the French check would ask for a translation.
+const NO_STOPPING = 'A focus session can’t be stopped early.';
 
 // ST1: study mode switches on during class times and study sessions (or by hand),
 // holds back notifications while it's on, and can turn on GNOME's Do Not Disturb.
@@ -55,6 +60,7 @@ function focusWindows(db: DB, userId: number, now: Date): FocusWindow[] {
   const today = ymd(now);
   const days = [addDays(today, -1), today, addDays(today, 1)];
 
+  if (isOn('manual-study-mode')) return [];
   if (settings.autoForClasses) {
     const meetings = db
       .select({ meeting: classMeetings, term: classes.term, code: sectionCode, auto: courseInfo.studyModeAuto })
@@ -65,7 +71,9 @@ function focusWindows(db: DB, userId: number, now: Date): FocusWindow[] {
       .leftJoin(courseInfo, and(eq(courseInfo.classId, classes.id), eq(courseInfo.userId, userId)))
       .all();
     for (const { meeting: m, term, code, auto } of meetings) {
-      if (auto === false) continue;
+      if (auto === false && !isOn('one-study-setting')) continue;
+      // Version A: only what you entered yourself.
+      if (isOn('study-own-class-times') && m.userId !== userId) continue;
       const range = termRange(term);
       for (const day of days) {
         if (parseYmd(day).getDay() !== m.weekday || day < range.start || day > range.end || noClassesOn(day)) continue;
@@ -126,6 +134,16 @@ function startFocus(ctx: AuthedContext, minutes: number, focusTaskId: number | n
 }
 
 export const studyModeRouter = {
+  // 'focus-leaderboard': this week's focus time for people who share a class with you.
+  leaderboard: procedure(z.void(), (_input, ctx) => {
+    const mine = ctx.db.select({ id: enrollments.classId }).from(enrollments).where(eq(enrollments.userId, ctx.userId));
+    const people = ctx.db.selectDistinct({ id: users.id, name: users.name }).from(enrollments).innerJoin(users, eq(enrollments.userId, users.id)).where(and(inArray(enrollments.classId, mine), eq(users.role, 'student'))).all();
+    return people
+      .map((person) => ({ name: person.name, me: person.id === ctx.userId, thisWeek: focusSummary(ctx.db.select().from(focusLog).where(eq(focusLog.userId, person.id)).all(), ctx.now()).thisWeek }))
+      .sort((a, b) => b.thisWeek - a.thisWeek)
+      .slice(0, 10);
+  }),
+
   focusTime: procedure(z.void(), (_input, ctx) =>
     focusSummary(ctx.db.select().from(focusLog).where(eq(focusLog.userId, ctx.userId)).all(), ctx.now()),
   ),
@@ -172,6 +190,7 @@ export const studyModeRouter = {
 
   // Ends a focus session, and pauses any class or study session window running right now.
   stop: procedure(z.void(), (_input, ctx) => {
+    if (isOn('no-stopping-early') && settingsFor(ctx.db, ctx.userId).manualUntil && settingsFor(ctx.db, ctx.userId).manualUntil! > ctx.now()) throw new AppError(NO_STOPPING, 'FORBIDDEN');
     endFocus(ctx);
     saveSettings(ctx.db, ctx.userId, { manualUntil: null, pausedUntil: null });
     const { status } = currentStudyMode(ctx);

@@ -22,40 +22,83 @@ import { useQuery } from '@tanstack/react-query';
 import { FACULTIES, passwordProblems, PRONOUNS } from '@shared/validation';
 import { SectionCard } from '../components/ui';
 import { fromNow } from '../lib/format';
-import { restoreBackup } from '../lib/backup';
+import { downloadBackup, restoreBackup } from '../lib/backup';
 import { clearDrafts } from '../lib/drafts';
 import { useAction, useMe } from '../lib/hooks';
-import { rpc } from '../lib/rpc';
+import { type Out, rpc } from '../lib/rpc';
+import { useVariant } from '../lib/variants';
+import { ClassListOptOut } from '../components/ClassListOptOut';
 import { t, tx } from '../lib/i18n';
 import { ReqInfo, WithInfo } from '../components/ReqInfo';
 
 // G4 account settings and G3 notification settings, shown as Settings tabs.
 
+// 'choose-visible-fields': what classmates see besides your name.
+function VisibleFields() {
+  const sharing = useQuery({ queryKey: ['profile', 'sharing'], queryFn: () => rpc.profile.sharing() });
+  const save = useAction((fields: Out<typeof rpc.profile.sharing>['fields']) => rpc.profile.setVisibleFields({ fields }));
+  const options = [
+    { value: 'email', label: t('McGill email') },
+    { value: 'pronouns', label: t('Pronouns') },
+    { value: 'faculty', label: t('Faculty') },
+    { value: 'gradYear', label: t('Expected graduation') },
+  ] as const;
+  if (!sharing.data) return null;
+  const fields = sharing.data.fields;
+  return (
+    <Stack gap="xs" mt="md">
+      <Text size="sm">{'Choose what classmates see besides your name, once you post or reply.'}</Text>
+      {options.map(({ value, label }) => (
+        <Checkbox
+          key={value}
+          label={label}
+          checked={fields.includes(value)}
+          onChange={(e) => save.mutate(e.currentTarget.checked ? [...fields, value] : fields.filter((f) => f !== value))}
+        />
+      ))}
+    </Stack>
+  );
+}
+
 export function PrivacyPanel() {
+  const versionA = useVariant('classmates-version-a');
+  const listMembers = useVariant('list-members');
+  const chooseFields = useVariant('choose-visible-fields');
+  const noDownload = useVariant('no-data-download');
   const download = useAction(() => rpc.profile.exportData(), { success: (r) => (r ? t('Saved a copy of your data.') : '') });
   return (
     <Stack gap="lg">
       <SectionCard info="privacy-visible" title={t('What classmates see')}>
         <Alert variant="light" icon={<IconEye size={18} />}>
-          {t("Your name, McGill email, pronouns, faculty and goat are shown to classmates only once you post or reply on a discussion board. Joining a study session doesn't reveal you: only the other people going see who's there. Group chat links you share show your name. There's no member list for your classes. Your grades, notes, course record and planner are private to you.")}
+          {versionA
+            ? 'Your name and McGill email are shown to classmates only once you post, reply or join a study session.'
+            : listMembers
+              ? 'Classmates in your sections see your name, email, pronouns and faculty, unless you leave yourself off class lists.'
+              : t("Your name, McGill email, pronouns, faculty and goat are shown to classmates only once you post or reply on a discussion board. Joining a study session doesn't reveal you: only the other people going see who's there. Group chat links you share show your name. There's no member list for your classes. Your grades, notes, course record and planner are private to you.")}
         </Alert>
+        {listMembers && (
+          <Stack mt="md">
+            <ClassListOptOut />
+          </Stack>
+        )}
+        {chooseFields && <VisibleFields />}
       </SectionCard>
       {/* G4: alongside deleting your account and data (Settings → Account). */}
-      <SectionCard info="privacy-download" title={t('Your data')}>
+      {!noDownload && <SectionCard info="privacy-download" title={t('Your data')}>
         <Text size="sm" c="dimmed" mb="sm">
           {t('Download a copy of everything UniLink keeps about you: your profile, classes, course record, marks, notes, plans, to-dos, posts, replies, links and study sessions.')}
         </Text>
         <Button variant="default" w="fit-content" leftSection={<IconDownload size={16} />} onClick={() => download.mutate()} loading={download.isPending}>
           {t('Download my data')}
         </Button>
-      </SectionCard>
+      </SectionCard>}
       {/* There's no server, so this is the only copy of anything anyone keeps here. */}
       <SectionCard info="backup-download" title={t('Back up this browser')}>
         <Text size="sm" c="dimmed" mb="sm">
           {t('Everything in UniLink is saved only in this browser, so clearing its data would lose it. A backup keeps it all in one file you can restore here or on another computer. It holds every account used in this browser, with notes and marks, so keep it somewhere private.')}
         </Text>
         <Group gap="xs">
-          <Button variant="default" leftSection={<IconDownload size={16} />} onClick={() => void window.unilink.downloadBackup()}>
+          <Button variant="default" leftSection={<IconDownload size={16} />} onClick={downloadBackup}>
             {t('Download a backup')}
           </Button>
           <WithInfo id="backup-restore">
@@ -78,18 +121,43 @@ const NOTIFICATION_GROUPS = {
 };
 
 // G3: which notifications show on the desktop and go by email (in-app is always on).
+// 'one-notification-switch' and 'notify-per-class': simpler than a row for every kind.
+function SimpleNotificationSettings({ perClass }: { perClass: boolean }) {
+  const switches = useQuery({ queryKey: ['notifications', 'switches'], queryFn: () => rpc.notifications.switches() });
+  const classes = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine(), enabled: perClass });
+  const setAllOff = useAction((off: boolean) => rpc.notifications.setAllOff({ off }));
+  const setMuted = useAction((v: { classId: number; muted: boolean }) => rpc.notifications.setClassMuted(v));
+  return (
+    <SectionCard info="settings-notifications" title={t('Notifications')}>
+      {perClass ? (
+        <Stack gap="xs">
+          {classes.data?.map((c) => (
+            <Checkbox key={c.id} label={c.code} checked={!switches.data?.mutedClasses.includes(c.id)} onChange={(e) => setMuted.mutate({ classId: c.id, muted: !e.currentTarget.checked })} />
+          ))}
+        </Stack>
+      ) : (
+        <Checkbox label="Send me notifications" checked={!switches.data?.off} onChange={(e) => setAllOff.mutate(!e.currentTarget.checked)} />
+      )}
+    </SectionCard>
+  );
+}
+
 export function NotificationSettings() {
+  const oneSwitch = useVariant('one-notification-switch');
+  const perClass = useVariant('notify-per-class');
+  const noEmail = useVariant('hide-email-options');
   const prefs = useQuery({ queryKey: ['notifications', 'prefs'], queryFn: () => rpc.notifications.prefs() });
   const outbox = useQuery({ queryKey: ['notifications', 'outbox'], queryFn: () => rpc.notifications.outbox() });
   const [showOutbox, setShowOutbox] = useState(false);
   const set = useAction((v: Parameters<typeof rpc.notifications.setPref>[0]) => rpc.notifications.setPref(v));
+  if (oneSwitch || perClass) return <SimpleNotificationSettings perClass={perClass} />;
 
   return (
     <SectionCard
       info="settings-notifications"
       title={t('Notifications')}
       actions={
-        <WithInfo id="email-outbox">
+        !noEmail && <WithInfo id="email-outbox">
           <Button size="xs" variant="subtle" leftSection={<IconMail size={14} />} onClick={() => setShowOutbox(true)}>
             {t('Email outbox ({{count}})', { count: outbox.data?.length ?? 0 })}
           </Button>
@@ -108,9 +176,11 @@ export function NotificationSettings() {
             <Table.Th ta="center" w={90}>
               <WithInfo id="notif-desktop">{t('Desktop')}</WithInfo>
             </Table.Th>
-            <Table.Th ta="center" w={90}>
-              <WithInfo id="notif-email">{t('Email')}</WithInfo>
-            </Table.Th>
+            {!noEmail && (
+              <Table.Th ta="center" w={90}>
+                <WithInfo id="notif-email">{t('Email')}</WithInfo>
+              </Table.Th>
+            )}
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -191,6 +261,8 @@ export const gradYearOptions = () => {
 };
 
 export function ProfileForm() {
+  const fromMcGill = useVariant('names-from-mcgill');
+  const versionAProfile = useVariant('version-a-profile');
   const me = useMe();
   const form = useForm({
     initialValues: {
@@ -217,11 +289,15 @@ export function ProfileForm() {
       <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
         <Stack>
           <Group grow>
-            <TextInput label={<WithInfo id="profile-name">{t('Name')}</WithInfo>} {...form.getInputProps('name')} />
+            <TextInput readOnly={fromMcGill} description={fromMcGill ? 'Your name comes from McGill.' : undefined} label={<WithInfo id="profile-name">{t('Name')}</WithInfo>} {...form.getInputProps('name')} />
+            {!versionAProfile && (
             <Autocomplete label={<WithInfo id="signup-pronouns">{t('Pronouns')}</WithInfo>} placeholder={t('Optional')} data={[...PRONOUNS]} {...form.getInputProps('pronouns')} />
+            )}
           </Group>
           <Group grow>
+            {!versionAProfile && (
             <Select label={<WithInfo id="signup-faculty">{t('Faculty')}</WithInfo>} placeholder="—" clearable data={facultyOptions()} {...form.getInputProps('faculty')} />
+            )}
             {me.role === 'student' && <Select label={<WithInfo id="signup-grad">{t('Expected graduation')}</WithInfo>} placeholder="—" clearable data={gradYearOptions()} {...form.getInputProps('gradYear')} />}
           </Group>
           <Group justify="flex-end">
@@ -273,6 +349,10 @@ export function ChangePassword() {
 }
 
 export function DeleteAccount() {
+  const deleteAll = useVariant('delete-everything');
+  const alwaysPosts = useVariant('always-delete-posts');
+  const wait30 = useVariant('delete-after-30-days');
+  const noKeeping = deleteAll || alwaysPosts;
   const [open, setOpen] = useState(false);
   const [password, setPassword] = useState('');
   const [keepPosts, setKeepPosts] = useState(false);
@@ -299,13 +379,16 @@ export function DeleteAccount() {
         >
           <Stack>
             <Text size="sm">{t('Enter your password to confirm.')}</Text>
+            {wait30 && <Text size="sm">Your account is deleted after 30 days. Signing back in before then keeps it.</Text>}
             <PasswordInput visibilityToggleButtonProps={{ 'aria-label': t('Show or hide the password') }} label={t('Password')} value={password} onChange={(e) => setPassword(e.currentTarget.value)} data-autofocus />
+            {!noKeeping && (
             <Checkbox
               checked={keepPosts}
               onChange={(e) => setKeepPosts(e.currentTarget.checked)}
               label={<WithInfo id="delete-keep-posts">{t('Leave my posts and replies up, without my name')}</WithInfo>}
               description={t('Classmates keep the answers you gave. They show as "Former student".')}
             />
+            )}
             <Text size="xs" c="dimmed">
               {t('Class times, deadlines and grading schemes you added for a section stay with it, credited to a former student.')} <ReqInfo id="delete-shared" />
             </Text>

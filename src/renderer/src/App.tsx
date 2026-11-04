@@ -7,6 +7,10 @@ import { QueryCache, QueryClient, QueryClientProvider, useQuery } from '@tanstac
 import { HashRouter, Navigate, Route, Routes, useLocation, useParams } from 'react-router';
 import { Layout } from './components/Layout';
 import { ReqInfoHost } from './components/ReqInfo';
+import { RequirementsView } from './components/RequirementsView';
+import { SiteBlockers } from './components/SiteBlockers';
+import { useListOpen } from './lib/reqView';
+import { useForcedLocale, useVariant } from './lib/variants';
 import type { Locale } from '@shared/i18n';
 import { MeContext } from './lib/hooks';
 import { applyLocale, getLocale, LocaleContext, t, useLocale } from './lib/i18n';
@@ -23,6 +27,8 @@ const CalculatorPage = page(() => import('./pages/Calculator'), 'CalculatorPage'
 const CalendarPage = page(() => import('./pages/Calendar'), 'CalendarPage');
 const ClassPage = page(() => import('./pages/ClassPage'), 'ClassPage');
 const CoursesPage = page(() => import('./pages/Classes'), 'CoursesPage');
+const ProfilePage = page(() => import('./pages/Settings'), 'ProfilePage');
+const AcademicsPage = page(() => import('./pages/Classes'), 'AcademicsPage');
 const PlannerPage = page(() => import('./pages/Planner'), 'PlannerPage');
 const SessionsPage = page(() => import('./pages/Sessions'), 'SessionsPage');
 const SessionSearchPage = page(() => import('./pages/Sessions'), 'SessionSearchPage');
@@ -94,9 +100,16 @@ function Root() {
   const { pathname } = useLocation();
   const me = useQuery({ queryKey: ['me'], queryFn: () => rpc.auth.me() });
   const { locale, setLocale } = useLocale();
+  const forced = useForcedLocale();
+  const highContrast = useVariant('high-contrast');
+  const largerText = useVariant('larger-text');
+  useEffect(() => {
+    document.documentElement.toggleAttribute('data-high-contrast', highContrast);
+    document.documentElement.toggleAttribute('data-larger-text', largerText);
+  }, [highContrast, largerText]);
 
   // A signed-in student's saved language wins over this device's last choice.
-  const saved = me.data?.locale;
+  const saved = forced ?? me.data?.locale;
   useEffect(() => {
     if (saved && saved !== locale) setLocale(saved);
   }, [saved, locale, setLocale]);
@@ -147,7 +160,7 @@ function Root() {
             <Route path="/academics/:tab?" element={<RedirectAcademics />} />
             <Route path="/focus" element={<Navigate to="/study-mode" replace />} />
             <Route path="/settings/study-mode" element={<Navigate to="/study-mode" replace />} />
-            <Route path="/profile" element={<Navigate to="/settings/account" replace />} />
+            <Route path="/profile" element={<ProfileRoute />} />
             <Route path="/integrations" element={<Navigate to="/settings/integrations" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
@@ -158,30 +171,48 @@ function Root() {
   );
 }
 
+// 'separate-profile-page': the profile and the goat get a page of their own.
+function ProfileRoute() {
+  const ownPage = useVariant('separate-profile-page');
+  return ownPage ? <ProfilePage /> : <Navigate to="/settings/account" replace />;
+}
+
 function RedirectAcademics() {
   const { tab } = useParams();
+  const ownTab = useVariant('academics-tab');
+  if (ownTab) return <AcademicsPage />;
   return <Navigate to={tab === 'degree' ? '/courses/degree' : '/courses/record'} replace />;
 }
 
 export function App() {
+  const sundayFirst = useVariant('week-starts-sunday');
+  const listOpen = useListOpen();
   const [locale, setLocaleState] = useState<Locale>(getLocale());
   const setLocale = useCallback((next: Locale) => {
     applyLocale(next);
     setLocaleState(next);
   }, []);
 
+  const lightOnly = useVariant('light-only');
+
   return (
     <LocaleContext.Provider value={{ locale, setLocale }}>
-      <MantineProvider theme={theme} cssVariablesResolver={cssVariablesResolver} defaultColorScheme="auto">
-        <DatesProvider settings={{ firstDayOfWeek: 1, locale }}>
-          <Notifications position="top-right" />
+      <MantineProvider theme={theme} cssVariablesResolver={cssVariablesResolver} defaultColorScheme="auto" forceColorScheme={lightOnly ? 'light' : undefined}>
+        <DatesProvider settings={{ firstDayOfWeek: sundayFirst ? 0 : 1, locale }}>
+          {/* Toasts are about the site, so they wait until it's back. */}
+          {!listOpen && <Notifications position="top-right" />}
           <QueryClientProvider client={queryClient}>
             {/* Re-mount everything on a language change so every label re-renders. */}
             <ModalsProvider key={locale}>
               <ReqInfoHost />
-              <HashRouter>
-                <Root />
-              </HashRouter>
+              {listOpen && <RequirementsView />}
+              {/* Hidden rather than unmounted, so half-filled forms are still there on the way back. */}
+              <div style={{ display: listOpen ? 'none' : 'contents' }}>
+                <SiteBlockers />
+                <HashRouter>
+                  <Root />
+                </HashRouter>
+              </div>
             </ModalsProvider>
           </QueryClientProvider>
         </DatesProvider>

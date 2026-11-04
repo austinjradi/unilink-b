@@ -1,4 +1,5 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { isOn } from '@shared/variants';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { DB } from '../db/client';
 import { classes, courses, enrollments, users } from '../db/schema';
 import { AppError } from '../rpc/core';
@@ -7,8 +8,20 @@ export function isMember(db: DB, userId: number, classId: number): boolean {
   return !!db
     .select({ userId: enrollments.userId })
     .from(enrollments)
-    .where(and(eq(enrollments.userId, userId), eq(enrollments.classId, classId)))
+    .where(and(eq(enrollments.userId, userId), isOn('one-class-per-course') ? inArray(enrollments.classId, sameCourseSections(db, classId)) : eq(enrollments.classId, classId)))
     .get();
+}
+
+// 'one-class-per-course': the class everyone in the course is put in.
+export function firstSection(db: DB, classId: number) {
+  return Math.min(...sameCourseSections(db, classId));
+}
+
+// Every section of the same course that term, this one included.
+export function sameCourseSections(db: DB, classId: number) {
+  const cls = db.select().from(classes).where(eq(classes.id, classId)).get();
+  if (!cls) return [classId];
+  return db.select({ id: classes.id }).from(classes).where(and(eq(classes.courseId, cls.courseId), eq(classes.term, cls.term))).all().map((c) => c.id);
 }
 
 export function requireMember(db: DB, userId: number, classId: number) {
@@ -21,6 +34,7 @@ export function isProfessor(db: DB, userId: number): boolean {
 
 // A professor teaches a section by joining it, so they're enrolled like anyone else.
 export function teaches(db: DB, userId: number, classId: number): boolean {
+  if (isOn('no-professor-features')) return false;
   return isMember(db, userId, classId) && isProfessor(db, userId);
 }
 
@@ -30,10 +44,10 @@ export function requireTeacher(db: DB, userId: number, classId: number) {
 
 function membersWithRole(db: DB, classId: number, role: 'student' | 'professor') {
   return db
-    .select({ id: users.id, name: users.name, email: users.email })
+    .selectDistinct({ id: users.id, name: users.name, email: users.email })
     .from(enrollments)
     .innerJoin(users, eq(enrollments.userId, users.id))
-    .where(and(eq(enrollments.classId, classId), eq(users.role, role)))
+    .where(and(isOn('one-class-per-course') ? inArray(enrollments.classId, sameCourseSections(db, classId)) : eq(enrollments.classId, classId), eq(users.role, role)))
     .all();
 }
 
@@ -52,7 +66,9 @@ export function requireSharedEditor(db: DB, userId: number, classId: number) {
 }
 
 // Version B's classes are sections, labelled "COMP 251-001".
-export const sectionCode = sql<string>`${courses.subject} || ' ' || ${courses.number} || '-' || ${classes.section}`;
+// 'one-class-per-course' drops the section, so it's worked out each time a query is built.
+const sectionPart = { getSQL: () => (isOn('one-class-per-course') ? sql`''` : sql`'-' || ${classes.section}`) };
+export const sectionCode = sql<string>`${courses.subject} || ' ' || ${courses.number} || ${sectionPart}`;
 
 export function classLabel(db: DB, classId: number | null): string | null {
   if (classId == null) return null;

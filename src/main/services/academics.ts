@@ -3,9 +3,12 @@ import { z } from 'zod';
 import { RECORD_GRADES, RECORD_STATUSES } from '@shared/academics';
 import { evaluateDegree } from '@shared/degree';
 import { summarize } from '@shared/grades';
+import { CURRENT_TERM } from '@shared/dates';
+import { isOn } from '@shared/variants';
 import type { DB } from '../db/client';
 import { PROGRAMS } from '../db/programs';
 import { classes, courseRecords, courses, enrollments, users } from '../db/schema';
+import { whyCantPlan } from '@shared/prereqs';
 import { AppError, idSchema, procedure } from '../rpc/core';
 import { notFound } from './access';
 import { gradedItems } from './courses';
@@ -30,6 +33,20 @@ const recordFields = z
     grade: z.enum(RECORD_GRADES as [string, ...string[]]).nullable(),
   })
   .transform((r) => ({ ...r, grade: r.status === 'completed' ? r.grade : null }));
+
+// 'lock-completed': a finished course stays as it was saved.
+const LOCKED = 'A completed course is locked once it’s saved.';
+const checkUnlocked = (record: { status: string }) => {
+  if (isOn('lock-completed') && record.status === 'completed') throw new AppError(LOCKED, 'FORBIDDEN');
+};
+
+// 'check-prereqs': the sample rules stop a plan that can't happen.
+function checkPlan(db: DB, userId: number, fields: { code: string; term: string; status: string }, id?: number) {
+  if (!isOn('check-prereqs') || fields.status !== 'planned') return;
+  const record = db.select().from(courseRecords).where(eq(courseRecords.userId, userId)).all().filter((r) => r.id !== id);
+  const reason = whyCantPlan(fields.code, fields.term, record);
+  if (reason) throw new AppError(reason, 'BAD_INPUT');
+}
 
 function ownRecord(db: DB, userId: number, id: number) {
   return (
@@ -78,6 +95,16 @@ export const recordRouter = {
 
   // In-progress courses that match a joined class carry the live A5 estimate.
   list: procedure(z.void(), (_input, ctx) => {
+    // 'record-sync-classes': what's joined this term is on the record without being added.
+    if (isOn('record-sync-classes')) {
+      const onRecord = ctx.db.select({ code: courseRecords.code, term: courseRecords.term }).from(courseRecords).where(eq(courseRecords.userId, ctx.userId)).all();
+      const credits = catalogueCredits(ctx.db);
+      for (const c of myClasses(ctx.db, ctx.userId)) {
+        const courseCode = `${c.subject} ${c.number}`;
+        if (c.term !== CURRENT_TERM || onRecord.some((r) => r.code === courseCode && r.term === c.term)) continue;
+        ctx.db.insert(courseRecords).values({ code: courseCode, title: catalogueTitle(ctx.db, courseCode), credits: credits(courseCode), term: c.term, status: 'in-progress', grade: null, userId: ctx.userId }).run();
+      }
+    }
     const records = ctx.db
       .select()
       .from(courseRecords)
@@ -93,6 +120,7 @@ export const recordRouter = {
   }),
 
   add: procedure(recordFields, (fields, ctx) => {
+    checkPlan(ctx.db, ctx.userId, fields);
     const dup = ctx.db
       .select({ id: courseRecords.id })
       .from(courseRecords)
@@ -106,12 +134,13 @@ export const recordRouter = {
   }),
 
   update: procedure(z.object({ id: idSchema }).and(recordFields), ({ id, ...fields }, ctx) => {
-    ownRecord(ctx.db, ctx.userId, id);
+    checkPlan(ctx.db, ctx.userId, fields, id);
+    checkUnlocked(ownRecord(ctx.db, ctx.userId, id));
     ctx.db.update(courseRecords).set(fields).where(eq(courseRecords.id, id)).run();
   }),
 
   remove: procedure(z.object({ id: idSchema }), ({ id }, ctx) => {
-    ownRecord(ctx.db, ctx.userId, id);
+    checkUnlocked(ownRecord(ctx.db, ctx.userId, id));
     ctx.db.delete(courseRecords).where(eq(courseRecords.id, id)).run();
   }),
 

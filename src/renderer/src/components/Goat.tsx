@@ -1,3 +1,5 @@
+import { useVariant } from '../lib/variants';
+import { goatFor } from '@shared/goat';
 import type { CSSProperties } from 'react';
 import type { GoatConfig } from '@shared/goat';
 import { t } from '../lib/i18n';
@@ -172,7 +174,10 @@ export function GoatSvg({ goat, background = true }: { goat: GoatConfig; backgro
 }
 
 // A goat in the sketch-style square frame used across the app.
-export function GoatAvatar({ goat, size = 40, style }: { goat: GoatConfig; size?: number; style?: CSSProperties }) {
+export function GoatAvatar({ goat: own, size = 40, style }: { goat: GoatConfig; size?: number; style?: CSSProperties }) {
+  // 'same-avatar': nobody's goat is their own.
+  const sameForAll = useVariant('same-avatar');
+  const goat = sameForAll ? goatFor(0, null) : own;
   return (
     <div
       style={{

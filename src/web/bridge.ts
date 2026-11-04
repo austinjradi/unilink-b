@@ -4,7 +4,8 @@ import { openDatabase } from '../main/db/client';
 import { DEMO_HANDOUTS, seedDemoData } from '../main/db/demo';
 import { type Context, dispatch, type RpcResult } from '../main/rpc/core';
 import { appRouter } from '../main/rpc/router';
-import { readBackup, writeBackup } from '../shared/backup';
+import { isSealed, openSealed, readBackup, sealBackup, writeBackup } from '../shared/backup';
+import { isOn, subscribeVariants } from '../shared/variants';
 import { backgroundTick, initialTickState } from '../main/services/studyMode';
 import { FILES_DIR, addPickedFile, download } from './node/fs';
 import { onNavigate, platform } from './platform';
@@ -15,7 +16,12 @@ import { LAST_BACKUP_KEY } from '../main/services/notifications';
 // the same services and router run here against SQLite in WebAssembly, and
 // window.unilink.call() dispatches to them directly instead of over IPC.
 
-const DB_KEY = 'db';
+// 'empty-start' keeps its own database, so what was here is still there on switching back.
+const dbKey = () => (isOn('empty-start') ? 'db-empty' : 'db');
+const DB_KEY = dbKey();
+subscribeVariants(() => {
+  if (dbKey() !== DB_KEY) location.reload();
+});
 
 // Other tabs on this site have their own copy of the database. Each saved copy is
 // sent to them, so the newest state wins everywhere (open two tabs to be two classmates).
@@ -50,7 +56,7 @@ function persist() {
   // export() reopens the connection, which also resets total_changes() and pragmas.
   const bytes = sqlite.export();
   sqlite.run('PRAGMA foreign_keys = ON');
-  channel?.postMessage({ type: 'saved', bytes });
+  channel?.postMessage({ type: 'saved', key: DB_KEY, bytes });
   saving = saving
     .then(async () => {
       await storage.save(DB_KEY, bytes);
@@ -71,7 +77,7 @@ async function start(): Promise<Context> {
   setSaveProblem(!(await storage.available()));
   const db = use(new SQL.Database(saved));
   // Like a desktop dev build: demo classmates to interact with, and reset codes shown on screen.
-  seedDemoData(db);
+  if (!isOn('empty-start')) seedDemoData(db);
   persist();
   for (const { path, text } of DEMO_HANDOUTS) {
     if (!(await storage.load<Blob>(path).catch(() => undefined))) await storage.save(path, new Blob([text], { type: 'text/plain' }));
@@ -80,7 +86,7 @@ async function start(): Promise<Context> {
   const ctx: Context = { db, session: { userId: null }, platform, isDev: true, filesDir: FILES_DIR, now: () => new Date() };
 
   channel?.addEventListener('message', ({ data }) => {
-    if (data?.type === 'saved') use(new SQL.Database(data.bytes), ctx);
+    if (data?.type === 'saved' && data.key === DB_KEY) use(new SQL.Database(data.bytes), ctx);
     else if (data?.type === 'reset') location.reload();
   });
 
@@ -121,7 +127,7 @@ window.unilink = {
     return () => saveListeners.delete(listener);
   },
   keepData: () => storage.askToKeep(),
-  async downloadBackup() {
+  async downloadBackup(passphrase) {
     await ready;
     sqlite.run('INSERT OR REPLACE INTO app_state (key, value) VALUES (?, ?)', [LAST_BACKUP_KEY, String(Date.now())]);
     persist();
@@ -138,11 +144,14 @@ window.unilink = {
       const blob = await storage.load<Blob>(path);
       if (blob) files.push({ path, type: blob.type, bytes: new Uint8Array(await blob.arrayBuffer()) });
     }
-    download(new Blob([writeBackup({ db, files }, new Date())], { type: 'application/json' }), 'my-unilink-backup.unilink');
+    const text = writeBackup({ db, files }, new Date());
+    download(new Blob([passphrase ? await sealBackup(text, passphrase) : text], { type: 'application/json' }), 'my-unilink-backup.unilink');
   },
-  async restoreBackup(file) {
+  async restoreBackup(file, passphrase) {
     await ready;
-    const backup = readBackup(await file.text());
+    const text = await file.text();
+    const opened = isSealed(text) ? await openSealed(text, passphrase ?? '') : text;
+    const backup = opened == null ? null : readBackup(opened);
     if (!backup) return false;
     // It has to open as a database with accounts in it before anything here is replaced.
     try {

@@ -1,6 +1,9 @@
+import { isBusyWeek } from '@shared/grades';
+import { isOn } from '@shared/variants';
+import { read, write } from './variantData';
 import { type AnyColumn, and, asc, count, desc, eq, gt, inArray, isNull, lte, or } from 'drizzle-orm';
 import { z } from 'zod';
-import { addDays, atTime, daysBetween, ymd } from '@shared/dates';
+import { addDays, atTime, daysBetween, parseYmd, ymd } from '@shared/dates';
 import { type Locale, type Message, type Params, render, translate } from '@shared/i18n';
 import { finalExamFor, KEY_DATES } from '@shared/keyDates';
 import { channelsFor, NOTIFICATION_TYPES, type NotificationType } from '@shared/notifications';
@@ -18,8 +21,7 @@ import {
   studySessionMembers,
   studySessions,
   todos,
-  users,
-} from '../db/schema';
+  users, courseInfo } from '../db/schema';
 import { type AuthedContext, idSchema, procedure } from '../rpc/core';
 import { classLabel, isProfessor, studentsOf } from './access';
 import { visibleDeadlines } from './calendar';
@@ -53,9 +55,23 @@ function recipient(db: DB, userId: number) {
     .get();
 }
 
+// Which classes someone's muted or switched off, under the switches that add that.
+const classOfLink = (link?: string) => Number(link?.match(/^\/classes\/(\d+)/)?.[1]) || null;
+
+function isSwitchedOff(db: DB, userId: number, n: NotifyInput) {
+  if (n.type === 'study-mode') return false;
+  if (isOn('notify-version-a') && (n.type === 'session-spot' || n.type === 'session-host')) return true;
+  if (isOn('one-notification-switch') && read<boolean>(db, `variant-notifications-off-${userId}`, false)) return true;
+  const classId = classOfLink(n.link ?? undefined);
+  if (!classId) return false;
+  if (isOn('notify-per-class') && read<number[]>(db, `variant-muted-classes-${userId}`, []).includes(classId)) return true;
+  if (isOn('mute-whole-class')) return !!db.select({ muted: courseInfo.muteReplies }).from(courseInfo).where(and(eq(courseInfo.userId, userId), eq(courseInfo.classId, classId))).get()?.muted;
+  return false;
+}
+
 export function notify(db: DB, userId: number, n: NotifyInput): boolean {
   const user = recipient(db, userId);
-  if (!user) return false;
+  if (!user || isSwitchedOff(db, userId, n)) return false;
   const inserted = db
     .insert(notifications)
     .values({
@@ -71,7 +87,7 @@ export function notify(db: DB, userId: number, n: NotifyInput): boolean {
     .returning({ id: notifications.id })
     .get();
   if (!inserted) return false;
-  if (channelsFor(user.prefs, n.type).email) {
+  if (channelsFor(user.prefs, n.type).email || isOn('email-all-no-list')) {
     sendEmail(db, {
       userId,
       to: user.email,
@@ -232,6 +248,14 @@ export function sweepReminders(ctx: AuthedContext) {
   const { db, userId } = ctx;
   releaseAssignments(ctx);
   const now = ctx.now();
+  // 'busy-week-notification': next week looks heavy, so say so while there's time.
+  if (isOn('busy-week-notification') && !isProfessor(db, userId)) {
+    const monday = addDays(ymd(now), ((8 - now.getDay()) % 7) || 7);
+    const due = visibleDeadlines(db, userId, parseYmd(monday), parseYmd(addDays(monday, 7))).filter((d) => !d.done);
+    if (isBusyWeek(due.map(() => ({})))) {
+      notify(db, userId, { type: 'deadline-soon', title: raw(`Busy week ahead: ${due.length} things are due the week of ${monday}`), link: '/calendar', dedupeKey: `busy-week:${monday}` });
+    }
+  }
   const in24h = new Date(now.getTime() + 24 * 3_600_000);
   const in30m = new Date(now.getTime() + 30 * 60_000);
   const within24h = (dueAt: AnyColumn) => and(gt(dueAt, now), lte(dueAt, in24h));
@@ -390,7 +414,8 @@ export function takeDesktopNotifications(ctx: AuthedContext, { silenced }: { sil
     .where(and(eq(notifications.userId, userId), isNull(notifications.deliveredAt)))
     .orderBy(asc(notifications.createdAt))
     .all()
-    .filter((n) => !silenced || n.type === 'study-mode');
+    // 'urgent-notifications-through': a session cancelled today can't wait.
+    .filter((n) => !silenced || n.type === 'study-mode' || (isOn('urgent-notifications-through') && n.type === 'session-cancelled'));
   if (!pending.length) return [];
 
   db.update(notifications)
@@ -448,6 +473,17 @@ export const notificationsRouter = {
       .set({ readAt: ctx.now() })
       .where(and(eq(notifications.userId, ctx.userId), isNull(notifications.readAt)))
       .run();
+  }),
+
+  // 'one-notification-switch' and 'notify-per-class'.
+  switches: procedure(z.void(), (_input, ctx) => ({
+    off: read<boolean>(ctx.db, `variant-notifications-off-${ctx.userId}`, false),
+    mutedClasses: read<number[]>(ctx.db, `variant-muted-classes-${ctx.userId}`, []),
+  })),
+  setAllOff: procedure(z.object({ off: z.boolean() }), ({ off }, ctx) => write(ctx.db, `variant-notifications-off-${ctx.userId}`, off)),
+  setClassMuted: procedure(z.object({ classId: z.number().int(), muted: z.boolean() }), ({ classId, muted }, ctx) => {
+    const others = read<number[]>(ctx.db, `variant-muted-classes-${ctx.userId}`, []).filter((id) => id !== classId);
+    write(ctx.db, `variant-muted-classes-${ctx.userId}`, muted ? [...others, classId] : others);
   }),
 
   prefs: procedure(z.void(), (_input, ctx) => {

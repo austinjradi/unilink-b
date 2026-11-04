@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import {
   ActionIcon,
   Alert,
@@ -24,20 +24,23 @@ import {
   Tooltip,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
+import { useLocalStorage } from '@mantine/hooks';
 import { IconAlertTriangle, IconCertificate, IconCircleCheck, IconClipboardText, IconDownload, IconListDetails, IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { goalOutlook, gpaTrend, OTHER_GRADES, RECORD_GRADES, RECORD_STATUSES, type RecordStatus, summarizeRecord, termOptions, termOrder } from '@shared/academics';
 import { CURRENT_TERM } from '@shared/dates';
+import { whyCantPlan } from '@shared/prereqs';
 import { graduationPace } from '@shared/degree';
 import { letterFor } from '@shared/grades';
 import { parseTranscript } from '@shared/transcript';
 import { GpaTrend } from '../components/GpaTrend';
 import type { ReqTopicId } from '../lib/reqTopics';
-import { Empty, Loading, SectionCard } from '../components/ui';
+import { Covered, Empty, Loading, SectionCard } from '../components/ui';
 import { useAction, useMe } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
 import { t, term, tx } from '../lib/i18n';
 import { ReqInfo, WithInfo } from '../components/ReqInfo';
+import { useVariant } from '../lib/variants';
 
 type CourseRecord = Out<typeof rpc.record.list>[number];
 type RecordDraft = { code: string; title: string; credits: number; term: string; status: RecordStatus; grade: string | null };
@@ -65,8 +68,120 @@ const gradeOptions = () =>
   }));
 const termOptionsData = () => TERMS.map((value) => ({ value, label: term(value) }));
 
+// 'planned-no-term': a course planned for no term in particular.
+const NO_TERM = 'Fall 2099';
+const termName = (value: string) => (value === NO_TERM ? 'No term yet' : term(value));
+
+// 'gpa-table': the same numbers as the chart.
+function GpaTable({ points }: { points: ReturnType<typeof gpaTrend> }) {
+  if (points.length < 2) return null;
+  return (
+    <Table withTableBorder fz="sm" verticalSpacing={4}>
+      <Table.Thead>
+        <Table.Tr>
+          <Table.Th>
+            <WithInfo id="gpa-trend">{t('Term')}</WithInfo>
+          </Table.Th>
+          <Table.Th>{t('Term GPA')}</Table.Th>
+          <Table.Th>{t('CGPA')}</Table.Th>
+        </Table.Tr>
+      </Table.Thead>
+      <Table.Tbody>
+        {points.map((p) => (
+          <Table.Tr key={p.term}>
+            <Table.Td>{term(p.term)}</Table.Td>
+            <Table.Td>{p.gpa.toFixed(2)}</Table.Td>
+            <Table.Td>{p.cgpa.toFixed(2)}</Table.Td>
+          </Table.Tr>
+        ))}
+      </Table.Tbody>
+    </Table>
+  );
+}
+
+// 'record-flat-list': everything in one table, sorted by the column you pick.
+function FlatRecord({ records, onEdit }: { records: CourseRecord[]; onEdit: (record: CourseRecord) => void }) {
+  const locked = useVariant('lock-completed');
+  const [sort, setSort] = useState<'code' | 'title' | 'credits' | 'term' | 'status' | 'grade'>('term');
+  const rows = [...records].sort((a, b) => String(a[sort] ?? '').localeCompare(String(b[sort] ?? ''), undefined, { numeric: true }));
+  const head = (key: typeof sort, label: string) => (
+    <Table.Th onClick={() => setSort(key)} style={{ cursor: 'pointer' }} fw={sort === key ? 800 : 600}>
+      {label}
+    </Table.Th>
+  );
+  return (
+    <Table.ScrollContainer minWidth={640}>
+      <Table verticalSpacing="xs" highlightOnHover>
+        <Table.Thead>
+          <Table.Tr>
+            {head('code', t('Course code'))}
+            {head('title', t('Title'))}
+            {head('credits', t('Credits'))}
+            {head('term', t('Term'))}
+            {head('status', 'Status')}
+            {head('grade', t('Final grade'))}
+            <Table.Th>
+              <ReqInfo id="record-term" />
+            </Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {rows.map((r) => (
+            <Table.Tr key={r.id}>
+              <Table.Td fw={600}>{r.code}</Table.Td>
+              <Table.Td>{r.title}</Table.Td>
+              <Table.Td>{r.credits}</Table.Td>
+              <Table.Td>{termName(r.term)}</Table.Td>
+              <Table.Td>{t(STATUS_LABEL[r.status])}</Table.Td>
+              <Table.Td>{r.grade ?? '—'}</Table.Td>
+              <Table.Td>
+                {!(locked && r.status === 'completed') && (
+                  <ActionIcon variant="subtle" onClick={() => onEdit(r)} aria-label={t('Edit')}>
+                    <IconPencil size={16} />
+                  </ActionIcon>
+                )}
+              </Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+    </Table.ScrollContainer>
+  );
+}
+
+// 'suggest-term-schedule': what's left, five courses a term from next term on.
+function SuggestedSchedule({ result, onPlan }: { result: NonNullable<Out<typeof rpc.degree.evaluate>>; onPlan: (d: Partial<RecordDraft>) => void }) {
+  const { evaluation: e, titles } = result;
+  const open = e.groups.flatMap((g) => (g.kind === 'choose' && g.coveredByPlan ? [] : g.courses.filter((c) => c.state === 'missing' || c.state === 'below-minimum')));
+  const unique = [...new Map(open.map((c) => [c.code, c])).values()];
+  if (!unique.length) return null;
+  const terms = TERMS.slice(TERMS.indexOf(NEXT_TERM)).filter((name) => !name.startsWith('Summer'));
+  const plan = terms.map((name, i) => ({ name, courses: unique.slice(i * 5, (i + 1) * 5) })).filter((row) => row.courses.length);
+  return (
+    <SectionCard info="degree-pace" title="A suggested schedule">
+      <Stack gap="sm">
+        {plan.map((row) => (
+          <div key={row.name}>
+            <Text size="sm" fw={800}>
+              {term(row.name)}
+            </Text>
+            <Group gap={6}>
+              {row.courses.map((c) => (
+                <Button key={c.code} size="compact-xs" variant="light" title={titles[c.code]} onClick={() => onPlan({ code: c.code, title: titles[c.code] ?? '', credits: c.credits, term: row.name, status: 'planned' })}>
+                  {c.code}
+                </Button>
+              ))}
+            </Group>
+          </div>
+        ))}
+      </Stack>
+    </SectionCard>
+  );
+}
+
 // A1 course record / A2 degree plan, shown as tabs of the Courses page.
 export function AcademicsPanel({ tab }: { tab: 'record' | 'degree' }) {
+  const noRecord = useVariant('no-course-record');
   const [editing, setEditing] = useState<{ record: CourseRecord | null; draft: RecordDraft } | null>(null);
 
   const openNew = (draft?: Partial<RecordDraft>) =>
@@ -77,14 +192,23 @@ export function AcademicsPanel({ tab }: { tab: 'record' | 'degree' }) {
 
   return (
     <>
-      <Group justify="flex-end" mb="md">
+      <Group justify="flex-end" mb="md" display={noRecord ? 'none' : undefined}>
         <WithInfo id="record-add">
           <Button leftSection={<IconPlus size={16} />} onClick={() => openNew()}>
             {t('Add course')}
           </Button>
         </WithInfo>
       </Group>
-      {tab === 'record' ? (
+      {tab === 'record' && noRecord ? (
+        <Card withBorder>
+          <Text mb="sm">
+            Minerva keeps your official record. <ReqInfo id="record-add" />
+          </Text>
+          <Button component="a" href="https://horizon.mcgill.ca/" target="_blank" rel="noopener noreferrer" variant="default">
+            Open Minerva
+          </Button>
+        </Card>
+      ) : tab === 'record' ? (
         <RecordTab onEdit={(record) => setEditing({ record, draft: record })} />
       ) : (
         <DegreeTab onPlan={(draft) => openNew(draft)} />
@@ -98,7 +222,7 @@ export function AcademicsPanel({ tab }: { tab: 'record' | 'degree' }) {
 
 // --- A1 ---------------------------------------------------------------------------
 
-function Stat({ label, value, hint, info }: { label: string; value: string; hint?: string; info: ReqTopicId }) {
+function Stat({ label, value, hint, info }: { label: string; value: ReactNode; hint?: string; info: ReqTopicId }) {
   return (
     <Paper withBorder p="md">
       <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
@@ -276,6 +400,15 @@ function CgpaGoalForm({ summary, saved }: { summary: ReturnType<typeof summarize
 }
 
 function RecordTab({ onEdit }: { onEdit: (r: CourseRecord) => void }) {
+  const newestFirst = useVariant('record-newest-first');
+  const locked = useVariant('lock-completed');
+  const officialOnly = useVariant('official-cgpa-only');
+  const gpaAsTable = useVariant('gpa-table');
+  const noGoal = useVariant('no-cgpa-goal');
+  const syncClasses = useVariant('record-sync-classes');
+  const flatList = useVariant('record-flat-list');
+  const nothingUntilFinal = useVariant('record-now-after-final');
+  const [officialCgpa, setOfficialCgpa] = useLocalStorage<number | string>({ key: 'unilink-official-cgpa', defaultValue: '' });
   const records = useQuery({ queryKey: ['record'], queryFn: () => rpc.record.list() });
   const importClasses = useAction(() => rpc.record.importClasses(), {
     success: (r) => (r.added ? t('Added {{count}} current classes', { count: r.added }) : t('Your current classes are already here')),
@@ -289,25 +422,39 @@ function RecordTab({ onEdit }: { onEdit: (r: CourseRecord) => void }) {
   return (
     <Stack gap="lg">
       <SimpleGrid cols={{ base: 2, md: 4 }}>
-        <Stat info="record-cgpa" label={t('CGPA')} value={summary.cgpa?.toFixed(2) ?? '—'} hint={t('Out of 4.00, from letter grades')} />
+        <Stat info="record-cgpa" label={t('CGPA')} value={<Covered>{summary.cgpa?.toFixed(2) ?? '—'}</Covered>} hint={t('Out of 4.00, from letter grades')} />
         <Stat info="record-credits" label={t('Credits earned')} value={String(summary.creditsEarned)} />
         <Stat info="record-credits" label={t('In progress')} value={String(summary.creditsInProgress)} hint={t('credits')} />
         <Stat info="record-credits" label={t('Planned')} value={String(summary.creditsPlanned)} hint={t('credits')} />
       </SimpleGrid>
 
-      <GpaTrend points={gpaTrend(summary.terms)} />
+      {officialOnly ? (
+        <NumberInput w={200} label={<WithInfo id="record-cgpa">Your official CGPA</WithInfo>} min={0} max={4} step={0.01} decimalScale={2} value={officialCgpa} onChange={setOfficialCgpa} />
+      ) : gpaAsTable ? (
+        <Covered>
+          <GpaTable points={gpaTrend(summary.terms)} />
+        </Covered>
+      ) : (
+        <Covered>
+          <GpaTrend points={gpaTrend(summary.terms)} />
+        </Covered>
+      )}
 
-      <CgpaGoal summary={summary} />
+      {!noGoal && <CgpaGoal summary={summary} />}
 
       <Group>
-        <WithInfo id="record-import-classes">
-          <Button variant="light" leftSection={<IconDownload size={16} />} onClick={() => importClasses.mutate()}>
-            {t('Add my current classes')}
-          </Button>
-        </WithInfo>
-        <Text size="sm" c="dimmed">
-          {t("Adds the classes you've joined on UniLink as in-progress courses.")}
-        </Text>
+        {!syncClasses && (
+          <>
+            <WithInfo id="record-import-classes">
+              <Button variant="light" leftSection={<IconDownload size={16} />} onClick={() => importClasses.mutate()}>
+                {t('Add my current classes')}
+              </Button>
+            </WithInfo>
+            <Text size="sm" c="dimmed">
+              {t("Adds the classes you've joined on UniLink as in-progress courses.")}
+            </Text>
+          </>
+        )}
         <WithInfo id="record-paste">
           <Button variant="default" leftSection={<IconClipboardText size={16} />} onClick={() => setPasting(true)}>
             {t('Paste a transcript')}
@@ -318,22 +465,29 @@ function RecordTab({ onEdit }: { onEdit: (r: CourseRecord) => void }) {
         {pasting && <TranscriptImport records={records.data} onDone={() => setPasting(false)} />}
       </Modal>
 
-      {summary.terms.length === 0 ? (
+      {flatList && summary.terms.length > 0 ? (
+        <FlatRecord records={records.data} onEdit={onEdit} />
+      ) : summary.terms.length === 0 ? (
         <Card withBorder>
           <Empty icon={<IconListDetails size={22} />}>
             {t("Record the courses you've taken, are taking and plan to take. Your CGPA, credits and degree plan update automatically.")}
           </Empty>
         </Card>
       ) : (
-        summary.terms.map((termRow) => (
+        (newestFirst ? [...summary.terms].reverse() : summary.terms).map((termRow) => (
           <SectionCard
             key={termRow.term}
             info="record-term"
-            title={term(termRow.term)}
+            title={termName(termRow.term)}
             actions={
               <Text size="sm" c="dimmed">
                 {t('{{count}} credits', { count: termRow.totalCredits })}
-                {termRow.gpa != null && ` · ${t('term GPA {{gpa}}', { gpa: termRow.gpa.toFixed(2) })}`}
+                {termRow.gpa != null && !officialOnly && (
+                  <>
+                    {' · '}
+                    <Covered>{t('term GPA {{gpa}}', { gpa: termRow.gpa.toFixed(2) })}</Covered>
+                  </>
+                )}
               </Text>
             }
           >
@@ -359,7 +513,7 @@ function RecordTab({ onEdit }: { onEdit: (r: CourseRecord) => void }) {
                         <Table.Td w={170}>
                           {r.grade ? (
                             <Text fw={600}>{r.grade}</Text>
-                          ) : r.currentAverage != null ? (
+                          ) : r.currentAverage != null && !nothingUntilFinal ? (
                             <Tooltip label={t("From the grades on this class's Grades tab")}>
                               <Text size="sm" c="dimmed">
                                 {t('now {{average}}% ({{letter}})', { average: r.currentAverage, letter: letterFor(r.currentAverage).letter })} <ReqInfo id="record-now" />
@@ -373,12 +527,16 @@ function RecordTab({ onEdit }: { onEdit: (r: CourseRecord) => void }) {
                         </Table.Td>
                         <Table.Td w={80}>
                           <Group gap={4} justify="flex-end" wrap="nowrap">
-                            <ActionIcon variant="subtle" onClick={() => onEdit(r)} aria-label={t('Edit')}>
-                              <IconPencil size={16} />
-                            </ActionIcon>
-                            <ActionIcon variant="subtle" color="red" onClick={() => remove.mutate(r.id)} aria-label={t('Delete')}>
-                              <IconTrash size={16} />
-                            </ActionIcon>
+                            {!(locked && r.status === 'completed') && (
+                              <>
+                                <ActionIcon variant="subtle" onClick={() => onEdit(r)} aria-label={t('Edit')}>
+                                  <IconPencil size={16} />
+                                </ActionIcon>
+                                <ActionIcon variant="subtle" color="red" onClick={() => remove.mutate(r.id)} aria-label={t('Delete')}>
+                                  <IconTrash size={16} />
+                                </ActionIcon>
+                              </>
+                            )}
                             <ReqInfo id="record-edit" />
                           </Group>
                         </Table.Td>
@@ -395,16 +553,21 @@ function RecordTab({ onEdit }: { onEdit: (r: CourseRecord) => void }) {
 }
 
 function RecordForm({ record, draft, onDone }: { record: CourseRecord | null; draft: RecordDraft; onDone: () => void }) {
+  const fromTerm = useVariant('status-from-term');
+  const noTerm = useVariant('planned-no-term');
+  const asPercent = useVariant('grade-as-percentage');
+  const statusFor = (name: string) => (termOrder(name) < termOrder(CURRENT_TERM) ? 'completed' : termOrder(name) === termOrder(CURRENT_TERM) ? 'in-progress' : 'planned') as RecordStatus;
   const form = useForm({
     initialValues: draft,
     validate: {
       code: (v) => (/^[A-Za-z]{4}\s*-?\s*\d{3}/.test(v.trim()) ? null : t('Use a course code like "COMP 251"')),
-      grade: (v, values) => (values.status === 'completed' && !v ? t('Add the final grade') : null),
+      grade: (v, values) => ((fromTerm ? statusFor(values.term) : values.status) === 'completed' && !v ? t('Add the final grade') : null),
     },
   });
   const save = useAction(
     async (v: RecordDraft) => {
-      const fields = { ...v, grade: v.status === 'completed' ? v.grade : null };
+      const status = fromTerm ? statusFor(v.term) : v.status;
+      const fields = { ...v, status, grade: status === 'completed' ? v.grade : null };
       if (record) await rpc.record.update({ id: record.id, ...fields });
       else await rpc.record.add(fields);
     },
@@ -426,14 +589,19 @@ function RecordForm({ record, draft, onDone }: { record: CourseRecord | null; dr
           <NumberInput label={<WithInfo id="record-code">{t('Credits')}</WithInfo>} min={0} max={12} step={0.5} decimalScale={1} {...form.getInputProps('credits')} />
         </Group>
         <TextInput label={<WithInfo id="record-code">{t('Title')}</WithInfo>} placeholder={t('Algorithms and Data Structures')} {...form.getInputProps('title')} />
-        <Select label={<WithInfo id="record-term-field">{t('Term')}</WithInfo>} data={termOptionsData()} searchable allowDeselect={false} {...form.getInputProps('term')} />
-        <WithInfo id="record-status" block>
-          <SegmentedControl
-            data={RECORD_STATUSES.map((s) => ({ value: s, label: t(STATUS_LABEL[s]) }))}
-            {...form.getInputProps('status')}
-          />
-        </WithInfo>
-        {form.values.status === 'completed' && (
+        <Select label={<WithInfo id="record-term-field">{t('Term')}</WithInfo>} data={[...(noTerm ? [{ value: NO_TERM, label: 'No term yet' }] : []), ...termOptionsData()]} searchable allowDeselect={false} {...form.getInputProps('term')} />
+        {!fromTerm && (
+          <WithInfo id="record-status" block>
+            <SegmentedControl
+              data={RECORD_STATUSES.map((s) => ({ value: s, label: t(STATUS_LABEL[s]) }))}
+              {...form.getInputProps('status')}
+            />
+          </WithInfo>
+        )}
+        {asPercent && (fromTerm ? statusFor(form.values.term) : form.values.status) === 'completed' && (
+          <NumberInput label={<WithInfo id="record-grade">{t('Final grade')} (%)</WithInfo>} min={0} max={100} suffix="%" onChange={(v) => form.setFieldValue('grade', typeof v === 'number' ? letterFor(v).letter : null)} description={form.values.grade ? `Counts as ${form.values.grade}` : undefined} />
+        )}
+        {!asPercent && (fromTerm ? statusFor(form.values.term) : form.values.status) === 'completed' && (
           <Select label={<WithInfo id="record-grade">{t('Final grade')}</WithInfo>} data={gradeOptions()} {...form.getInputProps('grade')} />
         )}
         <Group justify="flex-end">
@@ -449,10 +617,23 @@ function RecordForm({ record, draft, onDone }: { record: CourseRecord | null; dr
 // --- A2 ---------------------------------------------------------------------------
 
 function DegreeTab({ onPlan }: { onPlan: (draft: Partial<RecordDraft>) => void }) {
+  const linkOnly = useVariant('link-degree-audit');
   const programs = useQuery({ queryKey: ['degree', 'programs'], queryFn: () => rpc.degree.programs() });
   const result = useQuery({ queryKey: ['degree', 'evaluate'], queryFn: () => rpc.degree.evaluate() });
   const select = useAction((programId: string | null) => rpc.degree.select({ programId }));
 
+  if (linkOnly) {
+    return (
+      <Card withBorder>
+        <Text mb="sm">
+          McGill's degree evaluation on Minerva says what's left for your degree. <ReqInfo id="tab-degree" />
+        </Text>
+        <Button component="a" href="https://horizon.mcgill.ca/" target="_blank" rel="noopener noreferrer" variant="default">
+          Open Minerva
+        </Button>
+      </Card>
+    );
+  }
   if (result.isPending) return <Loading />;
   const data = result.data;
 
@@ -486,7 +667,14 @@ function DegreeTab({ onPlan }: { onPlan: (draft: Partial<RecordDraft>) => void }
 }
 
 function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.degree.evaluate>>; onPlan: (d: Partial<RecordDraft>) => void }) {
+  const checksPlans = useVariant('check-prereqs');
+  const onlyLeft = useVariant('degree-only-left');
+  const over15 = useVariant('warn-over-15');
+  const paceLimit = over15 ? 15 : 18;
+  const records = useQuery({ queryKey: ['record'], queryFn: () => rpc.record.list() });
+  const cantPlan = (code: string) => (checksPlans ? whyCantPlan(code, NEXT_TERM, records.data ?? []) : null);
   const { program, evaluation: e, titles } = result;
+  const suggest = useVariant('suggest-term-schedule');
   const gradYear = useMe().gradYear;
   const left = program.totalCredits - e.credits.completed - e.credits['in-progress'];
   const pace = gradYear != null && !e.graduated ? graduationPace(left, gradYear, CURRENT_TERM) : null;
@@ -548,15 +736,16 @@ function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.d
           </Alert>
         )}
         {pace && gradYear != null && (
-          <Text size="sm" mt="sm" c={pace.perTerm > 18 ? 'orange' : undefined}>
+          <Text size="sm" mt="sm" c={pace.perTerm > paceLimit ? 'orange' : undefined}>
             {pace.terms
               ? t('{{count}} credits left after this term: about {{pace}} a term to graduate in {{year}}.', { count: left, pace: pace.perTerm, year: gradYear })
               : t('{{count}} credits left after this term, with none left before graduating in {{year}}.', { count: left, year: gradYear })}
-            {pace.terms > 0 && pace.perTerm > 18 && ` ${t('That’s more than the usual 15 to 18, so you may need summer courses or another term.')}`} <ReqInfo id="degree-pace" />
+            {pace.terms > 0 && pace.perTerm > paceLimit && ` ${over15 ? 'That’s more than 15 credits a term, so you may need summer courses or another term.' : t('That’s more than the usual 15 to 18, so you may need summer courses or another term.')}`} <ReqInfo id="degree-pace" />
           </Text>
         )}
       </SectionCard>
 
+      {suggest && <SuggestedSchedule result={result} onPlan={onPlan} />}
       {e.groups.map((g) => {
         const counted = g.credits.completed + g.credits['in-progress'] + g.credits.planned;
         return (
@@ -584,7 +773,7 @@ function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.d
               </Text>
             )}
             <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="xs">
-              {g.courses.map((c) => {
+              {g.courses.filter((c) => !onlyLeft || c.state === 'missing' || c.state === 'below-minimum').map((c) => {
                 const open = c.state === 'missing' || c.state === 'below-minimum';
                 return (
                   <Paper key={c.code} withBorder p="xs">
@@ -605,6 +794,7 @@ function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.d
                           <Button
                             size="compact-xs"
                             variant="light"
+                            disabled={cantPlan(c.code) != null}
                             onClick={() =>
                               onPlan({ code: c.code, title: titles[c.code] ?? '', credits: c.credits, term: NEXT_TERM, status: 'planned' })
                             }
@@ -620,6 +810,11 @@ function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.d
                         </WithInfo>
                       )}
                     </Group>
+                    {open && cantPlan(c.code) && (
+                      <Text size="xs" c="dimmed" mt={4}>
+                        {cantPlan(c.code)}
+                      </Text>
+                    )}
                     {c.state === 'below-minimum' && (
                       <Text size="xs" c="red" mt={4}>
                         {t('Grade below {{grade}}: retake to count it', { grade: program.minProgramGrade })} <ReqInfo id="degree-below-min" />

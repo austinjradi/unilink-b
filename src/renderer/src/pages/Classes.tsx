@@ -1,16 +1,20 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Badge, Button, Card, Checkbox, Group, Modal, Select, SimpleGrid, Stack, Table, Tabs, Text, Textarea, TextInput, Tooltip } from '@mantine/core';
 import { useDebouncedValue } from '@mantine/hooks';
 import { IconCalendarDue, IconCertificate, IconClipboardText, IconClock, IconListDetails, IconMessageQuestion, IconSchool, IconSearch, IconUsers } from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { Link, useNavigate, useParams } from 'react-router';
-import { LEVELS } from '@shared/courseQuery';
-import { addDays, CURRENT_TERM, ymd } from '@shared/dates';
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
+import { LEVELS, SUBJECT_FACULTY } from '@shared/courseQuery';
+import { addDays, CURRENT_TERM, TERMS, ymd } from '@shared/dates';
+import { termWithExams } from '@shared/keyDates';
+import type { MeetingTime } from '@shared/meetings';
 import { ClashNote, Empty, Loading, PageHeader, SectionCard, Tag } from '../components/ui';
 import { fmtMeetings } from '../lib/format';
 import { useAction, useMe } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
+import { classFromJoinCode } from '@shared/joinCode';
+import { useShowCount, useVariant } from '../lib/variants';
 import { AcademicsPanel } from './Academics';
 import { t, term } from '../lib/i18n';
 import { ReqInfo, WithInfo } from '../components/ReqInfo';
@@ -24,10 +28,16 @@ export function CoursesPage() {
   const navigate = useNavigate();
   const tab: CoursesTab = TABS.includes(params.tab as CoursesTab) ? (params.tab as CoursesTab) : 'mine';
   const student = useMe().role === 'student';
+  const ownTab = useVariant('academics-tab');
+  if (ownTab && (tab === 'record' || tab === 'degree')) return <Navigate to={`/academics/${tab}`} replace />;
 
   return (
     <>
-      <PageHeader info="nav-courses" title={t('Courses')} subtitle={student ? t('Your classes, finding new ones, and how they add up toward your degree.') : t('The sections you teach, and finding others.')} />
+      <PageHeader
+        info="nav-courses"
+        title={t('Courses')}
+        subtitle={!student ? t('The sections you teach, and finding others.') : ownTab ? 'Your classes, and finding new ones.' : t('Your classes, finding new ones, and how they add up toward your degree.')}
+      />
       <Tabs value={tab} onChange={(v) => navigate(`/courses/${v}`)} keepMounted={false} variant="pills" radius="xl">
         <Tabs.List mb="lg">
           <Tabs.Tab value="mine" leftSection={<IconSchool size={16} />} rightSection={<ReqInfo id="tab-mine" />}>
@@ -36,12 +46,12 @@ export function CoursesPage() {
           <Tabs.Tab value="find" leftSection={<IconSearch size={16} />} rightSection={<ReqInfo id="tab-find" />}>
             {t('Find courses')}
           </Tabs.Tab>
-          {student && (
+          {student && !ownTab && (
             <Tabs.Tab value="record" leftSection={<IconListDetails size={16} />} rightSection={<ReqInfo id="tab-record" />}>
               {t('Course record')}
             </Tabs.Tab>
           )}
-          {student && (
+          {student && !ownTab && (
             <Tabs.Tab value="degree" leftSection={<IconCertificate size={16} />} rightSection={<ReqInfo id="tab-degree" />}>
               {t('Degree plan')}
             </Tabs.Tab>
@@ -64,8 +74,54 @@ export function CoursesPage() {
   );
 }
 
+// 'academics-tab': the course record and degree plan get a page of their own.
+export function AcademicsPage() {
+  const params = useParams();
+  const navigate = useNavigate();
+  const tab = params.tab === 'degree' ? 'degree' : 'record';
+  return (
+    <>
+      <PageHeader info="nav-courses" title="Academics" subtitle="How your classes add up toward your degree." />
+      <Tabs value={tab} onChange={(v) => navigate(`/academics/${v}`)} keepMounted={false} variant="pills" radius="xl">
+        <Tabs.List mb="lg">
+          <Tabs.Tab value="record" leftSection={<IconListDetails size={16} />} rightSection={<ReqInfo id="tab-record" />}>
+            {t('Course record')}
+          </Tabs.Tab>
+          <Tabs.Tab value="degree" leftSection={<IconCertificate size={16} />} rightSection={<ReqInfo id="tab-degree" />}>
+            {t('Degree plan')}
+          </Tabs.Tab>
+        </Tabs.List>
+        <Tabs.Panel value="record">
+          <AcademicsPanel tab="record" />
+        </Tabs.Panel>
+        <Tabs.Panel value="degree">
+          <AcademicsPanel tab="degree" />
+        </Tabs.Panel>
+      </Tabs>
+    </>
+  );
+}
+
+// 'card-professor': who teaches it, on the course's card.
+function CardProfessor({ classId }: { classId: number }) {
+  const on = useVariant('card-professor');
+  const details = useQuery({ queryKey: ['classes', 'card-professor', classId], queryFn: () => rpc.classes.get({ classId }), enabled: on });
+  const names = details.data?.professors.map((p) => p.name).join(', ');
+  if (!on || !names) return null;
+  return (
+    <Text size="sm" c="dimmed">
+      {names}
+    </Text>
+  );
+}
+
 function MyCourses() {
   const professor = useMe().role === 'professor';
+  const plainList = useVariant('plain-course-list');
+  const byTerm = useVariant('group-courses-by-term');
+  const minimalCard = useVariant('minimal-course-card');
+  const leaveAtTermEnd = useVariant('leave-at-term-end');
+  const showCount = useShowCount();
   const mine = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
   // At a glance for each class: the next lecture, the next thing due and questions still open.
   const today = ymd(new Date());
@@ -95,92 +151,212 @@ function MyCourses() {
       </Card>
     );
   }
-  return (
-    <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="lg">
-      {mine.data.map((c) => {
-        const lecture = week.data?.find((e) => e.kind === 'class' && e.classId === c.id && e.start > new Date());
-        const next = due.data?.find((e) => e.classId === c.id);
-        const questions = open.data?.filter((p) => p.classId === c.id).length ?? 0;
-        const newPosts = fresh.data?.find((n) => n.classId === c.id)?.count ?? 0;
-        const reports = reported.data?.filter((p) => p.classId === c.id).length ?? 0;
-        return (
-          <Card key={c.id} component={Link} to={`/classes/${c.id}`} className="clickable" padding="lg">
-            <Group justify="space-between" mb="xs">
-              <Text fw={700} fz={24} className="display">
-                {c.code} <ReqInfo id="course-card" />
-              </Text>
-              <Tag>{term(c.term)}</Tag>
-            </Group>
-            <Text>{c.title}</Text>
-            <Stack gap={4} mt="md" c="dimmed">
-              {lecture && (
-                <Group gap={6} wrap="nowrap">
-                  <IconClock size={16} style={{ flex: 'none' }} />
-                  <Text size="sm" truncate>
-                    {t('Next class: {{when}}', { when: dayjs(lecture.start).format(t('ddd, MMM D · HH:mm')) })}
-                    {lecture.location && ` · ${lecture.location}`}
-                  </Text>
-                </Group>
-              )}
-              {next && (
-                <Group gap={6} wrap="nowrap">
-                  <IconCalendarDue size={16} style={{ flex: 'none' }} />
-                  <Text size="sm" truncate>
-                    {t('Next due: {{title}}, {{when}}', { title: next.title, when: dayjs(next.start).format(t('ddd, MMM D')) })}
-                  </Text>
-                </Group>
-              )}
-              <Group gap="md">
+  type Course = (typeof mine.data)[number];
+  const courseCard = (c: Course) => {
+    const lecture = week.data?.find((e) => e.kind === 'class' && e.classId === c.id && e.start > new Date());
+    const next = due.data?.find((e) => e.classId === c.id);
+    const questions = open.data?.filter((p) => p.classId === c.id).length ?? 0;
+    const newPosts = fresh.data?.find((n) => n.classId === c.id)?.count ?? 0;
+    const reports = reported.data?.filter((p) => p.classId === c.id).length ?? 0;
+    return (
+      <Card key={c.id} component={Link} to={`/classes/${c.id}`} className="clickable" padding="lg">
+        <Group justify="space-between" mb="xs">
+          <Text fw={700} fz={24} className="display">
+            {c.code} <ReqInfo id="course-card" />
+          </Text>
+          <Tag>{term(c.term)}</Tag>
+        </Group>
+        <Text>{c.title}</Text>
+        <CardProfessor classId={c.id} />
+        {!minimalCard && (
+          <Stack gap={4} mt="md" c="dimmed">
+            {lecture && (
+              <Group gap={6} wrap="nowrap">
+                <IconClock size={16} style={{ flex: 'none' }} />
+                <Text size="sm" truncate>
+                  {t('Next class: {{when}}', { when: dayjs(lecture.start).format(t('ddd, MMM D · HH:mm')) })}
+                  {lecture.location && ` · ${lecture.location}`}
+                </Text>
+              </Group>
+            )}
+            {next && (
+              <Group gap={6} wrap="nowrap">
+                <IconCalendarDue size={16} style={{ flex: 'none' }} />
+                <Text size="sm" truncate>
+                  {t('Next due: {{title}}, {{when}}', { title: next.title, when: dayjs(next.start).format(t('ddd, MMM D')) })}
+                </Text>
+              </Group>
+            )}
+            <Group gap="md">
+              {showCount(c.memberCount) && (
                 <Group gap={6} wrap="nowrap">
                   <IconUsers size={16} />
                   <Text size="sm">{t('{{count}} students on UniLink', { count: c.memberCount })}</Text>
                   <ReqInfo id="course-members" />
                 </Group>
-                {questions > 0 && (
-                  <Group gap={6} wrap="nowrap">
-                    <IconMessageQuestion size={16} />
-                    <Text size="sm">{t('{{count}} unanswered questions', { count: questions })}</Text>
-                    <ReqInfo id="feed-unanswered" />
-                  </Group>
-                )}
-                {newPosts > 0 && (
-                  <WithInfo id="post-new-badge">
-                    <Badge size="sm" variant="light">
-                      {t('{{count}} new posts', { count: newPosts })}
-                    </Badge>
-                  </WithInfo>
-                )}
-                {reports > 0 && (
-                  <WithInfo id="feed-reported">
-                    <Badge size="sm" variant="light" color="red">
-                      {t('{{count}} reported threads', { count: reports })}
-                    </Badge>
-                  </WithInfo>
-                )}
-              </Group>
-            </Stack>
-          </Card>
-        );
-      })}
-    </SimpleGrid>
+              )}
+              {questions > 0 && (
+                <Group gap={6} wrap="nowrap">
+                  <IconMessageQuestion size={16} />
+                  <Text size="sm">{t('{{count}} unanswered questions', { count: questions })}</Text>
+                  <ReqInfo id="feed-unanswered" />
+                </Group>
+              )}
+              {newPosts > 0 && (
+                <WithInfo id="post-new-badge">
+                  <Badge size="sm" variant="light">
+                    {t('{{count}} new posts', { count: newPosts })}
+                  </Badge>
+                </WithInfo>
+              )}
+              {reports > 0 && (
+                <WithInfo id="feed-reported">
+                  <Badge size="sm" variant="light" color="red">
+                    {t('{{count}} reported threads', { count: reports })}
+                  </Badge>
+                </WithInfo>
+              )}
+            </Group>
+            {leaveAtTermEnd && !professor && termWithExams(c.term) && (
+              <Text size="xs">You'll leave this class on {dayjs(termWithExams(c.term)!.end).format(t('ddd, MMM D'))}, when the term ends.</Text>
+            )}
+          </Stack>
+        )}
+      </Card>
+    );
+  };
+  const courseList = (list: Course[]) =>
+    plainList ? (
+      <Card padding={0}>
+        {list.map((c) => (
+          <Group key={c.id} component={Link} {...{ to: `/classes/${c.id}` }} className="course-row" wrap="nowrap" gap="md" px="md" py="sm">
+            <Text fw={700} style={{ whiteSpace: 'nowrap' }}>
+              {c.code} <ReqInfo id="course-card" />
+            </Text>
+            <Text size="sm" truncate style={{ flex: 1 }}>
+              {c.title}
+            </Text>
+            <Tag>{term(c.term)}</Tag>
+          </Group>
+        ))}
+      </Card>
+    ) : (
+      <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="lg">
+        {list.map(courseCard)}
+      </SimpleGrid>
+    );
+  if (!byTerm) return courseList(mine.data);
+  // Terms you've finished stay here too, so the latest comes first.
+  const terms = [...new Set(mine.data.map((c) => c.term))].sort((a, b) => TERMS.indexOf(b as (typeof TERMS)[number]) - TERMS.indexOf(a as (typeof TERMS)[number]));
+  return (
+    <Stack gap="xl">
+      {terms.map((name) => (
+        <div key={name}>
+          <Text fw={800} size="lg" mb="sm" className="display">
+            {term(name)}
+          </Text>
+          {courseList(mine.data.filter((c) => c.term === name))}
+        </div>
+      ))}
+    </Stack>
   );
 }
 
+// 'join-code': opens the section a professor's code stands for, with a button to join.
+function JoinByCode() {
+  const navigate = useNavigate();
+  const [code, setCode] = useState('');
+  const classId = classFromJoinCode(code);
+  return (
+    <Group align="flex-end" gap="xs" mb="md">
+      <TextInput label={<WithInfo id="copy-class-link">Got a join code?</WithInfo>} w={180} value={code} onChange={(e) => setCode(e.currentTarget.value)} />
+      <Button variant="default" disabled={classId == null} onClick={() => navigate(`/classes/${classId}`)}>
+        Open the section
+      </Button>
+    </Group>
+  );
+}
+
+// 'add-missing-course': a course the sample catalogue doesn't have.
+function AddCourse({ term: termName }: { term: string }) {
+  const [code, setCode] = useState('');
+  const [title, setTitle] = useState('');
+  const [credits, setCredits] = useState('3');
+  const parts = code.trim().toUpperCase().match(/^([A-Z]{4})\s*-?\s*(\d{3})$/);
+  const add = useAction(() => rpc.catalogue.addCourse({ subject: parts![1], number: parts![2], title, credits: Number(credits), term: termName }), {
+    success: () => 'Added to the catalogue',
+    onSuccess: () => {
+      setCode('');
+      setTitle('');
+    },
+  });
+  return (
+    <Group align="flex-end" gap="xs" mb="md">
+      <TextInput label={<WithInfo id="catalogue-sample">Missing a course?</WithInfo>} placeholder="COMP 251" w={130} value={code} onChange={(e) => setCode(e.currentTarget.value)} />
+      <TextInput label={t('Title')} style={{ flex: 1 }} value={title} onChange={(e) => setTitle(e.currentTarget.value)} />
+      <Select label={t('Credits')} w={90} data={['1', '2', '3', '4', '6']} allowDeselect={false} value={credits} onChange={(v) => v && setCredits(v)} />
+      <Button variant="default" disabled={!parts || !title.trim()} onClick={() => add.mutate()} loading={add.isPending}>
+        Add it
+      </Button>
+    </Group>
+  );
+}
+
+// 'filter-day-time': the part of the day a class starts in.
+const timeOfDay = (m: MeetingTime) => (m.startTime < '12:00' ? 'morning' : m.startTime < '17:00' ? 'afternoon' : 'evening');
+const FACULTIES_IN_CATALOGUE = [...new Set(Object.values(SUBJECT_FACULTY))].sort();
+
 function FindCourses() {
   const professor = useMe().role === 'professor';
+  const showCount = useShowCount();
+  const versionA = useVariant('search-version-a');
+  const subjectOnly = useVariant('filter-by-subject');
+  const byProfessor = useVariant('search-professors');
+  const allTerms = useVariant('search-all-terms');
+  const facultyCredits = useVariant('filter-faculty-credits');
+  const dayTime = useVariant('filter-day-time');
+  const noPaste = useVariant('no-schedule-paste');
+  const noTimetableFilter = useVariant('no-timetable-filter');
+  const noSectionTimes = useVariant('no-section-times');
+  const noClashNotes = useVariant('no-clash-notes');
+  const blockClashes = useVariant('block-clashes');
+  const addMissing = useVariant('add-missing-course');
+  const joinCode = useVariant('join-code');
+  const bySubject = versionA || subjectOnly;
+  const knowsTimes = !noTimetableFilter && !noSectionTimes;
   const navigate = useNavigate();
-  const [query, setQuery] = useState('');
-  const [term, setTerm] = useState<string>(CURRENT_TERM);
+  // 'search-catalogue' sends a course here from the search box.
+  const [params] = useSearchParams();
+  const fromSearch = params.get('q');
+  const [query, setQuery] = useState(fromSearch ?? '');
+  useEffect(() => {
+    if (fromSearch) setQuery(fromSearch);
+  }, [fromSearch]);
+  const [termName, setTermName] = useState<string>(CURRENT_TERM);
   const [level, setLevel] = useState<string | null>(null);
+  const [subject, setSubject] = useState<string | null>(null);
+  const [faculty, setFaculty] = useState<string | null>(null);
+  const [credits, setCredits] = useState<string | null>(null);
+  const [day, setDay] = useState<string | null>(null);
+  const [slot, setSlot] = useState<string | null>(null);
   const [debounced] = useDebouncedValue(query, 200);
   const [pasting, setPasting] = useState(false);
   // Your own section stays listed, so you can always see where you are.
   const [fits, setFits] = useState(false);
 
   const terms = useQuery({ queryKey: ['catalogue', 'terms'], queryFn: () => rpc.catalogue.terms() });
+  const subjects = useQuery({ queryKey: ['catalogue', 'subjects'], queryFn: () => rpc.catalogue.subjects(), enabled: bySubject });
+  const filters = {
+    query: debounced,
+    term: allTerms ? null : termName,
+    level: !bySubject && level ? Number(level) : null,
+    subject: bySubject ? subject : null,
+    faculty: facultyCredits ? faculty : null,
+    credits: facultyCredits && credits ? Number(credits) : null,
+  };
   const results = useQuery({
-    queryKey: ['catalogue', 'search', debounced, term, level],
-    queryFn: () => rpc.catalogue.search({ query: debounced, term, level: level ? Number(level) : null }),
+    queryKey: ['catalogue', 'search', filters],
+    queryFn: () => rpc.catalogue.search(filters),
     placeholderData: keepPreviousData,
   });
   const join = useAction((classId: number) => rpc.classes.join({ classId }), {
@@ -192,28 +368,32 @@ function FindCourses() {
     onSuccess: (_data, classId) => navigate(`/classes/${classId}`),
   });
 
-  const shown = results.data?.filter((c) => !fits || c.joined || !c.clashesWith.length);
+  const showFits = !professor && knowsTimes && !noClashNotes;
+  const inSlot = (m: MeetingTime) => (!day || m.weekday === Number(day)) && (!slot || timeOfDay(m) === slot);
+  const shown = results.data?.filter((c) => (!showFits || !fits || c.joined || !c.clashesWith.length) && (!dayTime || (!day && !slot) || c.times.some(inSlot)));
 
   return (
     <SectionCard
       info="tab-find"
       title={t('Find your courses')}
       actions={
-        <WithInfo id="find-paste">
-          <Button size="compact-sm" variant="subtle" leftSection={<IconClipboardText size={14} />} onClick={() => setPasting(true)}>
-            {t('Paste my schedule')}
-          </Button>
-        </WithInfo>
+        !noPaste && (
+          <WithInfo id="find-paste">
+            <Button size="compact-sm" variant="subtle" leftSection={<IconClipboardText size={14} />} onClick={() => setPasting(true)}>
+              {t('Paste my schedule')}
+            </Button>
+          </WithInfo>
+        )
       }
     >
       <Modal opened={pasting} onClose={() => setPasting(false)} title={<WithInfo id="find-paste">{t('Add sections from your schedule')}</WithInfo>} size="lg">
-        {pasting && <SchedulePaste term={term} professor={professor} onDone={() => setPasting(false)} />}
+        {pasting && <SchedulePaste term={termName} professor={professor} onDone={() => setPasting(false)} />}
       </Modal>
       <Group mb="md" align="flex-end">
         <TextInput
-          label={<WithInfo id="find-search">{t('Course code or title')}</WithInfo>}
-          placeholder={t('e.g. COMP 2XX, MATH 240 or algorithms')}
-          description={t('X stands for any digit: "COMP 3XX" lists every 300-level COMP course.')}
+          label={<WithInfo id="find-search">{byProfessor ? 'Course code, title or professor' : t('Course code or title')}</WithInfo>}
+          placeholder={versionA ? 'e.g. MATH 240 or algorithms' : t('e.g. COMP 2XX, MATH 240 or algorithms')}
+          description={versionA ? undefined : t('X stands for any digit: "COMP 3XX" lists every 300-level COMP course.')}
           leftSection={<IconSearch size={16} />}
           radius="xl"
           value={query}
@@ -221,23 +401,65 @@ function FindCourses() {
           style={{ flex: 1 }}
           autoFocus
         />
-        <Select label={<WithInfo id="find-term">{t('Term')}</WithInfo>} radius="xl" data={terms.data ?? [CURRENT_TERM]} value={term} onChange={(v) => v && setTerm(v)} w={160} allowDeselect={false} />
-        <Select
-          label={<WithInfo id="find-level">{t('Level')}</WithInfo>}
-          radius="xl"
-          placeholder={t('Any')}
-          data={LEVELS.map((l) => ({ value: String(l), label: t('{{level}}-level', { level: l }) }))}
-          value={level}
-          onChange={setLevel}
-          clearable
-          w={140}
-        />
-        {!professor && (
+        {!allTerms && (
+          <Select label={<WithInfo id="find-term">{t('Term')}</WithInfo>} radius="xl" data={terms.data ?? [CURRENT_TERM]} value={termName} onChange={(v) => v && setTermName(v)} w={160} allowDeselect={false} />
+        )}
+        {bySubject ? (
+          <Select label={<WithInfo id="find-level">Subject</WithInfo>} radius="xl" placeholder={t('Any')} data={subjects.data ?? []} value={subject} onChange={setSubject} clearable w={140} />
+        ) : (
+          <Select
+            label={<WithInfo id="find-level">{t('Level')}</WithInfo>}
+            radius="xl"
+            placeholder={t('Any')}
+            data={LEVELS.map((l) => ({ value: String(l), label: t('{{level}}-level', { level: l }) }))}
+            value={level}
+            onChange={setLevel}
+            clearable
+            w={140}
+          />
+        )}
+        {facultyCredits && (
+          <>
+            <Select label={<WithInfo id="find-level">{t('Faculty')}</WithInfo>} radius="xl" placeholder={t('Any')} data={FACULTIES_IN_CATALOGUE.map((f) => ({ value: f, label: t(f) }))} value={faculty} onChange={setFaculty} clearable w={170} />
+            <Select label={<WithInfo id="find-level">{t('Credits')}</WithInfo>} radius="xl" placeholder={t('Any')} data={['3', '4']} value={credits} onChange={setCredits} clearable w={110} />
+          </>
+        )}
+        {dayTime && (
+          <>
+            <Select
+              label={<WithInfo id="find-fits">{t('Day')}</WithInfo>}
+              radius="xl"
+              placeholder={t('Any')}
+              data={[1, 2, 3, 4, 5].map((d) => ({ value: String(d), label: dayjs().day(d).format('dddd') }))}
+              value={day}
+              onChange={setDay}
+              clearable
+              w={140}
+            />
+            <Select
+              label={<WithInfo id="find-fits">Time of day</WithInfo>}
+              radius="xl"
+              placeholder={t('Any')}
+              data={[
+                { value: 'morning', label: 'Morning' },
+                { value: 'afternoon', label: 'Afternoon' },
+                { value: 'evening', label: 'Evening' },
+              ]}
+              value={slot}
+              onChange={setSlot}
+              clearable
+              w={140}
+            />
+          </>
+        )}
+        {showFits && (
           <Tooltip label={t('Leaves out sections that clash with your classes that term. Sections with no times entered yet stay listed.')} multiline w={260}>
             <Checkbox label={<WithInfo id="find-fits">{t('Fits my timetable')}</WithInfo>} checked={fits} onChange={(e) => setFits(e.currentTarget.checked)} mb={8} />
           </Tooltip>
         )}
       </Group>
+      {addMissing && <AddCourse term={termName} />}
+      {joinCode && <JoinByCode />}
       {results.isPending ? (
         <Loading />
       ) : shown?.length ? (
@@ -266,11 +488,11 @@ function FindCourses() {
               {shown.map((c) => (
                 <Table.Tr key={c.id}>
                   <Table.Td fw={700} style={{ whiteSpace: 'nowrap' }}>
-                    {c.code}
+                    {c.code} {allTerms && <Tag>{term(c.term)}</Tag>}
                   </Table.Td>
                   <Table.Td>
                     {c.title}
-                    {c.times.length > 0 && (
+                    {knowsTimes && c.times.length > 0 && (
                       <Text size="xs" c="dimmed">
                         {fmtMeetings(c.times)}
                       </Text>
@@ -280,21 +502,21 @@ function FindCourses() {
                         {t('Taught by {{names}}', { names: c.professors.join(', ') })}
                       </Text>
                     )}
-                    {!c.joined && <ClashNote codes={c.clashesWith} />}
+                    {!c.joined && knowsTimes && <ClashNote codes={c.clashesWith} />}
                   </Table.Td>
                   <Table.Td>{c.credits}</Table.Td>
-                  <Table.Td>{c.memberCount}</Table.Td>
+                  <Table.Td>{showCount(c.memberCount) ? c.memberCount : '–'}</Table.Td>
                   <Table.Td ta="right">
                     {c.joined ? (
                       <Button size="xs" variant="light" component={Link} to={`/classes/${c.id}`}>
                         {t('Open')}
                       </Button>
                     ) : c.otherSectionId ? (
-                      <Button size="xs" variant="default" onClick={() => switchTo.mutate(c.id)} loading={switchTo.isPending && switchTo.variables === c.id}>
+                      <Button size="xs" variant="default" disabled={blockClashes && c.clashesWith.length > 0} onClick={() => switchTo.mutate(c.id)} loading={switchTo.isPending && switchTo.variables === c.id}>
                         {t('Switch here')}
                       </Button>
                     ) : (
-                      <Button size="xs" onClick={() => join.mutate(c.id)} loading={join.isPending && join.variables === c.id}>
+                      <Button size="xs" disabled={blockClashes && !professor && c.clashesWith.length > 0} onClick={() => join.mutate(c.id)} loading={join.isPending && join.variables === c.id}>
                         {professor ? t('Teach') : t('Join')}
                       </Button>
                     )}
@@ -306,7 +528,9 @@ function FindCourses() {
         </Table.ScrollContainer>
       ) : (
         <Empty>
-          {t('No sections match. Try a code like "MATH 240" or "COMP 2XX". The built-in catalogue is a sample of McGill courses for now.')}
+          {versionA
+            ? 'No sections match. Try a code like "MATH 240". The built-in catalogue is a sample of McGill courses for now.'
+            : t('No sections match. Try a code like "MATH 240" or "COMP 2XX". The built-in catalogue is a sample of McGill courses for now.')}
           <Badge ml={6} size="xs" variant="light" color="yellow">
             {t('sample')}
           </Badge>{' '}

@@ -1,3 +1,5 @@
+import { isOn } from './variants';
+
 // G2: minimal iCalendar export (to Google Calendar) and import (from myCourses).
 
 export interface IcsEvent {
@@ -69,6 +71,7 @@ export function buildCalendar(events: IcsEvent[], timeZone: string): string {
     if (e.location) lines.push(`LOCATION:${escapeText(e.location)}`);
     if (e.weekly) lines.push(`RRULE:FREQ=WEEKLY;UNTIL=${utcStamp(e.weekly.until)}`);
     if (e.weekly?.except?.length) lines.push(`EXDATE;TZID=${timeZone}:${e.weekly.except.map(localStamp).join(',')}`);
+    if (isOn('ics-alarm') && !e.allDay && !e.weekly) lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${escapeText(e.title)}`, 'TRIGGER:-PT1H', 'END:VALARM');
     lines.push('END:VEVENT');
   }
   lines.push('END:VCALENDAR');

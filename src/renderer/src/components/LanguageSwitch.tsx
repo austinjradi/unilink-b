@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { LOCALE_NAMES, LOCALES, type Locale } from '@shared/i18n';
 import { useLocale } from '../lib/i18n';
 import { rpc } from '../lib/rpc';
+import { useForcedLocale } from '../lib/variants';
 import { WithInfo } from './ReqInfo';
 
 // English ⇄ Français. Signed in, the choice is saved to the account so notifications and
@@ -10,6 +11,7 @@ import { WithInfo } from './ReqInfo';
 export function LanguageSwitch({ signedIn = false, size = 'sm' }: { signedIn?: boolean; size?: string }) {
   const { locale, setLocale } = useLocale();
   const queryClient = useQueryClient();
+  const forced = useForcedLocale();
 
   const change = (next: Locale) => {
     if (signedIn) {
@@ -20,6 +22,7 @@ export function LanguageSwitch({ signedIn = false, size = 'sm' }: { signedIn?: b
     setLocale(next);
   };
 
+  if (forced) return null;
   return (
     <WithInfo id="language">
       <SegmentedControl

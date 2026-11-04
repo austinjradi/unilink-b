@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useLocalStorage } from '@mantine/hooks';
 import {
   ActionIcon,
   Button,
@@ -10,6 +11,7 @@ import {
   Modal,
   NumberInput,
   Select,
+  Slider,
   Stack,
   Switch,
   Table,
@@ -25,13 +27,14 @@ import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import { IconClipboardText, IconCopy, IconFileImport, IconFileText, IconListNumbers, IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { bestFromName, finalIfRemainingAverages, hasSecondScheme, matchComponent, parsePastedGrades, letterFor, markFromParts, MCGILL_SCALE, minimumFor, parseMark, parseMarks, summarize } from '@shared/grades';
+import { type GradeScale, bestFromName, finalIfRemainingAverages, hasSecondScheme, matchComponent, parsePastedGrades, letterFor, markFromParts, MCGILL_SCALE, minimumFor, parseMark, parseMarks, scaleWeights, summarize, dropLowest, scaleWith } from '@shared/grades';
 import { CURRENT_TERM } from '@shared/dates';
 import { parseScheme } from '@shared/syllabus';
 import { toDate } from '../lib/format';
 import { t } from '../lib/i18n';
 import { useAction } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
+import { useVariant } from '../lib/variants';
 import { Empty, Loading } from './ui';
 import { ReqInfo, WithInfo } from './ReqInfo';
 
@@ -44,7 +47,49 @@ type Assessment = Out<typeof rpc.courses.assessments>[number];
 // A section can add a second scheme ("whichever is higher"); targets use the better one.
 // Once a professor teaches the section the scheme is theirs: they see it without marks (those
 // stay private) or the calculator, and students see it read-only with their own marks.
+// 'course-cutoffs': the lowest mark for each letter in this course, starting from McGill's.
+function CutoffForm({ classId, current, onDone }: { classId: number; current: Record<string, number> | null; onDone: () => void }) {
+  const [values, setValues] = useState<Record<string, number | string>>(Object.fromEntries(MCGILL_SCALE.filter((g) => g.min > 0).map((g) => [g.letter, current?.[g.letter] ?? g.min])));
+  const save = useAction((cutoffs: Record<string, number> | null) => rpc.courses.setCutoffs({ classId, cutoffs }), { onSuccess: onDone });
+  return (
+    <Stack gap="xs">
+      {Object.keys(values).map((letter) => (
+        <NumberInput key={letter} size="xs" label={letter} suffix="%" min={0} max={100} value={values[letter]} onChange={(v) => setValues({ ...values, [letter]: v })} />
+      ))}
+      <Group justify="space-between" mt="xs">
+        <Button variant="subtle" onClick={() => save.mutate(null)}>
+          Use McGill&apos;s
+        </Button>
+        <Button onClick={() => save.mutate(Object.fromEntries(Object.entries(values).map(([letter, v]) => [letter, Number(v)])))} loading={save.isPending}>
+          {t('Save')}
+        </Button>
+      </Group>
+    </Stack>
+  );
+}
+
 export function GradeCalculator({ classId }: { classId: number }) {
+  const sharedScheme = useVariant('shared-scheme');
+  const personalScheme = useVariant('personal-grading-scheme');
+  const noSecond = useVariant('no-second-scheme');
+  const noSeveral = useVariant('quiz-components');
+  const noContribution = useVariant('no-contribution-column');
+  const marksLost = useVariant('marks-lost');
+  const pointsView = useVariant('points-out-of-100');
+  const scaleUp = useVariant('scale-to-listed-total');
+  const lowestDropped = useVariant('drop-lowest');
+  const ownCutoffs = useVariant('course-cutoffs');
+  const cutoffs = useQuery({ queryKey: ['courses', 'cutoffs', classId], queryFn: () => rpc.courses.cutoffs({ classId }), enabled: ownCutoffs });
+  const [editingCutoffs, setEditingCutoffs] = useState(false);
+  const waitFor100 = useVariant('wait-for-100-percent');
+  const typeTarget = useVariant('target-percentage');
+  const canSwitchToPercent = useVariant('percent-only-view');
+  const sectionAverage = useVariant('section-average');
+  const approvals = useVariant('approve-shared-changes');
+  const [percentOnly, setPercentOnly] = useLocalStorage<boolean>({ key: 'unilink-percent-only', defaultValue: false });
+  const [typedTarget, setTypedTarget] = useLocalStorage<number>({ key: `unilink-target-percent-${classId}`, defaultValue: 80 });
+  const proposals = useQuery({ queryKey: ['courses', 'proposedComponents', classId], queryFn: () => rpc.courses.proposedComponents({ classId }), enabled: approvals });
+  const approve = useAction((key: number) => rpc.courses.approveComponent({ classId, key }));
   const items = useQuery({ queryKey: ['courses', 'assessments', classId], queryFn: () => rpc.courses.assessments({ classId }) });
   const info = useQuery({ queryKey: ['courses', 'info', classId], queryFn: () => rpc.courses.info({ classId }) });
   const [editing, setEditing] = useState<Assessment | 'new' | null>(null);
@@ -63,17 +108,28 @@ export function GradeCalculator({ classId }: { classId: number }) {
   });
 
   if (items.isPending || !items.data || !info.data) return <Loading />;
-  const list = items.data;
-  const { canEdit, teaching, managedBy } = info.data;
-  const summary = summarize(list);
+  const list = noSecond ? items.data.map((a) => ({ ...a, altWeight: null })) : items.data;
+  const { teaching, managedBy } = info.data;
+  const canEdit = info.data.canEdit || personalScheme;
+  const counted = lowestDropped ? dropLowest(list) : list;
+  const scale = scaleWith(ownCutoffs ? cutoffs.data : null);
+  const summary = summarize(scaleUp ? scaleWeights(counted) : counted, scale);
   const two = hasSecondScheme(list);
   const target = info.data.targetGrade;
-  const goal = summary.requirements.find((r) => r.letter === target);
+  const earnedPoints = list.reduce((sum, a) => sum + (a.score == null ? 0 : (a.weight * a.score) / 100), 0);
+  const letter = (percent: number) => (percentOnly && canSwitchToPercent ? '' : ` (${letterFor(percent, scale).letter})`);
+  // 'wait-for-100-percent': nothing's worked out until the scheme is complete.
+  const incomplete = waitFor100 && Math.round(summary.totalWeight) !== 100;
+  // 'target-percentage': the same sum as for a letter, for any number.
+  const typedNeeded = summary.remainingWeight > 0 ? Math.round(((typedTarget - summary.worstFinal) / summary.remainingWeight) * 1000) / 10 : null;
+  const goal = typeTarget
+    ? { letter: target, needed: typedNeeded ?? 0, scheme: 0, status: summary.worstFinal >= typedTarget ? ('secured' as const) : typedNeeded == null || typedNeeded > 100 ? ('out-of-reach' as const) : ('possible' as const) }
+    : summary.requirements.find((r) => r.letter === target);
   // The scheme that reaches the target (with two schemes, the one that needs less).
   const scheme = (goal && summary.schemes[goal.scheme]) ?? summary;
   const remaining = list.filter((a) => a.score == null);
   const single = remaining.length === 1 && scheme.unlistedWeight === 0 ? remaining[0].name : null;
-  const restParams = { name: single?.toLowerCase() ?? '', weight: scheme.remainingWeight, min: minimumFor(target) };
+  const restParams = { name: single?.toLowerCase() ?? '', weight: scheme.remainingWeight, min: typeTarget ? typedTarget : minimumFor(target) };
   const confirmRemove = (a: Assessment) => {
     if (!teaching) return remove.mutate(a.id);
     modals.openConfirmModal({
@@ -94,7 +150,7 @@ export function GradeCalculator({ classId }: { classId: number }) {
           </Title>
           {canEdit && (
           <Group gap="md">
-            {teaching && list.length > 0 && (mine.data?.length ?? 0) > 1 && (
+            {teaching && !sharedScheme && list.length > 0 && (mine.data?.length ?? 0) > 1 && (
               <WithInfo id="scheme-copy">
                 <Menu position="bottom-end">
                   <Menu.Target>
@@ -114,7 +170,15 @@ export function GradeCalculator({ classId }: { classId: number }) {
                 </Menu>
               </WithInfo>
             )}
-            {list.length > 0 && (
+            {ownCutoffs && teaching && (
+              <WithInfo id="mcgill-scale">
+                <Button variant="subtle" onClick={() => setEditingCutoffs(true)}>
+                  Set this course&apos;s cutoffs
+                </Button>
+              </WithInfo>
+            )}
+            {canSwitchToPercent && !teaching && <Switch label={<WithInfo id="mcgill-scale">Percentages only</WithInfo>} checked={percentOnly} onChange={(e) => setPercentOnly(e.currentTarget.checked)} />}
+            {list.length > 0 && !noSecond && (
               <Switch
                 label={<WithInfo id="scheme-second">{t('Second scheme, whichever is higher')}</WithInfo>}
                 checked={two}
@@ -136,13 +200,20 @@ export function GradeCalculator({ classId }: { classId: number }) {
           )}
         </Group>
         <Text size="xs" c="dimmed" mb="md">
-          {teaching
+          {personalScheme
+            ? 'This is your own scheme: only you see it, with your own marks.'
+            : teaching
             ? t("Students in the section see this scheme and enter their own marks, which stay private, even from you. They're told when you change it.")
             : canEdit
               ? t('The grading scheme is shared with your section, so anyone in it can add or fix a component. Your grades are private.')
               : t('{{name}} sets the grading scheme for this section. Your grades are private.', { name: managedBy ?? '' })}{' '}
           <ReqInfo id="scheme-shared" />
         </Text>
+        {lowestDropped && !teaching && (
+          <Text size="xs" c="dimmed" mb="md">
+            Your lowest mark so far doesn&apos;t count, and the other components share its weight.
+          </Text>
+        )}
         {list.length ? (
           <Table.ScrollContainer minWidth={teaching ? 460 : 760}>
             <Table withTableBorder withColumnBorders verticalSpacing="sm" fz="md">
@@ -167,7 +238,7 @@ export function GradeCalculator({ classId }: { classId: number }) {
                       </Text>
                     </Table.Th>
                   )}
-                  {!teaching && (
+                  {!teaching && !noContribution && (
                     <Table.Th w={200}>
                       <WithInfo id="marks-contribution">{t('Weighted contribution (%)')}</WithInfo>
                     </Table.Th>
@@ -198,6 +269,7 @@ export function GradeCalculator({ classId }: { classId: number }) {
                         placeholder="—"
                         inputMode="text"
                         rightSection={
+                          noSeveral ? undefined :
                           <Tooltip label={t('Several marks, like weekly quizzes')}>
                             <ActionIcon variant="subtle" color="gray" size="sm" radius="xl" onClick={() => setSeveralId(a.id)} aria-label={t('Enter several marks for {{name}}', { name: a.name })}>
                               <IconListNumbers size={14} />
@@ -223,13 +295,19 @@ export function GradeCalculator({ classId }: { classId: number }) {
                           <ReqInfo id="marks-several" />
                         </Text>
                       )}
+                      {a.sectionAverage != null && sectionAverage && (
+                        <Text size="xs" c="dimmed" mt={2}>
+                          Section average: {a.sectionAverage}% <ReqInfo id="marks-enter" />
+                        </Text>
+                      )}
                     </Table.Td>
                     )}
-                    {!teaching && (
+                    {!teaching && !noContribution && (
                     <Table.Td>
                       {a.score == null
                         ? '—'
                         : [a.weight, ...(two ? [a.altWeight ?? 0] : [])].map((w) => ((w * a.score!) / 100).toFixed(1)).join(' / ')}
+                      {marksLost && a.score != null && ` (${((a.weight * Math.max(0, 100 - a.score)) / 100).toFixed(1)} lost)`}
                     </Table.Td>
                     )}
                     <Table.Td>
@@ -268,8 +346,8 @@ export function GradeCalculator({ classId }: { classId: number }) {
             )}
             {!teaching && (
               <Text size="sm" c="dimmed">
-                {t('Average so far:')}{' '}
-                <b>{summary.currentAverage == null ? '—' : `${summary.currentAverage}% (${letterFor(summary.currentAverage).letter})`}</b> <ReqInfo id="marks-average" />
+                {pointsView ? 'Points so far:' : t('Average so far:')}{' '}
+                <b>{pointsView ? `${Math.round(earnedPoints * 10) / 10} / 100` : summary.currentAverage == null ? '—' : `${summary.currentAverage}%${letter(summary.currentAverage)}`}</b> <ReqInfo id="marks-average" />
               </Text>
             )}
             <Text size="sm" c={summary.unlistedWeight === 0 ? 'dimmed' : 'orange'}>
@@ -281,12 +359,41 @@ export function GradeCalculator({ classId }: { classId: number }) {
         )}
       </Card>
 
-      {list.length > 0 && !teaching && (
+      {!!proposals.data?.length && (
+        <Card padding="md">
+          <Text fw={700} mb="xs">
+            Waiting for approval <ReqInfo id="scheme-add" />
+          </Text>
+          <Stack gap={4}>
+            {proposals.data.map((proposal) => (
+              <Group key={proposal.key} justify="space-between">
+                <Text size="sm">
+                  {proposal.byName}: {proposal.name}, {proposal.weight}%
+                </Text>
+                {!proposal.mine && (
+                  <Button size="compact-xs" onClick={() => approve.mutate(proposal.key)}>
+                    Approve
+                  </Button>
+                )}
+              </Group>
+            ))}
+          </Stack>
+        </Card>
+      )}
+      {list.length > 0 && !teaching && incomplete && (
+        <Text size="sm" c="dimmed">
+          Nothing is worked out until the weights add up to 100%. <ReqInfo id="scheme-total" />
+        </Text>
+      )}
+      {list.length > 0 && !teaching && !incomplete && (
         <Grid gap="lg" align="stretch">
           <Grid.Col span={{ base: 12, md: 3 }}>
             <Title order={3} mb="sm">
               {t('Target grade')} <ReqInfo id="grade-target" />
             </Title>
+            {typeTarget ? (
+              <NumberInput radius="xl" size="lg" min={1} max={100} suffix="%" value={typedTarget} onChange={(v) => setTypedTarget(Number(v) || 0)} aria-label={t('Target grade')} />
+            ) : (
             <Select
               radius="xl"
               size="lg"
@@ -296,6 +403,7 @@ export function GradeCalculator({ classId }: { classId: number }) {
               allowDeselect={false}
               aria-label={t('Target grade')}
             />
+            )}
           </Grid.Col>
           <Grid.Col span={{ base: 12, md: 5 }}>
             <Card
@@ -311,7 +419,7 @@ export function GradeCalculator({ classId }: { classId: number }) {
                       {t("You've already secured")} <ReqInfo id="grade-needed" />
                     </Text>
                     <Text fz={44} fw={700} className="display">
-                      {target} 🎉
+                      {typeTarget ? `${typedTarget}%` : target} 🎉
                     </Text>
                     <Text size="sm">
                       {single
@@ -328,10 +436,12 @@ export function GradeCalculator({ classId }: { classId: number }) {
                       {single
                         ? t("Even 100% on the {{name}} won't reach {{min}}%.", restParams)
                         : t("Even 100% on the remaining {{weight}}% of the course won't reach {{min}}%.", restParams)}{' '}
-                      {t('Your best possible grade is {{best}}% ({{letter}}).', {
-                        best: summary.bestFinal,
-                        letter: letterFor(summary.bestFinal).letter,
-                      })}
+                      {percentOnly && canSwitchToPercent
+                        ? `Your best possible grade is ${summary.bestFinal}%.`
+                        : t('Your best possible grade is {{best}}% ({{letter}}).', {
+                            best: summary.bestFinal,
+                            letter: letterFor(summary.bestFinal, scale).letter,
+                          })}
                     </Text>
                   </>
                 ) : (
@@ -345,7 +455,7 @@ export function GradeCalculator({ classId }: { classId: number }) {
                     <Text fw={700}>
                       {single ? t('on the {{name}}', restParams) : t('on the remaining {{weight}}% of the course', restParams)}
                       <br />
-                      {t('to achieve {{grade}} in the course', { grade: target })}
+                      {t('to achieve {{grade}} in the course', { grade: typeTarget ? `${typedTarget}%` : target })}
                     </Text>
                     {two && (
                       <Text size="xs" c="dimmed">
@@ -358,11 +468,14 @@ export function GradeCalculator({ classId }: { classId: number }) {
             </Card>
           </Grid.Col>
           <Grid.Col span={{ base: 12, md: 4 }}>
-            <Scenarios items={list} needed={goal?.status === 'possible' ? goal.needed : null} single={single} two={two} />
+            <Scenarios items={counted} needed={goal?.status === 'possible' ? goal.needed : null} single={single} two={two} scale={scale} />
           </Grid.Col>
         </Grid>
       )}
 
+      <Modal opened={editingCutoffs} onClose={() => setEditingCutoffs(false)} title="This course's cutoffs">
+        {editingCutoffs && <CutoffForm classId={classId} current={cutoffs.data ?? null} onDone={() => setEditingCutoffs(false)} />}
+      </Modal>
       <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing && editing !== 'new' ? <WithInfo id="scheme-edit">{t('Edit component')}</WithInfo> : <WithInfo id="scheme-add">{t('Add component')}</WithInfo>}>
         {editing && (
           <ComponentForm
@@ -388,8 +501,54 @@ export function GradeCalculator({ classId }: { classId: number }) {
   );
 }
 
-function Scenarios({ items, needed, single, two }: { items: Assessment[]; needed: number | null; single: string | null; two: boolean }) {
+// 'grade-slider': one average for what's left, on a slider.
+function ScenarioSlider({ items, scale }: { items: Assessment[]; scale: GradeScale }) {
+  const [value, setValue] = useState(75);
+  const { final: overall } = finalIfRemainingAverages(items, value);
+  return (
+    <Card padding="md" h="100%">
+      <Text fw={800} className="display" mb="md">
+        {t('Explore different scenarios')} <ReqInfo id="grade-scenarios" />
+      </Text>
+      <Text size="sm" mb={4}>
+        {t('Average on the rest')}: <b>{value}%</b>
+      </Text>
+      <Slider value={value} onChange={setValue} min={0} max={100} label={null} mb="md" />
+      <Text size="sm">
+        {t('Overall grade (%)')}: <b>{overall.toFixed(1)}</b> ({letterFor(overall, scale).letter})
+      </Text>
+    </Card>
+  );
+}
+
+// 'per-component-scenarios': a different mark for each thing that's left.
+function ScenarioMarks({ items, scale }: { items: Assessment[]; scale: GradeScale }) {
+  const left = items.filter((a) => a.score == null);
+  const [marks, setMarks] = useState<Record<number, number>>({});
+  const overall = items.reduce((sum, a) => sum + (a.weight * (a.score ?? marks[a.id] ?? 0)) / 100, 0);
+  return (
+    <Card padding="md" h="100%">
+      <Text fw={800} className="display" mb="xs">
+        {t('Explore different scenarios')} <ReqInfo id="grade-scenarios" />
+      </Text>
+      <Stack gap={4}>
+        {left.map((a) => (
+          <NumberInput key={a.id} size="xs" label={a.name} min={0} max={100} suffix="%" value={marks[a.id] ?? ''} onChange={(v) => setMarks({ ...marks, [a.id]: Number(v) || 0 })} />
+        ))}
+      </Stack>
+      <Text size="sm" mt="sm">
+        {t('Overall grade (%)')}: <b>{overall.toFixed(1)}</b> ({letterFor(overall, scale).letter})
+      </Text>
+    </Card>
+  );
+}
+
+function Scenarios({ items, needed, single, two, scale }: { items: Assessment[]; needed: number | null; single: string | null; two: boolean; scale: GradeScale }) {
+  const slider = useVariant('grade-slider');
+  const perComponent = useVariant('per-component-scenarios');
   if (!items.some((a) => a.score == null)) return null;
+  if (slider) return <ScenarioSlider items={items} scale={scale} />;
+  if (perComponent) return <ScenarioMarks items={items} scale={scale} />;
   const values = [...new Set([60, 70, 75, 80, 85, 90, 100, ...(needed != null ? [needed] : [])])].sort((a, b) => a - b);
   return (
     <Card padding="md" h="100%">
@@ -417,7 +576,7 @@ function Scenarios({ items, needed, single, two }: { items: Assessment[]; needed
                 <Table.Td>
                   {overall.toFixed(1)}{' '}
                   <Text span size="xs" c="dimmed">
-                    ({letterFor(overall).letter}
+                    ({letterFor(overall, scale).letter}
                     {two && `, ${t('scheme {{number}}', { number: scheme + 1 })}`})
                   </Text>
                 </Table.Td>
@@ -496,10 +655,15 @@ function ComponentForm({ classId, existing, two, teaching, onDone }: { classId: 
 
 // A4: a component made of many small marks. They stay private like any other mark.
 function SeveralMarks({ assessment: a, onDone }: { assessment: Assessment; onDone: () => void }) {
+  // 'shared-best-rule': "best 4 of 5" is the section's, not each student's.
+  const sharedRule = useVariant('shared-best-rule');
   const [text, setText] = useState(a.parts?.marks.join(' ') ?? '');
   const [best, setBest] = useState<number | string>(a.parts?.best ?? bestFromName(a.name) ?? '');
   const { marks, unreadable } = parseMarks(text);
-  const count = typeof best === 'number' && best >= 1 ? best : null;
+  const sharedBest = useQuery({ queryKey: ['courses', 'sharedBest', a.classId], queryFn: () => rpc.courses.sharedBest({ classId: a.classId }), enabled: sharedRule });
+  const setSharedBest = useAction((value: number | null) => rpc.courses.setSharedBest({ id: a.id, best: value }));
+  const rule = sharedBest.data?.[a.id] ?? null;
+  const count = sharedRule ? rule : typeof best === 'number' && best >= 1 ? best : null;
   const result = markFromParts(marks, count);
   const save = useAction(() => rpc.courses.setScoreParts({ id: a.id, marks, best: count }), { onSuccess: onDone });
   return (
@@ -523,8 +687,8 @@ function SeveralMarks({ assessment: a, onDone }: { assessment: Assessment; onDon
         max={60}
         allowDecimal={false}
         w={280}
-        value={best}
-        onChange={setBest}
+        value={sharedRule ? (rule ?? '') : best}
+        onChange={(v) => (sharedRule ? setSharedBest.mutate(typeof v === 'number' && v >= 1 ? v : null) : setBest(v))}
       />
       <Text size="sm" aria-live="polite">
         {result ? (
@@ -560,6 +724,7 @@ function SchemeImport({ classId, scheme, outlineName, onDone }: { classId: numbe
   const readOutline = useAction(() => rpc.courses.outlineText({ classId }), { onSuccess: fill });
   const found = parseScheme(text, term);
   const there = (name: string) => scheme.some((a) => a.name.trim().toLowerCase() === name.trim().toLowerCase());
+  const noReview = useVariant('scheme-no-review');
   const picked = found.filter((item, n) => !unchecked.has(n) && !there(item.name));
   const total = picked.reduce((sum, item) => sum + item.weight, 0) + scheme.reduce((sum, a) => sum + a.weight, 0);
   const add = useAction(
@@ -609,7 +774,7 @@ function SchemeImport({ classId, scheme, outlineName, onDone }: { classId: numbe
           {t('No grading breakdown found yet. Lines need a name and a percentage, like "Midterm 30%".')}
         </Text>
       )}
-      {found.map((item, n) => {
+      {!noReview && found.map((item, n) => {
         const already = there(item.name);
         return (
           <Checkbox

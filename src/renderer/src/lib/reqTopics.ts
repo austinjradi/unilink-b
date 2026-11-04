@@ -242,7 +242,7 @@ export const REQ_TOPICS = {
     title: 'Mark all read',
     board: ['G3'],
     how: 'Clears the unread count in one click. Opening a notification marks just that one.',
-    alternatives: ['Mark everything read as soon as the list is opened.'],
+    alternatives: ['Mark everything read as soon as the list is opened.', 'Ask before marking everything as read.'],
   },
   'notif-filter': {
     title: 'All or unread',
@@ -278,7 +278,7 @@ export const REQ_TOPICS = {
     title: 'McGill email',
     board: ['G4.2'],
     how: 'You log in with the McGill email you signed up with.',
-    alternatives: ["Sign in through McGill's own login (single sign-on) instead of a UniLink password."],
+    alternatives: ["Sign in through McGill's own login (single sign-on) instead of a UniLink password.", 'Let people type only the part before the @.'],
   },
   'signin-password': {
     title: 'Password',
@@ -308,7 +308,7 @@ export const REQ_TOPICS = {
     title: 'Reset demo data',
     board: ['WEB'],
     how: 'Wipes every account and everything saved in this browser, and starts the demo over.',
-    alternatives: ["Reset only your own account's data, leaving other accounts in the browser alone."],
+    alternatives: ["Reset only your own account's data, leaving other accounts in the browser alone.", 'Ask people to type RESET before wiping everything.'],
   },
   'backup-restore': {
     title: 'Restore a backup',
@@ -452,7 +452,7 @@ export const REQ_TOPICS = {
     title: 'Filters',
     board: ['S4', 'WIRE'],
     how: "The filter column from the wireframe. Below the wide layout the filters open in a drawer so they don't sit under every post.",
-    alternatives: ['Replace the filters with one search box and typed filters such as "topic:exams".'],
+    alternatives: ['Replace the filters with one search box and typed filters such as "topic:exams".', 'Remember the filters between visits.'],
   },
   'feed-search': {
     title: 'Search posts',
@@ -500,7 +500,7 @@ export const REQ_TOPICS = {
     title: 'Sort posts',
     board: ['WIRE', 'S4'],
     how: "Newest first, or most 🐐 first. Pinned posts stay on top of a class's board.",
-    alternatives: ['Sort by latest activity, so a new reply brings a thread back up.'],
+    alternatives: ['Sort by latest activity, so a new reply brings a thread back up.', 'Put unanswered questions first.'],
   },
   'feed-mute': {
     title: 'Mute replies from a class',
@@ -518,7 +518,7 @@ export const REQ_TOPICS = {
     title: 'Edit a post',
     board: ['S4'],
     how: "You can change your post's type, topic, title and text. The post then shows as edited. Who can see it stays as it was.",
-    alternatives: ["Keep each post's earlier versions, and show them.", "Don't allow edits once someone has replied."],
+    alternatives: ["Keep each post's earlier versions, and show them.", "Don't allow edits once someone has replied.", 'Only allow edits for 15 minutes after posting.'],
   },
   'post-delete': {
     title: 'Delete a post',
@@ -686,7 +686,7 @@ export const REQ_TOPICS = {
     title: 'Edit or delete your reply',
     board: ['S4'],
     how: 'Only the author can edit or delete a reply. An edited one says so.',
-    alternatives: ["Don't allow editing once a reply has been accepted."],
+    alternatives: ["Don't allow editing once a reply has been accepted.", 'Only allow edits for 15 minutes after posting.'],
   },
   'thread-follow': {
     title: 'Follow a thread',
@@ -722,7 +722,7 @@ export const REQ_TOPICS = {
     title: 'Course card',
     board: ['S1.4', 'WIRE'],
     how: 'Each class shows its next lecture, the next thing due and any unanswered questions, so you can see at a glance where it stands.',
-    alternatives: ['Show just the code and title, and keep details on the class page.'],
+    alternatives: ['Show just the code and title, and keep details on the class page.', "Show the professor's name on each card."],
   },
   'course-members': {
     title: 'Number of students',
@@ -998,7 +998,7 @@ export const REQ_TOPICS = {
     title: 'Copy the link',
     board: ['S2.1'],
     how: 'To pass the chat on to a classmate outside UniLink.',
-    alternatives: ['Only allow opening links, so they stay within the class.'],
+    alternatives: ['Only allow opening links, so they stay within the class.', "Copy the chat's name along with its link."],
   },
   'chat-manage': {
     title: 'Edit or remove your link',
@@ -1190,7 +1190,7 @@ export const REQ_TOPICS = {
     title: 'Start and end',
     board: ['S3.1'],
     how: 'Must be in the future and end after it starts. Moving the time or place notifies everyone in it.',
-    alternatives: ['Ask only for a start time and a default length.'],
+    alternatives: ['Ask only for a start time and a default length.', "Require at least an hour's notice for a new session."],
   },
   'session-capacity': {
     title: 'Size and waitlist',
@@ -1274,7 +1274,7 @@ export const REQ_TOPICS = {
     title: 'Leave a session',
     board: ['S3.3'],
     how: 'Removes you from the session or its waitlist, and the next person on the waitlist moves up.',
-    alternatives: [ALT['sess-cap-a']],
+    alternatives: [ALT['sess-cap-a'], 'Tell the host when someone leaves.'],
   },
   'session-host-leave': {
     title: 'Hand over and leave',
@@ -1286,7 +1286,7 @@ export const REQ_TOPICS = {
     title: 'Add to calendar',
     board: ['G2', 'S3.2'],
     how: "Saves a file to add the session to Google Calendar or another calendar app. Sessions you're going to are on UniLink's calendar already.",
-    alternatives: ['Add it to Google Calendar directly, by connecting an account.'],
+    alternatives: ['Add it to Google Calendar directly, by connecting an account.', 'Add a reminder an hour before to the exported file.'],
   },
   'session-class': {
     title: 'Class of a session',
@@ -1322,7 +1322,7 @@ export const REQ_TOPICS = {
     title: 'Times to offer',
     board: ['S3'],
     how: "Two to five times, in the future. Once it's posted, each time tells a classmate if it clashes with what they already have.",
-    alternatives: [ALT['poll-free']],
+    alternatives: [ALT['poll-free'], 'Allow up to ten times instead of five.'],
   },
   'poll-card': {
     title: 'When works?',
@@ -1394,7 +1394,7 @@ export const REQ_TOPICS = {
     title: 'Move through the calendar',
     board: ['A3'],
     how: 'Previous, next, and back to today, by month or week.',
-    alternatives: ['Scroll through time continuously instead of stepping.'],
+    alternatives: ['Scroll through time continuously instead of stepping.', 'Start the week on Sunday instead of Monday.'],
   },
   'cal-views': {
     title: 'Calendar views',
@@ -1664,7 +1664,7 @@ export const REQ_TOPICS = {
     title: 'Progress',
     board: ['ST2'],
     how: "How many of the plan's tasks are done.",
-    alternatives: ['Measure progress by minutes of work, not number of tasks.'],
+    alternatives: ['Measure progress by minutes of work, not number of tasks.', 'Show a percentage instead of a count.'],
   },
   'plan-warning': {
     title: 'Plan warnings',
@@ -1838,7 +1838,7 @@ export const REQ_TOPICS = {
     title: 'Weighted contribution',
     board: ['A4', 'WIRE'],
     how: 'How many points of the final grade this mark gives you, as in the wireframe.',
-    alternatives: ['Leave out this column, to keep the table simple.'],
+    alternatives: ['Leave out this column, to keep the table simple.', 'Show the points lost beside the points earned.'],
   },
   'scheme-added-by': {
     title: 'Added by',
@@ -1922,7 +1922,7 @@ export const REQ_TOPICS = {
     title: 'Could finish between',
     board: ['A4'],
     how: 'Your lowest and highest possible final grade from your marks so far.',
-    alternatives: ['Show a single projected grade instead of a range.'],
+    alternatives: ['Show a single projected grade instead of a range.', "Show only the highest grade still possible, so it's less discouraging."],
   },
   'term-target': {
     title: 'Your target',
@@ -1934,7 +1934,7 @@ export const REQ_TOPICS = {
     title: 'Projected GPA',
     board: ['A4', 'A1'],
     how: "Projected term GPA, the GPA if you reach every target, and your CGPA after this term, on McGill's scale.",
-    alternatives: ['Show only the term GPA, and leave CGPA to the course record.'],
+    alternatives: ['Show only the term GPA, and leave CGPA to the course record.', "Hide GPAs until clicked, for when someone's looking over your shoulder."],
   },
   'record-add': {
     title: 'Add a course',
@@ -1958,7 +1958,7 @@ export const REQ_TOPICS = {
     title: 'GPA by term',
     board: ['A1'],
     how: "A chart of how your term GPA and CGPA have moved, term by term, on McGill's 4.00 scale.",
-    alternatives: ['Use a simple table instead of a chart.'],
+    alternatives: ['Use a simple table instead of a chart.', "Hide GPAs until clicked, for when someone's looking over your shoulder."],
   },
   'cgpa-goal': {
     title: 'CGPA goal',
@@ -1982,7 +1982,7 @@ export const REQ_TOPICS = {
     title: 'Courses by term',
     board: ['A1'],
     how: "Each term's courses, credits and term GPA.",
-    alternatives: ['Show one long list you can sort by any column.'],
+    alternatives: ['Show one long list you can sort by any column.', 'Show the newest term first.'],
   },
   'record-status': {
     title: 'Course status',
@@ -2000,7 +2000,7 @@ export const REQ_TOPICS = {
     title: 'Edit or delete a course',
     board: ['A1'],
     how: 'Changes your own record only. Nothing here is shared.',
-    alternatives: [ALT['a1-minerva']],
+    alternatives: [ALT['a1-minerva'], "Lock a completed course once it's saved, so the record can't drift from the transcript."],
   },
   'record-code': {
     title: 'Course code, title and credits',
@@ -2048,13 +2048,13 @@ export const REQ_TOPICS = {
     title: 'Credits a term',
     board: ['A2'],
     how: 'The credits a term it takes to graduate in your expected year, with a warning above the usual 15 to 18.',
-    alternatives: ['Suggest a full term-by-term schedule of courses.'],
+    alternatives: ['Suggest a full term-by-term schedule of courses.', 'Warn above 15 credits a term instead of 18.'],
   },
   'degree-group': {
     title: 'Requirement group',
     board: ['A2'],
     how: 'Required courses, or a number of credits to choose from a list, with what counts so far.',
-    alternatives: [ALT['a2-real']],
+    alternatives: [ALT['a2-real'], "List only what's left, and leave out what's done."],
   },
   'degree-plan-it': {
     title: 'Plan a missing course',
@@ -2096,7 +2096,7 @@ export const REQ_TOPICS = {
     title: 'Goat parts',
     board: ['WIRE'],
     how: 'Hat, eyes, horns, fur and background, each with option tiles. A choice saves right away.',
-    alternatives: ['Unlock goat parts by using the app, as a small reward.'],
+    alternatives: ['Unlock goat parts by using the app, as a small reward.', 'Add a button for a random goat.'],
   },
   'settings-privacy': {
     title: 'Privacy',
@@ -2138,7 +2138,7 @@ export const REQ_TOPICS = {
     title: 'Desktop notifications',
     board: ['G3'],
     how: 'A toast in the page, or a system notification when the tab is in the background and the site has permission.',
-    alternatives: ['Add push notifications that reach a phone with the tab closed.'],
+    alternatives: ['Add push notifications that reach a phone with the tab closed.', 'Play a short sound when a notification arrives.'],
   },
   'notif-email': {
     title: 'Email notifications',
@@ -2162,7 +2162,7 @@ export const REQ_TOPICS = {
     title: 'Name',
     board: ['G4.6'],
     how: 'The board lists name among what users can edit.',
-    alternatives: ["Have names come from McGill, so they can't be changed here."],
+    alternatives: ["Have names come from McGill, so they can't be changed here.", 'Allow a name change only once a term.'],
   },
   'profile-password': {
     title: 'Change password',
@@ -2192,7 +2192,7 @@ export const REQ_TOPICS = {
     title: 'Appearance',
     board: ['EXTRA'],
     how: 'Light, dark, or matching your system. Text meets WCAG AA contrast in both.',
-    alternatives: ['Offer light mode only.'],
+    alternatives: ['Offer light mode only.', 'Add a high-contrast mode.', 'Offer larger text.'],
   },
   'about': {
     title: 'About UniLink',

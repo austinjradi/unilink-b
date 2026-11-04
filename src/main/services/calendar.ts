@@ -1,12 +1,16 @@
 import { readFile, rm, writeFile } from 'node:fs/promises';
+import { basename } from 'node:path';
 import { and, asc, eq, gte, inArray, isNull, lt, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { addDays, atTime, eachDay, parseYmd, termRange, ymd } from '@shared/dates';
 import { translate } from '@shared/i18n';
 import { buildCalendar, type IcsEvent, parseCalendar } from '@shared/ics';
 import { finalExamFor, KEY_DATES, noClassesOn } from '@shared/keyDates';
+import { parseOfficeHours } from '@shared/meetings';
+import { isOn } from '@shared/variants';
 import type { DB } from '../db/client';
 import {
+  classDetails,
   classes,
   classMeetings,
   courses,
@@ -20,8 +24,9 @@ import {
   users,
 } from '../db/schema';
 import { AppError, idSchema, nonEmpty, procedure } from '../rpc/core';
-import { classLabels, FORMER_STUDENT_EMAIL, isProfessor, notFound, requireMember, teaches } from './access';
-import { gradedItems } from './courses';
+import { classLabels, FORMER_STUDENT_EMAIL, isMember, isProfessor, notFound, professorsOf, requireMember, teaches, sameCourseSections } from './access';
+import { gradedItems, personalMeetings } from './courses';
+import { read, write } from './variantData';
 
 // A3: one calendar for class times, deadlines, exams, study sessions and planned work.
 // In version B a deadline added to a class is shared with the whole section (one person
@@ -30,6 +35,27 @@ import { gradedItems } from './courses';
 // G2: export to Google Calendar (.ics) and import from myCourses (.ics).
 
 export const DEADLINE_KINDS = ['assignment', 'exam', 'quiz', 'other'] as const;
+
+// 'labs-and-readings' adds these. The column isn't constrained, so nothing else changes.
+const EXTRA_KINDS = ['lab', 'reading'] as const;
+
+// Switches stay in English, so these aren't written where the French check would ask for a translation.
+const NO_EXTRA_KIND = 'Pick a type from the list.';
+const PROFESSOR_ADDS = 'The section’s professor enters its dates.';
+const CANT_APPROVE_OWN = 'Someone else has to approve what you added.';
+
+// What people do under a switch, kept in app_state.
+const PRIVATE_DEADLINES = 'variant-private-deadlines';
+const SHARED_DONE = 'variant-shared-done-deadlines';
+const NO_TIME = 'variant-deadlines-no-time';
+const PENDING_DEADLINES = 'variant-pending-deadlines';
+const CANCELLED_LECTURES = 'variant-cancelled-lectures';
+const submissionsKey = (userId: number) => `variant-submissions-${userId}`;
+const idSet = (db: DB, key: string) => new Set(read<number[]>(db, key, []));
+const addTo = (db: DB, key: string, id: number) => write(db, key, [...idSet(db, key), id]);
+const removeFrom = (db: DB, key: string, id: number) => write(db, key, [...idSet(db, key)].filter((other) => other !== id));
+
+const onBreak = (day: string) => !isOn('classes-through-breaks') && noClassesOn(day);
 
 export type CalendarEvent = {
   // A graded item's share of its class's grade.
@@ -58,20 +84,29 @@ const ymdSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 const deadlineFields = {
   classId: idSchema.nullable(),
-  kind: z.enum(DEADLINE_KINDS),
+  kind: z.enum([...DEADLINE_KINDS, ...EXTRA_KINDS]),
   title: nonEmpty('Title', 200),
   dueAt: z.date(),
   notes: z.string().trim().max(2000),
+  // 'ask-to-share-deadline' and 'date-without-time'.
+  shared: z.boolean().optional(),
+  noTime: z.boolean().optional(),
 };
 
 const labels = classLabels;
 
 function myClassIds(db: DB, userId: number) {
+  // 'one-class-per-course': what's in any section of a course is in the class.
+  if (isOn('one-class-per-course')) {
+    const mine = db.select({ id: enrollments.classId }).from(enrollments).where(eq(enrollments.userId, userId)).all();
+    return db.select({ id: classes.id }).from(classes).where(inArray(classes.id, mine.flatMap(({ id }) => sameCourseSections(db, id))));
+  }
   return db.select({ id: enrollments.classId }).from(enrollments).where(eq(enrollments.userId, userId));
 }
 
 // The section's class times, for every class the student is in.
 export function myMeetings(db: DB, userId: number) {
+  if (isOn('personal-class-times')) return personalMeetings(db, userId);
   return db
     .select({ meeting: classMeetings, term: classes.term })
     .from(classMeetings)
@@ -93,7 +128,7 @@ export function busyChecker(db: DB, userId: number) {
     .all();
   return (start: Date, end: Date, exceptSessionId?: number): string | null => {
     const day = ymd(start);
-    if (!noClassesOn(day)) {
+    if (!onBreak(day)) {
       for (const { meeting: m, term } of meetings) {
         const range = termRange(term);
         if (m.weekday !== start.getDay() || day < range.start || day > range.end) continue;
@@ -106,9 +141,17 @@ export function busyChecker(db: DB, userId: number) {
 
 // Your private deadlines plus the shared deadlines of every class you're in, with whether
 // you've checked each one off.
+export const EXTENSIONS = 'variant-extensions';
+
 export function visibleDeadlines(db: DB, userId: number, from?: Date, to?: Date) {
   // Whoever teaches a section sees what's waiting to go out; nobody else does until it has.
   const teaching = isProfessor(db, userId);
+  const privateOnes = isOn('ask-to-share-deadline') ? idSet(db, PRIVATE_DEADLINES) : new Set<number>();
+  const pending = isOn('approve-shared-changes') ? idSet(db, PENDING_DEADLINES) : new Set<number>();
+  const sharedDone = isOn('shared-deadline-check') ? idSet(db, SHARED_DONE) : new Set<number>();
+  const noTime = isOn('date-without-time') ? idSet(db, NO_TIME) : new Set<number>();
+  const extensions = isOn('extensions') ? read<Record<string, string>>(db, EXTENSIONS, {}) : {};
+  const counts = isOn('professor-sees-checkoffs') && teaching ? db.select({ id: deadlineDone.deadlineId }).from(deadlineDone).all().map((row) => row.id) : [];
   return db
     .select({
       deadline: deadlines,
@@ -121,17 +164,28 @@ export function visibleDeadlines(db: DB, userId: number, from?: Date, to?: Date)
     .leftJoin(deadlineDone, and(eq(deadlineDone.deadlineId, deadlines.id), eq(deadlineDone.userId, userId)))
     .where(
       and(
-        or(and(isNull(deadlines.classId), eq(deadlines.userId, userId)), inArray(deadlines.classId, myClassIds(db, userId))),
-        teaching ? undefined : isNull(deadlines.releaseAt),
+        // Version A: your own, plus what a professor posted.
+        isOn('personal-deadlines')
+          ? or(eq(deadlines.userId, userId), and(eq(deadlines.official, true), inArray(deadlines.classId, myClassIds(db, userId))))
+          : or(and(isNull(deadlines.classId), eq(deadlines.userId, userId)), inArray(deadlines.classId, myClassIds(db, userId))),
+        teaching || isOn('draft-visible') ? undefined : isNull(deadlines.releaseAt),
         from ? gte(deadlines.dueAt, from) : undefined,
         to ? lt(deadlines.dueAt, to) : undefined,
       ),
     )
     .orderBy(asc(deadlines.dueAt))
     .all()
+    .filter(({ deadline }) => deadline.userId === userId || !privateOnes.has(deadline.id))
     .map(({ deadline, doneAt, addedByName, addedByEmail }) => ({
       ...deadline,
-      done: doneAt != null,
+      // 'extensions': someone's own due date.
+      dueAt: extensions[`${deadline.id}-${userId}`] ? new Date(extensions[`${deadline.id}-${userId}`]) : deadline.dueAt,
+      extended: !!extensions[`${deadline.id}-${userId}`],
+      done: isOn('shared-deadline-check') && deadline.classId != null ? sharedDone.has(deadline.id) : doneAt != null,
+      doneCount: counts.filter((id) => id === deadline.id).length,
+      noTime: noTime.has(deadline.id),
+      // 'approve-shared-changes': waiting for someone else in the section.
+      pending: pending.has(deadline.id),
       mine: deadline.userId === userId,
       addedBy: deadline.userId === userId ? null : addedByEmail === FORMER_STUDENT_EMAIL ? '' : addedByName,
     }));
@@ -148,12 +202,13 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
   for (const { meeting: m, term } of myMeetings(db, userId)) {
     const range = termRange(term);
     for (const day of days) {
-      if (parseYmd(day).getDay() !== m.weekday || day < range.start || day > range.end || noClassesOn(day)) continue;
+      if (parseYmd(day).getDay() !== m.weekday || day < range.start || day > range.end || onBreak(day)) continue;
+      const cancelled = isOn('cancel-one-lecture') && read<string[]>(db, CANCELLED_LECTURES, []).includes(`${m.id}|${day}`);
       events.push({
         key: `class-${m.id}-${day}`,
         kind: 'class',
-        detail: 'class',
-        title: labelOf(m.classId) ?? 'Class',
+        detail: cancelled ? 'cancelled' : 'class',
+        title: `${cancelled ? 'Cancelled: ' : ''}${labelOf(m.classId) ?? 'Class'}`,
         start: atTime(day, m.startTime),
         end: atTime(day, m.endTime),
         allDay: false,
@@ -167,7 +222,21 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
     }
   }
 
+  // 'office-hours-on-calendar': read from the course details, every week of the term.
+  if (isOn('office-hours-on-calendar')) {
+    for (const row of db.select({ classId: classes.id, term: classes.term, officeHours: classDetails.officeHours }).from(enrollments).innerJoin(classes, eq(enrollments.classId, classes.id)).innerJoin(classDetails, eq(classDetails.classId, classes.id)).where(eq(enrollments.userId, userId)).all()) {
+      const hours = parseOfficeHours(row.officeHours ?? '');
+      if (!hours) continue;
+      const range = termRange(row.term);
+      for (const day of days) {
+        if (parseYmd(day).getDay() !== hours.weekday || day < range.start || day > range.end) continue;
+        events.push({ key: `office-${row.classId}-${day}`, kind: 'class', detail: 'office hours', title: `Office hours: ${labelOf(row.classId) ?? ''}`, start: atTime(day, hours.startTime), end: atTime(day, hours.endTime), allDay: false, classId: row.classId, classLabel: labelOf(row.classId), location: '', done: false, deadlineId: null, addedBy: null });
+      }
+    }
+  }
+
   for (const d of visibleDeadlines(db, userId, from, to)) {
+    if (d.pending && d.userId !== userId) continue;
     events.push({
       key: `deadline-${d.id}`,
       kind: 'deadline',
@@ -175,7 +244,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
       title: d.title,
       start: d.dueAt,
       end: null,
-      allDay: false,
+      allDay: d.noTime,
       classId: d.classId,
       classLabel: labelOf(d.classId),
       location: '',
@@ -186,7 +255,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
   }
 
   // ST2: the days off the planner works around, so they're visible where plans are.
-  const daysOff = db.select({ off: users.daysOff }).from(users).where(eq(users.id, userId)).get()?.off ?? [];
+  const daysOff = isOn('calendar-without-plans') ? [] : (db.select({ off: users.daysOff }).from(users).where(eq(users.id, userId)).get()?.off ?? []);
   for (const day of daysOff) {
     if (day < ymd(from) || day > ymd(new Date(to.getTime() - 1))) continue;
     events.push({
@@ -211,6 +280,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
   const firstDay = ymd(from);
   const lastDay = ymd(new Date(to.getTime() - 1));
   for (const k of KEY_DATES) {
+    if (isOn('hide-key-dates') || (isOn('only-official-dates') && k.approximate)) continue;
     const title = translate(locale, k.title);
     const blank = { end: null, classId: null, classLabel: null, location: '', done: false, deadlineId: null, addedBy: null };
     if (k.type === 'deadline') {
@@ -231,7 +301,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
     .innerJoin(courses, eq(classes.courseId, courses.id))
     .where(eq(enrollments.userId, userId))
     .all()) {
-    const exam = finalExamFor(`${c.subject} ${c.number}`, c.term);
+    const exam = isOn('hide-key-dates') || isOn('manual-final-exams') ? null : finalExamFor(`${c.subject} ${c.number}`, c.term);
     if (!exam || exam.date < firstDay || exam.date > lastDay) continue;
     events.push({
       key: `final-${c.id}`,
@@ -274,12 +344,14 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
 
   // An assignment planned out (ST2) is usually one the section already lists: when a class
   // deadline or graded item is due the same day in the same class, it isn't listed twice.
+  const separatePlans = isOn('calendar-without-plans');
   const listed = new Set(events.filter((e) => e.kind === 'deadline' && e.classId != null).map((e) => `${e.classId}|${ymd(e.start)}`));
   for (const p of db
     .select()
     .from(plannerAssignments)
     .where(and(eq(plannerAssignments.userId, userId), gte(plannerAssignments.dueAt, from), lt(plannerAssignments.dueAt, to)))
     .all()) {
+    if (separatePlans) break;
     if (p.classId != null && listed.has(`${p.classId}|${ymd(p.dueAt)}`)) continue;
     if (events.some((e) => e.key === `deadline-${p.deadlineId}` || e.key === `assessment-${p.assessmentId}`)) continue;
     events.push({
@@ -311,6 +383,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
       ),
     )
     .all()) {
+    if (separatePlans) break;
     events.push({
       key: `task-${task.id}`,
       kind: 'task',
@@ -368,7 +441,7 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
 function ownDeadline(db: DB, userId: number, id: number) {
   const row = db.select().from(deadlines).where(eq(deadlines.id, id)).get() ?? notFound('deadline');
   // The section's professor can also correct or remove a class deadline.
-  if (row.userId !== userId && !(row.classId != null && teaches(db, userId, row.classId))) {
+  if (row.userId !== userId && !(row.classId != null && (teaches(db, userId, row.classId) || (isOn('anyone-fixes-deadlines') && isMember(db, userId, row.classId))))) {
     throw new AppError('Only the person who added this deadline can change it.', 'FORBIDDEN');
   }
   return row;
@@ -378,6 +451,10 @@ function seenDeadline(db: DB, userId: number, id: number) {
   const row = db.select().from(deadlines).where(eq(deadlines.id, id)).get() ?? notFound('deadline');
   if (row.classId == null ? row.userId !== userId : (requireMember(db, userId, row.classId), false)) notFound('deadline');
   return row;
+}
+
+function assertKind(kind: string) {
+  if (!isOn('labs-and-readings') && (EXTRA_KINDS as readonly string[]).includes(kind)) throw new AppError(NO_EXTRA_KIND);
 }
 
 function guessKind(title: string): (typeof DEADLINE_KINDS)[number] {
@@ -407,23 +484,64 @@ export const calendarRouter = {
     }));
   }),
 
-  addDeadline: procedure(z.object(deadlineFields), (fields, ctx) => {
+  addDeadline: procedure(z.object(deadlineFields), ({ shared, noTime, ...fields }, ctx) => {
     if (fields.classId) requireMember(ctx.db, ctx.userId, fields.classId);
-    ctx.db
+    assertKind(fields.kind);
+    // 'professor-enters-dates': once a section has a professor, its dates are theirs to enter.
+    if (isOn('professor-enters-dates') && fields.classId && professorsOf(ctx.db, fields.classId).length && !teaches(ctx.db, ctx.userId, fields.classId)) {
+      throw new AppError(PROFESSOR_ADDS, 'FORBIDDEN');
+    }
+    const row = ctx.db
       .insert(deadlines)
-      .values({ ...fields, userId: ctx.userId })
-      .run();
+      .values({ ...fields, kind: fields.kind as (typeof DEADLINE_KINDS)[number], userId: ctx.userId })
+      .returning({ id: deadlines.id })
+      .get();
+    if (isOn('ask-to-share-deadline') && shared === false) addTo(ctx.db, PRIVATE_DEADLINES, row.id);
+    if (isOn('date-without-time') && noTime) addTo(ctx.db, NO_TIME, row.id);
+    if (isOn('approve-shared-changes') && fields.classId) addTo(ctx.db, PENDING_DEADLINES, row.id);
+    return row;
   }),
 
-  updateDeadline: procedure(z.object({ id: idSchema, ...deadlineFields }), ({ id, ...fields }, ctx) => {
+  updateDeadline: procedure(z.object({ id: idSchema, ...deadlineFields }), ({ id, shared, noTime, ...fields }, ctx) => {
     ownDeadline(ctx.db, ctx.userId, id);
     if (fields.classId) requireMember(ctx.db, ctx.userId, fields.classId);
-    ctx.db.update(deadlines).set(fields).where(eq(deadlines.id, id)).run();
+    assertKind(fields.kind);
+    ctx.db.update(deadlines).set({ ...fields, kind: fields.kind as (typeof DEADLINE_KINDS)[number] }).where(eq(deadlines.id, id)).run();
+    if (isOn('ask-to-share-deadline')) (shared === false ? addTo : removeFrom)(ctx.db, PRIVATE_DEADLINES, id);
+    if (isOn('date-without-time')) (noTime ? addTo : removeFrom)(ctx.db, NO_TIME, id);
   }),
+
+  // 'approve-shared-changes': someone else lets a class deadline through.
+  approveDeadline: procedure(z.object({ id: idSchema }), ({ id }, ctx) => {
+    const row = seenDeadline(ctx.db, ctx.userId, id);
+    if (row.userId === ctx.userId) throw new AppError(CANT_APPROVE_OWN, 'FORBIDDEN');
+    removeFrom(ctx.db, PENDING_DEADLINES, id);
+  }),
+
+  // 'cancel-one-lecture': one week's class is off, for the whole section. Asking again undoes it.
+  toggleLecture: procedure(z.object({ meetingId: z.number().int(), classId: idSchema, day: ymdSchema }), ({ meetingId, classId, day }, ctx) => {
+    requireMember(ctx.db, ctx.userId, classId);
+    const key = `${meetingId}|${day}`;
+    const cancelled = read<string[]>(ctx.db, CANCELLED_LECTURES, []);
+    write(ctx.db, CANCELLED_LECTURES, cancelled.includes(key) ? cancelled.filter((k) => k !== key) : [...cancelled, key]);
+  }),
+
+  // 'submit-work': handing it in marks it done.
+  submit: procedure(z.object({ id: idSchema }), async ({ id }, ctx) => {
+    seenDeadline(ctx.db, ctx.userId, id);
+    const path = await ctx.platform.chooseFile({ title: 'Submit your work', filters: [] });
+    if (!path) return null;
+    write(ctx.db, submissionsKey(ctx.userId), { ...read<Record<string, string>>(ctx.db, submissionsKey(ctx.userId), {}), [id]: basename(path) });
+    ctx.db.insert(deadlineDone).values({ deadlineId: id, userId: ctx.userId, doneAt: ctx.now() }).onConflictDoNothing().run();
+    return { name: basename(path) };
+  }),
+
+  submissions: procedure(z.void(), (_input, ctx) => read<Record<string, string>>(ctx.db, submissionsKey(ctx.userId), {})),
 
   // ST3: checked off from the to-do list, just for you.
   setDeadlineDone: procedure(z.object({ id: idSchema, done: z.boolean() }), ({ id, done }, ctx) => {
-    seenDeadline(ctx.db, ctx.userId, id);
+    const row = seenDeadline(ctx.db, ctx.userId, id);
+    if (isOn('shared-deadline-check') && row.classId != null) (done ? addTo : removeFrom)(ctx.db, SHARED_DONE, id);
     const key = and(eq(deadlineDone.deadlineId, id), eq(deadlineDone.userId, ctx.userId));
     if (!done) ctx.db.delete(deadlineDone).where(key).run();
     else ctx.db.insert(deadlineDone).values({ deadlineId: id, userId: ctx.userId, doneAt: ctx.now() }).onConflictDoNothing().run();
@@ -437,7 +555,8 @@ export const calendarRouter = {
 
   // G2 → Google Calendar: an .ics file Google Calendar can import.
   // `tasks` adds what's planned and not done yet (ST2), as all-day events: plans have a day, not a time.
-  exportIcs: procedure(z.object({ tasks: z.boolean() }), async ({ tasks }, ctx) => {
+  exportIcs: procedure(z.object({ tasks: z.boolean() }), async ({ tasks: withTasks }, ctx) => {
+    const tasks = withTasks && !isOn('no-export-tasks');
     const target = await ctx.platform.chooseSaveLocation({
       title: 'Export calendar',
       defaultPath: 'unilink.ics',
@@ -473,7 +592,7 @@ export const calendarRouter = {
       while (parseYmd(first).getDay() !== m.weekday) first = addDays(first, 1);
       // The weeks that fall on a break or holiday are left out.
       const skipped = eachDay(first, range.end)
-        .filter((day) => parseYmd(day).getDay() === m.weekday && noClassesOn(day))
+        .filter((day) => parseYmd(day).getDay() === m.weekday && onBreak(day))
         .map((day) => atTime(day, m.startTime));
       events.push({
         uid: `class-${m.id}@unilink`,

@@ -23,3 +23,12 @@ export function groupMeetings(meetings: MeetingTime[]) {
   }
   return groups;
 }
+
+// 'office-hours-on-calendar': the first day and time in free text, like "Tue 14:00–15:30, McConnell 324".
+const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+export function parseOfficeHours(text: string): MeetingTime | null {
+  const match = text.toLowerCase().match(/\b(sun|mon|tue|wed|thu|fri|sat)[a-z]*\.?\s+(\d{1,2}:\d{2})\s*[–—-]\s*(\d{1,2}:\d{2})/);
+  if (!match) return null;
+  return { weekday: DAYS.indexOf(match[1]), startTime: match[2].padStart(5, '0'), endTime: match[3].padStart(5, '0') };
+}
+

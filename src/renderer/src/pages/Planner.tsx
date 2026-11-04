@@ -50,6 +50,7 @@ import { FocusButton } from '../components/FocusTask';
 import { useAction, useMe } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
 import { useUndo } from '../lib/undo';
+import { useVariant } from '../lib/variants';
 import { ClassSelect } from './Calendar';
 import { t, tx } from '../lib/i18n';
 import { ReqInfo, WithInfo } from '../components/ReqInfo';
@@ -61,6 +62,12 @@ type Task = Assignment['tasks'][number];
 export function PlannerPage() {
   const me = useMe();
   const list = useQuery({ queryKey: ['planner', 'list'], queryFn: () => rpc.planner.list() });
+  const hideFinished = useVariant('hide-finished-plans');
+  const offerPlans = useVariant('offer-plan-new-deadline');
+  const spread = useVariant('spread-work-evenly');
+  const placeYourself = useVariant('place-tasks-yourself');
+  const oneADay = useVariant('one-task-a-day');
+  const noTakeOff = useVariant('missed-tasks-stay-late');
   // "Add event/assignment" on the calendar links here with ?new=1, and "Plan it" on a
   // deadline adds &from=<the deadline's calendar key>.
   const [params, setParams] = useSearchParams();
@@ -72,8 +79,9 @@ export function PlannerPage() {
     if (params.get('new')) setParams({}, { replace: true });
   };
 
-  const active = list.data?.filter((a) => !a.pastDue && a.doneCount < a.tasks.length) ?? [];
-  const finished = list.data?.filter((a) => a.pastDue || a.doneCount === a.tasks.length) ?? [];
+  const active = list.data?.filter((a) => !a.archived && !a.pastDue && a.doneCount < a.tasks.length) ?? [];
+  const finished = list.data?.filter((a) => !a.archived && (a.pastDue || a.doneCount === a.tasks.length)) ?? [];
+  const archived = list.data?.filter((a) => a.archived) ?? [];
 
   return (
     <>
@@ -82,15 +90,21 @@ export function PlannerPage() {
         title={t('Assignment planner')}
         subtitle={
           <>
-            {t('Tasks are scheduled as early as your free study time allows ({{hours}} h a week), so you finish ahead of each deadline', {
-              hours: Math.round(weeklyMinutes(me.weeklyStudyMinutes).reduce((a, b) => a + b, 0) / 6) / 10,
-            })}{' '}
+            {spread
+              ? 'Work is spread evenly over the days before each deadline'
+              : placeYourself
+                ? 'You place each task on the day you want it'
+                : oneADay
+                  ? 'One task a day, starting today'
+                  : t('Tasks are scheduled as early as your free study time allows ({{hours}} h a week), so you finish ahead of each deadline', {
+                      hours: Math.round(weeklyMinutes(me.weeklyStudyMinutes).reduce((a, b) => a + b, 0) / 6) / 10,
+                    })}{' '}
             (
             <Anchor component="button" type="button" size="sm" onClick={() => setEditingTime(true)}>
               {t('change')}
             </Anchor>{' '}
             <ReqInfo id="free-time" />
-            ). {t('Missed tasks move to your next free time automatically.')}
+            ). {noTakeOff || placeYourself ? 'Missed tasks stay where they are until you move them.' : t('Missed tasks move to your next free time automatically.')}
           </>
         }
         actions={
@@ -102,6 +116,7 @@ export function PlannerPage() {
         }
       />
 
+      {offerPlans && <PlanOffers planned={list.data ?? []} onPlan={(key) => setParams({ new: '1', from: key })} />}
       {list.isPending ? (
         <Loading />
       ) : !list.data?.length ? (
@@ -115,7 +130,7 @@ export function PlannerPage() {
           {active.map((a) => (
             <AssignmentCard key={a.id} assignment={a} onEdit={() => setEditing(a)} />
           ))}
-          {finished.length > 0 && (
+          {finished.length > 0 && !hideFinished && (
             <Accordion variant="contained">
               <Accordion.Item value="finished">
                 <Accordion.Control>
@@ -131,6 +146,7 @@ export function PlannerPage() {
               </Accordion.Item>
             </Accordion>
           )}
+          {archived.length > 0 && <ArchivedPlans plans={archived} />}
         </Stack>
       )}
 
@@ -145,15 +161,103 @@ export function PlannerPage() {
   );
 }
 
+// 'offer-plan-new-deadline': deadlines with no plan yet.
+function PlanOffers({ planned, onPlan }: { planned: Assignment[]; onPlan: (key: string) => void }) {
+  const upcoming = useQuery({ queryKey: ['calendar', 'upcoming', 60], queryFn: () => rpc.calendar.upcoming({ days: 60 }) });
+  const offers = (upcoming.data ?? []).filter((e) => e.deadlineId != null && !planned.some((p) => p.deadlineId === e.deadlineId));
+  if (!offers.length) return null;
+  return (
+    <Card withBorder padding="md" mb="md">
+      <Text fw={700} mb="xs">
+        New deadlines with no plan <ReqInfo id="plan-start-from" />
+      </Text>
+      <Stack gap={4}>
+        {offers.slice(0, 5).map((e) => (
+          <Group key={e.key} justify="space-between" wrap="nowrap">
+            <Text size="sm">{e.title}</Text>
+            <Button size="compact-xs" variant="light" component="a" href={`#/planner?new=1&from=${e.key}`} onClick={() => onPlan(e.key)}>
+              {t('Plan it')}
+            </Button>
+          </Group>
+        ))}
+      </Stack>
+    </Card>
+  );
+}
+
+// 'archive-plans': out of the way, but still there.
+function ArchivedPlans({ plans }: { plans: Assignment[] }) {
+  const restore = useAction((assignmentId: number) => rpc.planner.setArchived({ assignmentId, archived: false }));
+  return (
+    <Card withBorder padding="md">
+      <Text fw={700} mb="xs">
+        Archived <ReqInfo id="plan-delete" />
+      </Text>
+      <Stack gap={4}>
+        {plans.map((plan) => (
+          <Group key={plan.id} justify="space-between" wrap="nowrap">
+            <Text size="sm">{plan.title}</Text>
+            <Button size="compact-xs" variant="default" onClick={() => restore.mutate(plan.id)}>
+              Restore
+            </Button>
+          </Group>
+        ))}
+      </Stack>
+    </Card>
+  );
+}
+
+// 'weekly-time-grid': blocks of two hours through the day, which add up to the minutes.
+const GRID_HOURS = [8, 10, 12, 14, 16, 18, 20];
+function WeeklyGrid({ minutes, onChange }: { minutes: number[]; onChange: (minutes: number[]) => void }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: `52px repeat(7, 1fr)`, gap: 2 }}>
+      <div />
+      {[1, 2, 3, 4, 5, 6, 0].map((day) => (
+        <Text key={day} size="xs" fw={700} ta="center">
+          {dayjs().day(day).format('ddd')}
+        </Text>
+      ))}
+      {GRID_HOURS.map((hour, row) => (
+        <div key={hour} style={{ display: 'contents' }}>
+          <Text size="xs" c="dimmed" ta="right" pr={4}>
+            {hour}:00
+          </Text>
+          {[1, 2, 3, 4, 5, 6, 0].map((day) => {
+            const on = minutes[day] / 120 > row;
+            return (
+              <button
+                key={day}
+                type="button"
+                aria-pressed={on}
+                aria-label={`${dayjs().day(day).format('dddd')} ${hour}:00`}
+                onClick={() => onChange(minutes.map((m, i) => (i === day ? (on ? row : row + 1) * 120 : m)))}
+                style={{ height: 22, borderRadius: 4, cursor: 'pointer', border: '1px solid var(--ul-border)', background: on ? 'var(--mantine-color-teal-5)' : 'transparent' }}
+              />
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ST2 "free time": minutes the planner may use on each weekday, Monday first on screen.
 export function StudyTimeForm({ onDone }: { onDone?: () => void }) {
   const me = useMe();
   const [minutes, setMinutes] = useState(weeklyMinutes(me.weeklyStudyMinutes));
   const [daysOff, setDaysOff] = useState<string[]>(me.daysOff ?? []);
+  const oneBudget = useVariant('one-daily-budget');
+  const grid = useVariant('weekly-time-grid');
+  const askCommitments = useVariant('other-commitments');
+  const savedCommitments = useQuery({ queryKey: ['planner', 'commitments'], queryFn: () => rpc.planner.commitments(), enabled: askCommitments });
+  const [commitments, setCommitments] = useState<number[] | null>(null);
+  const busy = commitments ?? savedCommitments.data ?? [0, 0, 0, 0, 0, 0, 0];
   const save = useAction(
     async () => {
       await rpc.planner.setAvailability({ minutes });
       await rpc.planner.setDaysOff({ days: daysOff });
+      if (askCommitments) await rpc.planner.setCommitments({ minutes: busy });
     },
     {
       success: 'Free time saved. Your plans were updated.',
@@ -179,7 +283,11 @@ export function StudyTimeForm({ onDone }: { onDone?: () => void }) {
           </Text>
         </Group>
       )}
-      <SimpleGrid cols={{ base: 4, xs: 7 }} spacing="xs">
+      {oneBudget && (
+        <NumberInput label="Minutes a day" min={0} max={960} step={30} w={160} value={minutes.every((m) => m === minutes[0]) ? minutes[0] : 120} onChange={(v) => setMinutes(minutes.map(() => Number(v) || 0))} />
+      )}
+      {grid && <WeeklyGrid minutes={minutes} onChange={setMinutes} />}
+      <SimpleGrid cols={{ base: 4, xs: 7 }} spacing="xs" display={oneBudget || grid ? 'none' : undefined}>
         {[1, 2, 3, 4, 5, 6, 0].map((day) => (
           <NumberInput
             key={day}
@@ -194,6 +302,18 @@ export function StudyTimeForm({ onDone }: { onDone?: () => void }) {
           />
         ))}
       </SimpleGrid>
+      {askCommitments && (
+        <div>
+          <Text size="sm" fw={500} mb={4}>
+            Minutes at work or other commitments <ReqInfo id="free-start-classes" />
+          </Text>
+          <SimpleGrid cols={{ base: 4, xs: 7 }} spacing="xs">
+            {[1, 2, 3, 4, 5, 6, 0].map((day) => (
+              <NumberInput key={day} aria-label={dayjs().day(day).format('dddd')} label={dayjs().day(day).format('ddd')} min={0} max={960} step={30} hideControls value={busy[day]} onChange={(v) => setCommitments(busy.map((x, i) => (i === day ? Number(v) || 0 : x)))} />
+            ))}
+          </SimpleGrid>
+        </div>
+      )}
       <DatePickerInput
         type="multiple"
         label={<WithInfo id="free-days-off">{t('Days off')}</WithInfo>}
@@ -220,10 +340,19 @@ export function StudyTimeForm({ onDone }: { onDone?: () => void }) {
 function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onEdit: () => void }) {
   const today = ymd(new Date());
   const [adding, setAdding] = useState('');
+  const [addingMinutes, setAddingMinutes] = useState<number | string>(60);
+  const askMinutes = useVariant('ask-new-task-minutes');
+  const dailyReplan = useVariant('daily-replan');
+  const archive = useVariant('archive-plans');
+  const byMinutes = useVariant('progress-by-minutes');
+  const asPercent = useVariant('plan-percent');
+  const noEstimates = useVariant('one-task-a-day');
+  const setArchived = useAction(() => rpc.planner.setArchived({ assignmentId: a.id, archived: true }));
+  const answerMove = useAction((move: boolean) => rpc.planner.answerMove({ assignmentId: a.id, move }));
   const replan = useAction(() => rpc.planner.replan({ assignmentId: a.id }), { success: 'Plan rebuilt from today' });
   const remove = useAction(() => rpc.planner.remove({ assignmentId: a.id }), { success: 'Assignment deleted' });
   const open = useAction(() => rpc.planner.openAttachment({ assignmentId: a.id }));
-  const addTask = useAction(() => rpc.planner.addTask({ assignmentId: a.id, title: adding, minutes: 60 }), {
+  const addTask = useAction(() => rpc.planner.addTask({ assignmentId: a.id, title: adding, minutes: askMinutes ? Number(addingMinutes) || 60 : 60 }), {
     onSuccess: () => setAdding(''),
   });
 
@@ -283,23 +412,51 @@ function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onE
               <Menu.Item leftSection={<IconPencil size={14} />} rightSection={<ReqInfo id="plan-edit" />} onClick={onEdit}>
                 {t('Edit details and due date')}
               </Menu.Item>
-              <Menu.Item leftSection={<IconRefresh size={14} />} rightSection={<ReqInfo id="plan-replan" />} onClick={() => replan.mutate()}>
-                {t('Re-plan from scratch')}
-              </Menu.Item>
-              <Menu.Item leftSection={<IconTrash size={14} />} rightSection={<ReqInfo id="plan-delete" />} color="red" onClick={confirmDelete}>
-                {t('Delete')}
-              </Menu.Item>
+              {!dailyReplan && (
+                <Menu.Item leftSection={<IconRefresh size={14} />} rightSection={<ReqInfo id="plan-replan" />} onClick={() => replan.mutate()}>
+                  {t('Re-plan from scratch')}
+                </Menu.Item>
+              )}
+              {archive ? (
+                <Menu.Item leftSection={<IconTrash size={14} />} rightSection={<ReqInfo id="plan-delete" />} onClick={() => setArchived.mutate()}>
+                  Archive
+                </Menu.Item>
+              ) : (
+                <Menu.Item leftSection={<IconTrash size={14} />} rightSection={<ReqInfo id="plan-delete" />} color="red" onClick={confirmDelete}>
+                  {t('Delete')}
+                </Menu.Item>
+              )}
             </Menu.Dropdown>
           </Menu>
         </Group>
       </Group>
 
       <Group gap="xs" mb="md">
-        <Progress value={a.tasks.length ? (a.doneCount / a.tasks.length) * 100 : 0} style={{ flex: 1 }} color="teal" />
+        <Progress value={progress(a, byMinutes)} style={{ flex: 1 }} color="teal" />
         <Text size="xs" c="dimmed">
-          {t('{{done}}/{{total}} done', { done: a.doneCount, total: a.tasks.length })} <ReqInfo id="plan-progress" />
+          {asPercent
+            ? `${Math.round(progress(a, byMinutes))}%`
+            : byMinutes
+            ? `${a.tasks.filter((task) => task.doneAt).reduce((sum, task) => sum + task.minutes, 0)}/${a.tasks.reduce((sum, task) => sum + task.minutes, 0)} min done`
+            : t('{{done}}/{{total}} done', { done: a.doneCount, total: a.tasks.length })}{' '}
+          <ReqInfo id="plan-progress" />
         </Text>
       </Group>
+      {a.movedTo && (
+        <Alert color="blue" variant="light" mb="md" p="xs">
+          <Group justify="space-between">
+            <Text size="sm">The deadline moved to {fmtDateTime(a.movedTo)}. Move this plan too? <ReqInfo id="plan-follows" /></Text>
+            <Group gap={4}>
+              <Button size="compact-xs" onClick={() => answerMove.mutate(true)}>
+                Move it
+              </Button>
+              <Button size="compact-xs" variant="default" onClick={() => answerMove.mutate(false)}>
+                Keep my date
+              </Button>
+            </Group>
+          </Group>
+        </Alert>
+      )}
 
       {!a.pastDue && (a.tight || a.overloaded) && (
         <Alert color="yellow" variant="light" icon={<IconAlertTriangle size={18} />} mb="md" p="xs">
@@ -335,6 +492,7 @@ function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onE
       >
         <Group mt="md" gap="xs">
           <TextInput size="xs" placeholder={t('Add a task…')} aria-label={t('Add a task…')} value={adding} onChange={(e) => setAdding(e.currentTarget.value)} style={{ flex: 1 }} />
+          {askMinutes && !noEstimates && <NumberInput size="xs" w={100} suffix=" min" min={5} max={600} step={15} aria-label="Minutes" value={addingMinutes} onChange={setAddingMinutes} />}
           <WithInfo id="plan-add-task">
             <Button size="xs" variant="light" type="submit" disabled={!adding.trim()} loading={addTask.isPending}>
               {t('Add')}
@@ -346,6 +504,13 @@ function AssignmentCard({ assignment: a, onEdit }: { assignment: Assignment; onE
   );
 }
 
+const progress = (a: Assignment, byMinutes: boolean) => {
+  if (!a.tasks.length) return 0;
+  if (!byMinutes) return (a.doneCount / a.tasks.length) * 100;
+  const total = a.tasks.reduce((sum, task) => sum + task.minutes, 0);
+  return (a.tasks.filter((task) => task.doneAt).reduce((sum, task) => sum + task.minutes, 0) / total) * 100;
+};
+
 // What most exam plans come down to; the student can change any of it before saving.
 const EXAM_STEPS = [
   { title: tx('Go through the lecture notes'), minutes: 120 },
@@ -356,6 +521,14 @@ const EXAM_STEPS = [
 
 function TaskRow({ task, dueDay }: { task: Task; dueDay: string }) {
   const undo = useUndo();
+  const noEstimates = useVariant('one-task-a-day');
+  const skipTasks = useVariant('skip-tasks');
+  const taskNotes = useVariant('task-notes');
+  const staysLate = useVariant('missed-tasks-stay-late');
+  const skip = useAction(() => rpc.planner.skipTask({ taskId: task.id }));
+  const saveNote = useAction((note: string) => rpc.planner.setTaskNote({ taskId: task.id, note }));
+  const [note, setNote] = useState(task.note);
+  const late = staysLate && !task.doneAt && task.scheduledFor < ymd(new Date());
   const setDone = useAction((done: boolean) => rpc.planner.setDone({ taskId: task.id, done }));
   const move = useAction((day: string) => rpc.planner.moveTask({ taskId: task.id, day }), { success: 'Task moved. It will stay on that day.' });
   const remove = useAction(() => rpc.planner.removeTask({ taskId: task.id }), {
@@ -370,7 +543,18 @@ function TaskRow({ task, dueDay }: { task: Task; dueDay: string }) {
       <Checkbox checked={!!task.doneAt} onChange={(e) => setDone.mutate(e.currentTarget.checked)} aria-label={t('Done')} />
       <Text size="sm" style={{ flex: '1 1 160px' }} td={task.doneAt ? 'line-through' : undefined} c={task.doneAt ? 'dimmed' : undefined}>
         {task.title} <ReqInfo id="plan-task" />
+        {task.skipped && (
+          <Badge size="xs" ml={6} variant="light" color="gray">
+            Skipped
+          </Badge>
+        )}
+        {late && (
+          <Badge size="xs" ml={6} variant="light" color="red">
+            Late
+          </Badge>
+        )}
       </Text>
+      {taskNotes && <TextInput size="xs" w={180} placeholder="Notes" aria-label="Notes for this task" value={note} onChange={(e) => setNote(e.currentTarget.value)} onBlur={() => note !== task.note && saveNote.mutate(note)} />}
       {task.pinned && (
         <WithInfo id="plan-task-pin">
           <Tooltip label={t('You placed this task by hand, so re-plans leave it here')}>
@@ -378,11 +562,13 @@ function TaskRow({ task, dueDay }: { task: Task; dueDay: string }) {
           </Tooltip>
         </WithInfo>
       )}
-      <WithInfo id="plan-task-minutes">
-        <Badge size="sm" variant="default">
-          {task.minutes} min
-        </Badge>
-      </WithInfo>
+      {!noEstimates && (
+        <WithInfo id="plan-task-minutes">
+          <Badge size="sm" variant="default">
+            {task.minutes} min
+          </Badge>
+        </WithInfo>
+      )}
       <WithInfo id="plan-task-move">
         <DateInput
           size="xs"
@@ -397,7 +583,7 @@ function TaskRow({ task, dueDay }: { task: Task; dueDay: string }) {
       </WithInfo>
       {!task.doneAt && <FocusButton taskId={task.id} title={task.title} />}
       <WithInfo id="plan-task-delete">
-        <ActionIcon variant="subtle" color="red" size="sm" onClick={() => remove.mutate()} aria-label={t('Delete task')}>
+        <ActionIcon variant="subtle" color="red" size="sm" onClick={() => (skipTasks ? skip.mutate() : remove.mutate())} aria-label={skipTasks ? 'Skip task' : t('Delete task')}>
           <IconTrash size={14} />
         </ActionIcon>
       </WithInfo>
@@ -408,13 +594,28 @@ function TaskRow({ task, dueDay }: { task: Task; dueDay: string }) {
 type TaskDraft = { title: string; minutes: number };
 
 function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string | null }) {
+  const byHand = useVariant('plan-date-by-hand');
+  const onlyPosted = useVariant('only-posted-assignments');
+  const pickFromList = useVariant('pick-assignment-from-list');
+  const oneBuffer = useVariant('one-buffer-day');
+  const spread = useVariant('spread-work-evenly');
+  const autoBuffer = useVariant('proportional-buffer');
+  const keepFileOnly = useVariant('keep-file-only');
+  const perDay = useVariant('one-task-per-day-split');
+  const noExamSteps = useVariant('no-exam-steps');
+  const fromPast = useVariant('estimate-from-past');
+  const sharedLists = useVariant('share-task-lists');
+  const previewIt = useVariant('preview-plan');
+  const needsClass = useVariant('require-class-for-plan');
+  const taskNotes = useVariant('task-notes');
+  const noEstimates = useVariant('one-task-a-day');
   const [attachment, setAttachment] = useState<{ path: string; name: string } | null>(null);
   const form = useForm({
     initialValues: {
       title: '',
       classId: null as number | null,
       dueAt: dayjs().add(4, 'day').hour(23).minute(59).second(0).toDate() as Date | string | null,
-      bufferDays: DEFAULT_BUFFER_DAYS,
+      bufferDays: oneBuffer || spread ? 1 : DEFAULT_BUFFER_DAYS,
       notes: '',
       mode: 'parts' as 'parts' | 'custom',
       parts: 3,
@@ -425,11 +626,16 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
     validate: {
       title: (v) => (v.trim() ? null : t('Name the assignment')),
       dueAt: (v) => (toDate(v) && toDate(v)! > new Date() ? null : t('Pick a due date in the future')),
+      classId: (v) => (needsClass && !v ? t('Pick a class') : null),
     },
   });
   const v = form.values;
+  const dueDay = toDate(v.dueAt);
+  const daysToWork = dueDay ? Math.max(1, dayjs(addDays(ymd(dueDay), -v.bufferDays)).diff(dayjs(ymd(new Date())), 'day') + 1) : 1;
   const tasks: TaskDraft[] =
-    v.mode === 'parts'
+    perDay
+      ? Array.from({ length: daysToWork }, (_, i) => ({ title: `${v.title.trim() || t('Part')}: day ${i + 1}`, minutes: v.partMinutes }))
+      : v.mode === 'parts'
       ? Array.from({ length: Math.max(1, v.parts) }, (_, i) => ({ title: `${v.partLabel.trim() || t('Part')} ${i + 1}`, minutes: v.partMinutes }))
       : v.custom.filter((task) => task.title.trim());
 
@@ -437,7 +643,23 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
   // the form can start from one of them.
   const upcoming = useQuery({ queryKey: ['calendar', 'upcoming', 60], queryFn: () => rpc.calendar.upcoming({ days: 60 }) });
   // Not the term's key dates (add/drop, withdrawal): there's nothing to plan for those.
-  const sources = (upcoming.data ?? []).filter((e) => e.detail !== 'planner' && e.detail !== 'key');
+  const deadlineRows = useQuery({ queryKey: ['calendar', 'deadlines'], queryFn: () => rpc.calendar.deadlines(), enabled: onlyPosted });
+  const posted = new Set((deadlineRows.data ?? []).filter((d) => d.official).map((d) => d.id));
+  const sources = (upcoming.data ?? []).filter((e) => e.detail !== 'planner' && e.detail !== 'key' && (!onlyPosted || (e.deadlineId != null && posted.has(e.deadlineId))));
+  // 'estimate-from-past': what tasks took in earlier plans for this class.
+  const past = useQuery({ queryKey: ['planner', 'list'], queryFn: () => rpc.planner.list(), enabled: fromPast });
+  const pastTasks = (past.data ?? []).filter((plan) => plan.classId === v.classId).flatMap((plan) => plan.tasks);
+  const pastAverage = pastTasks.length ? Math.round(pastTasks.reduce((sum, task) => sum + task.minutes, 0) / pastTasks.length / 5) * 5 : null;
+  const classmatesLists = useQuery({
+    queryKey: ['planner', 'sharedLists', v.classId, v.title],
+    queryFn: () => rpc.planner.sharedLists({ classId: v.classId!, title: v.title }),
+    enabled: sharedLists && !!v.classId && !!v.title.trim(),
+  });
+  const preview = useQuery({
+    queryKey: ['planner', 'preview', v.dueAt, v.bufferDays, tasks],
+    queryFn: () => rpc.planner.preview({ dueAt: toDate(v.dueAt)!, bufferDays: v.bufferDays, tasks }),
+    enabled: previewIt && !!toDate(v.dueAt) && tasks.length > 0,
+  });
   // A plan started from a class deadline or graded item keeps following its due date,
   // unless the student picks a different date here.
   const [follows, setFollows] = useState<{ deadlineId: number | null; assessmentId: number | null; due: Date } | null>(null);
@@ -459,7 +681,7 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
       if (!file) return;
       setAttachment(file);
       setFound(null);
-      read.mutate(file.path);
+      if (!keepFileOnly) read.mutate(file.path);
     });
   };
 
@@ -477,7 +699,7 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
       if (!file) return;
       setAttachment(file);
       setFound(null);
-      read.mutate(file.path);
+      if (!keepFileOnly) read.mutate(file.path);
     },
   });
   const applyFound = (parts: AssignmentPart[]) => {
@@ -495,7 +717,7 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
         notes: v.notes,
         tasks,
         attachmentPath: attachment?.path ?? null,
-        ...(follows && toDate(v.dueAt)?.getTime() === follows.due.getTime()
+        ...(follows && !byHand && toDate(v.dueAt)?.getTime() === follows.due.getTime()
           ? { deadlineId: follows.deadlineId, assessmentId: follows.assessmentId }
           : { deadlineId: null, assessmentId: null }),
       }),
@@ -508,7 +730,7 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
   return (
     <form onSubmit={form.onSubmit(() => create.mutate())}>
       <Stack>
-        {sources.length > 0 && (
+        {sources.length > 0 && !byHand && (
           <Select
             label={<WithInfo id="plan-start-from">{t('Start from a deadline')}</WithInfo>}
             description={t('Fills in the name, class and due date')}
@@ -520,19 +742,25 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
             onChange={startFrom}
           />
         )}
-        <TextInput label={<WithInfo id="plan-title">{t('Assignment')}</WithInfo>} placeholder={t('Problem set 3')} data-autofocus {...form.getInputProps('title')} />
+        {!(pickFromList || onlyPosted) && <TextInput label={<WithInfo id="plan-title">{t('Assignment')}</WithInfo>} placeholder={t('Problem set 3')} data-autofocus {...form.getInputProps('title')} />}
         <Group grow align="flex-start">
           <ClassSelect info="plan-class" value={v.classId} onChange={(id) => form.setFieldValue('classId', id)} />
           <DateTimePicker label={<WithInfo id="plan-due">{t('Due')}</WithInfo>} valueFormat="ddd D MMM YYYY, HH:mm" minDate={new Date()} {...form.getInputProps('dueAt')} />
         </Group>
-        <NumberInput
-          label={<WithInfo id="plan-buffer">{t('Buffer days')}</WithInfo>}
-          description={t('Days kept free right before the deadline')}
-          min={0}
-          max={7}
-          w={220}
-          {...form.getInputProps('bufferDays')}
-        />
+        {autoBuffer ? (
+          <Text size="xs" c="dimmed">
+            The last 10% of the time before the deadline is kept free. <ReqInfo id="plan-buffer" />
+          </Text>
+        ) : (
+          <NumberInput
+            label={<WithInfo id="plan-buffer">{t('Buffer days')}</WithInfo>}
+            description={t('Days kept free right before the deadline')}
+            min={0}
+            max={7}
+            w={220}
+            {...form.getInputProps('bufferDays')}
+          />
+        )}
 
         <div>
           <Group gap="xs">
@@ -583,7 +811,25 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
           <Text size="sm" fw={500} mb={6}>
             {t('How should it be split?')} <ReqInfo id="plan-split" />
           </Text>
-          {looksLikeExam(v.title) && (
+          {sharedLists && !!classmatesLists.data?.length && (
+            <Group gap={4} mb="sm">
+              {classmatesLists.data.map((list, i) => (
+                <Button key={i} size="xs" variant="light" onClick={() => form.setValues({ mode: 'custom', custom: list })}>
+                  Use a classmate's {list.length} tasks
+                </Button>
+              ))}
+              <ReqInfo id="plan-custom-tasks" />
+            </Group>
+          )}
+          {fromPast && pastAverage != null && (
+            <Group gap={4} mb="sm">
+              <Button size="xs" variant="light" onClick={() => form.setValues({ partMinutes: pastAverage })}>
+                Tasks in this class took about {pastAverage} min
+              </Button>
+              <ReqInfo id="plan-parts" />
+            </Group>
+          )}
+          {looksLikeExam(v.title) && !noExamSteps && (
             <Group gap={4} mb="sm">
               <Button
                 size="xs"
@@ -595,7 +841,7 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
               <ReqInfo id="plan-exam-steps" />
             </Group>
           )}
-          <Group gap={4} mb="sm">
+          <Group gap={4} mb="sm" display={perDay ? 'none' : undefined}>
             <SegmentedControl
               data={[
                 { value: 'parts', label: t('Equal parts') },
@@ -605,11 +851,11 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
             />
             <ReqInfo id={v.mode === 'parts' ? 'plan-parts' : 'plan-custom-tasks'} />
           </Group>
-          {v.mode === 'parts' ? (
+          {perDay ? null : v.mode === 'parts' ? (
             <Group grow>
               <NumberInput label={<WithInfo id="plan-parts">{t('Number of parts')}</WithInfo>} min={1} max={50} {...form.getInputProps('parts')} />
               <TextInput label={<WithInfo id="plan-parts">{t('Each part is a…')}</WithInfo>} {...form.getInputProps('partLabel')} />
-              <NumberInput label={<WithInfo id="plan-task-minutes">{t('Minutes each')}</WithInfo>} min={5} max={600} step={15} {...form.getInputProps('partMinutes')} />
+              {!noEstimates && <NumberInput label={<WithInfo id="plan-task-minutes">{t('Minutes each')}</WithInfo>} min={5} max={600} step={15} {...form.getInputProps('partMinutes')} />}
             </Group>
           ) : (
             <Stack gap="xs">
@@ -633,9 +879,18 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
             {t('{{count}} tasks', { count: tasks.length })} · {t('{{count}} working days before the deadline', { count: workDays })}
             {workDays > 0 && tasks.length > 0 && ` · ${t('starting with your next free time')}`} <ReqInfo id="plan-summary" />
           </Text>
+          {previewIt && !!preview.data?.length && (
+            <Stack gap={2} mt="xs">
+              {preview.data.map((row) => (
+                <Text key={row.title} size="xs">
+                  {dayjs(row.day).format('ddd D MMM')}: {row.title}
+                </Text>
+              ))}
+            </Stack>
+          )}
         </div>
 
-        <Textarea label={<WithInfo id="plan-notes">{t('Notes')}</WithInfo>} autosize minRows={2} {...form.getInputProps('notes')} />
+        {!taskNotes && <Textarea label={<WithInfo id="plan-notes">{t('Notes')}</WithInfo>} autosize minRows={2} {...form.getInputProps('notes')} />}
         <Group justify="flex-end">
           <WithInfo id="planner-page">
             <Button type="submit" loading={create.isPending} disabled={!tasks.length}>

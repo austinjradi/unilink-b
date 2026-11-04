@@ -3,13 +3,15 @@ import { and, asc, desc, eq, gte, inArray, isNull, like, lt, ne, or } from 'driz
 import { z } from 'zod';
 import { goatFor } from '@shared/goat';
 import { buildCalendar } from '@shared/ics';
+import { isOn } from '@shared/variants';
 import { randomInt } from '../crypto';
 import type { DB } from '../db/client';
 import { classes, courses, enrollments, studySessionMembers, studySessions, users } from '../db/schema';
 import { AppError, type AuthedContext, idSchema, nonEmpty, procedure } from '../rpc/core';
-import { classLabel, classLabels, isMember, notFound, requireMember, sectionCode } from './access';
+import { classLabel, classLabels, isMember, isProfessor, notFound, requireMember, sameCourseSections, sectionCode } from './access';
 import { busyChecker } from './calendar';
-import { m, type NotifyInput, notify } from './notifications';
+import { m, type NotifyInput, notify, raw } from './notifications';
+import { read, write } from './variantData';
 
 // S3 in version B:
 // - A session is open to the whole section, or invite-only: then only people with its
@@ -35,7 +37,8 @@ const details = z
     meetingUrl: z.string().trim().max(500),
     startsAt: z.date(),
     endsAt: z.date(),
-    capacity: z.number().int().min(2, 'At least 2 people').max(30, 'At most 30 people'),
+    // Null only with 'optional-session-limit'.
+    capacity: z.number().int().min(2, 'At least 2 people').max(30, 'At most 30 people').nullable(),
     visibility: z.enum(['class', 'invite']),
     tag: z.string().trim().max(40).nullable().default(null),
   })
@@ -47,6 +50,45 @@ const details = z
   });
 
 type SessionRow = typeof studySessions.$inferSelect;
+
+// Switches stay in English, so these aren't written where the French check would ask for a translation.
+const SESSION_FULL = 'This session is full.';
+const ALREADY_ASKED = 'You already asked to join. The host will decide.';
+const CODE_EXPIRED = 'That invite code has expired. Ask the host for a new one.';
+const HOST_STAYS = "Hosts can't leave a session. Cancel it instead.";
+const NOT_IN_CLASS = "That person isn't in this class.";
+const NO_SPOT_OFFERED = 'There is no spot waiting for you.';
+const NOT_GOING = 'Only people going can do this.';
+const NEEDS_LIMIT = 'At least 2 people';
+
+// 'session-codes-expire': how long a code lasts.
+const CODE_LASTS = 7 * 86_400_000;
+
+// What people add under a switch, kept per session.
+const offersKey = (id: number) => `variant-session-offers-${id}`;
+const invitesKey = (id: number) => `variant-session-invites-${id}`;
+const chatKey = (id: number) => `variant-session-chat-${id}`;
+const suggestionsKey = (id: number) => `variant-session-suggestions-${id}`;
+const codeIssuedKey = (id: number) => `variant-session-code-${id}`;
+const goalsKey = (id: number) => `variant-session-goals-${id}`;
+
+const offersOf = (db: DB, id: number) => read<number[]>(db, offersKey(id), []);
+const invitesOf = (db: DB, id: number) => read<number[]>(db, invitesKey(id), []);
+const chatOf = (db: DB, id: number) => read<{ name: string; body: string; at: number }[]>(db, chatKey(id), []);
+const suggestionsOf = (db: DB, id: number) => read<{ id: number; name: string; text: string }[]>(db, suggestionsKey(id), []);
+const goalsDone = (db: DB, id: number) => read<number[]>(db, goalsKey(id), []);
+const codeExpiry = (db: DB, session: SessionRow) => read<number>(db, codeIssuedKey(session.id), session.createdAt.getTime()) + CODE_LASTS;
+
+// Who can join: the class, or more under the switches that open it up.
+function canJoinSession(db: DB, userId: number, session: SessionRow) {
+  if (isOn('open-to-all-mcgill')) return true;
+  if (isOn('session-several-sections')) return sameCourseSections(db, session.classId).some((id) => isMember(db, userId, id));
+  return isMember(db, userId, session.classId);
+}
+
+function requireCanJoin(db: DB, userId: number, session: SessionRow) {
+  if (!canJoinSession(db, userId, session)) requireMember(db, userId, session.classId);
+}
 
 function newInviteCode() {
   return Array.from({ length: 6 }, () => CODE_ALPHABET[randomInt(0, CODE_ALPHABET.length)]).join('');
@@ -121,11 +163,17 @@ function joinWeeks(ctx: AuthedContext, session: SessionRow) {
 
 // Invite-only sessions are visible to the people in them, and to nobody else in the class.
 export function canSeeSession(db: DB, userId: number, session: SessionRow) {
-  return session.visibility === 'class' || !!membership(db, session.id, userId);
+  return session.visibility === 'class' || isOn('all-sessions-visible') || !!membership(db, session.id, userId) || invitesOf(db, session.id).includes(userId);
 }
 
 // Sessions shaped for the class page and the dashboard.
-function describe(db: DB, userId: number, rows: SessionRow[], now: Date) {
+const NEEDS_NOTICE = 'A new session needs at least an hour’s notice.';
+const OFFICE_HOURS_IN_DETAILS = 'Office hours go in the course details.';
+
+function describe(db: DB, userId: number, allRows: SessionRow[], now: Date) {
+  // 'office-hours-details-only': a professor's time is in the course details, not here.
+  const professors = new Set(isOn('office-hours-details-only') ? db.select({ id: users.id }).from(users).where(eq(users.role, 'professor')).all().map((u) => u.id) : []);
+  const rows = allRows.filter((s) => !professors.has(s.hostId));
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);
   const members = db
@@ -173,11 +221,13 @@ function describe(db: DB, userId: number, rows: SessionRow[], now: Date) {
     const myStatus = mine.find((m) => m.userId === userId)?.status ?? null;
     const isHost = s.hostId === userId;
     const attending = myStatus === 'going';
+    const offers = isOn('confirm-waitlist-spot') ? offersOf(db, s.id) : [];
+    const limit = s.capacity ?? (isOn('optional-session-limit') ? Infinity : DEFAULT_CAPACITY);
     return {
       ...s,
       // Only the host hands out the code, and only people going get the meeting link.
       inviteCode: isHost ? s.inviteCode : null,
-      meetingUrl: attending ? s.meetingUrl : '',
+      meetingUrl: attending || isOn('meeting-link-for-all') ? s.meetingUrl : '',
       classLabel: labels.get(s.classId) ?? '',
       // A class or another session of yours at the same time.
       clash: s.cancelledAt || s.endsAt < now ? null : busy(s.startsAt, s.endsAt, s.id),
@@ -185,14 +235,21 @@ function describe(db: DB, userId: number, rows: SessionRow[], now: Date) {
       hostIsProfessor: going.find((m) => m.userId === s.hostId)?.role === 'professor',
       goingCount: going.length,
       waitlistCount: waitlist.length,
-      going: attending
+      going: attending || isOn('everyone-sees-going')
         ? going.map(({ userId, name, email, avatar }) => ({ userId, name, email, goat: goatFor(userId, avatar) }))
         : [],
       myStatus,
       // 1 = next in line for a spot.
       myWaitlistPosition: myStatus === 'waitlisted' ? waitlist.findIndex((m) => m.userId === userId) + 1 : null,
       isHost,
-      isFull: going.length >= (s.capacity ?? DEFAULT_CAPACITY),
+      isFull: going.length + offers.length >= limit,
+      canJoin: canJoinSession(db, userId, s),
+      spotOffered: offers.includes(userId),
+      requests: isHost && isOn('host-approves-joins') ? mine.filter((m) => m.status === 'invited').map((m) => ({ userId: m.userId, name: m.name, email: m.email })) : [],
+      chat: attending && isOn('session-chat') ? chatOf(db, s.id) : [],
+      suggestions: isHost && isOn('suggest-session-change') ? suggestionsOf(db, s.id) : [],
+      codeExpiresAt: isHost && isOn('session-codes-expire') ? new Date(codeExpiry(db, s)) : null,
+      goalsDone: isOn('session-goal-checklist') ? goalsDone(db, s.id) : [],
       // Weeks from this one on that you could still join.
       weeksToJoin:
         s.seriesId == null || s.cancelledAt
@@ -205,7 +262,24 @@ function describe(db: DB, userId: number, rows: SessionRow[], now: Date) {
 // Fills free spots from the waitlist, first come first served.
 function promoteWaitlist(db: DB, session: SessionRow) {
   const members = membersOf(db, session.id);
-  let free = (session.capacity ?? DEFAULT_CAPACITY) - members.filter((m) => m.status === 'going').length;
+  let free = (session.capacity ?? (isOn('optional-session-limit') ? Infinity : DEFAULT_CAPACITY)) - members.filter((m) => m.status === 'going').length;
+  // 'confirm-waitlist-spot': the next people are offered the spot, and it stays open until they answer.
+  if (isOn('confirm-waitlist-spot')) {
+    const offers = offersOf(db, session.id).filter((id) => members.some((m) => m.userId === id && m.status === 'waitlisted'));
+    free -= offers.length;
+    for (const next of members.filter((m) => m.status === 'waitlisted' && !offers.includes(m.userId))) {
+      if (free <= 0) break;
+      offers.push(next.userId);
+      free--;
+      notify(db, next.userId, {
+        type: 'session-spot',
+        title: raw(`A spot opened up in "${session.title}". Do you still want it?`),
+        link: `/classes/${session.classId}/sessions`,
+      });
+    }
+    write(db, offersKey(session.id), offers);
+    return;
+  }
   for (const next of members.filter((m) => m.status === 'waitlisted')) {
     if (free <= 0) break;
     db.update(studySessionMembers)
@@ -239,11 +313,12 @@ function cancelSession(db: DB, session: SessionRow, by: number, now: Date) {
     }),
     link: `/classes/${session.classId}/sessions`,
   });
+  if (isOn('delete-cancelled-sessions')) db.delete(studySessions).where(eq(studySessions.id, session.id)).run();
 }
 
 // Leaving: a guest's spot goes to the waitlist; a host passes the session on to whoever
 // has been going the longest, and it's only cancelled when nobody else is going.
-function leaveSession(ctx: AuthedContext, session: SessionRow) {
+function leaveSession(ctx: AuthedContext, session: SessionRow, nextHostId?: number) {
   const { db, userId } = ctx;
   db.delete(studySessionMembers)
     .where(and(eq(studySessionMembers.sessionId, session.id), eq(studySessionMembers.userId, userId)))
@@ -251,7 +326,8 @@ function leaveSession(ctx: AuthedContext, session: SessionRow) {
   if (session.cancelledAt || session.endsAt < ctx.now()) return;
 
   if (session.hostId === userId) {
-    const next = membersOf(db, session.id).find((member) => member.status === 'going');
+    const others = membersOf(db, session.id).filter((member) => member.status === 'going');
+    const next = others.find((member) => member.userId === nextHostId) ?? others[0];
     if (!next) {
       cancelSession(db, session, userId, ctx.now());
       return;
@@ -294,7 +370,19 @@ function joinSession(ctx: AuthedContext, session: SessionRow) {
   const current = membership(ctx.db, session.id, ctx.userId);
   if (current?.status === 'going') throw new AppError("You're already going.", 'CONFLICT');
   if (current?.status === 'waitlisted') throw new AppError("You're already on the waitlist.", 'CONFLICT');
+  if (current?.status === 'invited') throw new AppError(ALREADY_ASKED, 'CONFLICT');
   const [described] = describe(ctx.db, ctx.userId, [session], ctx.now());
+  // 'host-approves-joins': asking is the `invited` state, until the host decides.
+  if (isOn('host-approves-joins') && session.hostId !== ctx.userId) {
+    ctx.db.insert(studySessionMembers).values({ sessionId: session.id, userId: ctx.userId, status: 'invited' }).run();
+    notify(ctx.db, session.hostId, {
+      type: 'session-changed',
+      title: raw(`Someone asked to join "${session.title}"`),
+      link: `/classes/${session.classId}/sessions`,
+    });
+    return { status: 'invited' as const };
+  }
+  if (described.isFull && isOn('optional-session-limit')) throw new AppError(SESSION_FULL, 'CONFLICT');
   const status = described.isFull ? ('waitlisted' as const) : ('going' as const);
   ctx.db.insert(studySessionMembers).values({ sessionId: session.id, userId: ctx.userId, status }).run();
   return { status };
@@ -307,7 +395,7 @@ export const studySessionsRouter = {
     const rows = ctx.db
       .select()
       .from(studySessions)
-      .where(and(eq(studySessions.classId, classId), gte(studySessions.endsAt, ctx.now())))
+      .where(and(isOn('session-several-sections') ? inArray(studySessions.classId, sameCourseSections(ctx.db, classId)) : eq(studySessions.classId, classId), gte(studySessions.endsAt, ctx.now())))
       .orderBy(asc(studySessions.startsAt))
       .all()
       .filter((s) => canSeeSession(ctx.db, ctx.userId, s));
@@ -317,6 +405,7 @@ export const studySessionsRouter = {
   // S3.2: the section's sessions from the last month that are over, newest first.
   past: procedure(z.object({ classId: idSchema }), ({ classId }, ctx) => {
     requireMember(ctx.db, ctx.userId, classId);
+    if (isOn('hide-past-sessions')) return [];
     const now = ctx.now();
     const rows = ctx.db
       .select()
@@ -362,13 +451,14 @@ export const studySessionsRouter = {
       .from(studySessions)
       .innerJoin(classes, eq(studySessions.classId, classes.id))
       .innerJoin(courses, eq(classes.courseId, courses.id))
+      .innerJoin(users, eq(studySessions.hostId, users.id))
       .where(
         and(
-          inArray(studySessions.classId, classIds),
+          isOn('campus-wide-sessions') || isOn('open-to-all-mcgill') ? undefined : inArray(studySessions.classId, classIds),
           gte(studySessions.endsAt, ctx.now()),
           isNull(studySessions.cancelledAt),
           search
-            ? or(like(studySessions.title, term), like(studySessions.tag, term), like(studySessions.location, term), like(sectionCode, term))
+            ? or(like(studySessions.title, term), like(studySessions.tag, term), like(studySessions.location, term), like(sectionCode, term), isOn('search-session-host') ? like(users.name, term) : undefined)
             : undefined,
         ),
       )
@@ -376,16 +466,22 @@ export const studySessionsRouter = {
       .all()
       .map((r) => r.session)
       .filter((s) => canSeeSession(ctx.db, ctx.userId, s));
-    return describe(ctx.db, ctx.userId, rows, ctx.now());
+    const found = describe(ctx.db, ctx.userId, rows, ctx.now());
+    return isOn('hide-clashing-sessions') ? found.filter((s) => !s.clash) : found;
   }),
 
   // S3.1
   // `weeks` > 1 makes a weekly series: the same time each week, sharing one invite code.
   create: procedure(
     z.object({ classId: idSchema, weeks: z.number().int().min(1).max(14).default(1) }).and(details),
-    ({ classId, weeks, ...input }, ctx) => {
+    ({ classId, weeks: asked, ...input }, ctx) => {
       requireMember(ctx.db, ctx.userId, classId);
+      if (isOn('office-hours-details-only') && isProfessor(ctx.db, ctx.userId)) throw new AppError(OFFICE_HOURS_IN_DETAILS);
       if (input.startsAt < ctx.now()) throw new AppError('Pick a start time in the future.');
+      if (isOn('session-notice') && input.startsAt.getTime() - ctx.now().getTime() < 60 * 60_000) throw new AppError(NEEDS_NOTICE);
+      if (input.capacity == null && !isOn('optional-session-limit')) throw new AppError(NEEDS_LIMIT);
+      const weeks = isOn('one-off-sessions') ? 1 : asked;
+      const separate = isOn('separate-weekly-sessions');
       const inviteCode = newInviteCode();
       const inWeeks = (date: Date, n: number) => new Date(date.getFullYear(), date.getMonth(), date.getDate() + 7 * n, date.getHours(), date.getMinutes());
       return ctx.db.transaction((tx) => {
@@ -400,14 +496,14 @@ export const studySessionsRouter = {
               meetingUrl: input.format === 'online' ? input.meetingUrl : '',
               classId,
               hostId: ctx.userId,
-              inviteCode,
+              inviteCode: separate ? newInviteCode() : inviteCode,
             })
             .returning({ id: studySessions.id, inviteCode: studySessions.inviteCode })
             .get();
           tx.insert(studySessionMembers).values({ sessionId: session.id, userId: ctx.userId, status: 'going' }).run();
           return session;
         });
-        if (weeks > 1) {
+        if (weeks > 1 && !separate) {
           tx.update(studySessions).set({ seriesId: created[0].id }).where(inArray(studySessions.id, created.map((s) => s.id))).run();
         }
         return created[0];
@@ -424,7 +520,7 @@ export const studySessionsRouter = {
       meetingUrl: input.format === 'online' ? input.meetingUrl : '',
     };
     const going = membersOf(ctx.db, sessionId).filter((member) => member.status === 'going').length;
-    if (fields.capacity < going) {
+    if (fields.capacity != null && fields.capacity < going) {
       throw new AppError('{{count}} people are already going. Pick a limit of at least that.', 'BAD_INPUT', { count: going });
     }
     ctx.db.update(studySessions).set(fields).where(eq(studySessions.id, sessionId)).run();
@@ -434,7 +530,7 @@ export const studySessionsRouter = {
       before.endsAt.getTime() !== after.endsAt.getTime() ||
       before.location !== after.location ||
       before.meetingUrl !== after.meetingUrl;
-    if (moved) {
+    if (moved && !isOn('hosts-cannot-leave')) {
       tellEveryone(ctx.db, after, ctx.userId, {
         type: 'session-changed',
         title: m('"{{title}}" changed', { title: after.title }),
@@ -460,7 +556,7 @@ export const studySessionsRouter = {
   // A weekly series: join this week and every later one you're not in yet.
   joinSeries: procedure(z.object({ sessionId: idSchema }), ({ sessionId }, ctx) => {
     const session = getSession(ctx.db, sessionId);
-    requireMember(ctx.db, ctx.userId, session.classId);
+    requireCanJoin(ctx.db, ctx.userId, session);
     if (!canSeeSession(ctx.db, ctx.userId, session)) notFound('study session');
     return ctx.db.transaction((tx) => joinWeeks({ ...ctx, db: tx as unknown as DB }, session));
   }),
@@ -468,7 +564,7 @@ export const studySessionsRouter = {
   // S3.3: joining an open session. When it's full you go on the waitlist.
   join: procedure(z.object({ sessionId: idSchema }), ({ sessionId }, ctx) => {
     const session = getSession(ctx.db, sessionId);
-    requireMember(ctx.db, ctx.userId, session.classId);
+    requireCanJoin(ctx.db, ctx.userId, session);
     if (!canSeeSession(ctx.db, ctx.userId, session)) notFound('study session');
     return joinSession(ctx, session);
   }),
@@ -514,13 +610,14 @@ export const studySessionsRouter = {
 
   joinByCode: procedure(z.object({ code: z.string().trim().toUpperCase().min(1, 'Enter the invite code') }), ({ code }, ctx) => {
     const session = sessionByCode(ctx.db, code, ctx.now());
-    if (!isMember(ctx.db, ctx.userId, session.classId)) {
+    if (isOn('session-codes-expire') && codeExpiry(ctx.db, session) < ctx.now().getTime()) throw new AppError(CODE_EXPIRED, 'FORBIDDEN');
+    if (!isMember(ctx.db, ctx.userId, session.classId) && !isOn('invite-outside-class') && !canJoinSession(ctx.db, ctx.userId, session)) {
       throw new AppError('This session is for {{class}}. Join that class first.', 'FORBIDDEN', {
         class: classLabel(ctx.db, session.classId) ?? '',
       });
     }
     const joined = ctx.db.transaction((tx) => joinWeeks({ ...ctx, db: tx as unknown as DB }, session));
-    return { weeks: 1, ...joined, classId: session.classId, title: session.title };
+    return { weeks: 1, ...joined, classId: session.classId, title: session.title, inClass: isMember(ctx.db, ctx.userId, session.classId) };
   }),
 
   // A new code stops the old one from working (for invite-only sessions shared too widely).
@@ -532,13 +629,92 @@ export const studySessionsRouter = {
       .set({ inviteCode })
       .where(session.seriesId == null ? eq(studySessions.id, sessionId) : eq(studySessions.seriesId, session.seriesId))
       .run();
+    if (isOn('session-codes-expire')) write(ctx.db, codeIssuedKey(sessionId), ctx.now().getTime());
     return { inviteCode };
   }),
 
   // Leaving, or getting off the waitlist.
-  leave: procedure(z.object({ sessionId: idSchema }), ({ sessionId }, ctx) => {
+  leave: procedure(z.object({ sessionId: idSchema, nextHostId: idSchema.optional() }), ({ sessionId, nextHostId }, ctx) => {
     const session = getSession(ctx.db, sessionId);
     if (!membership(ctx.db, sessionId, ctx.userId)) throw new AppError("You're not in this session.");
-    ctx.db.transaction((tx) => leaveSession({ ...ctx, db: tx as unknown as DB }, session));
+    if (session.hostId === ctx.userId && isOn('hosts-cannot-leave')) throw new AppError(HOST_STAYS, 'FORBIDDEN');
+    if (isOn('leave-tells-host') && session.hostId !== ctx.userId) {
+      const leaving = ctx.db.select({ name: users.name }).from(users).where(eq(users.id, ctx.userId)).get();
+      notify(ctx.db, session.hostId, { type: 'session-changed', title: raw(`${leaving?.name} left "${session.title}"`), link: `/classes/${session.classId}/sessions` });
+    }
+    if (isOn('confirm-waitlist-spot')) write(ctx.db, offersKey(sessionId), offersOf(ctx.db, sessionId).filter((id) => id !== ctx.userId));
+    ctx.db.transaction((tx) => leaveSession({ ...ctx, db: tx as unknown as DB }, session, isOn('choose-next-host') ? nextHostId : undefined));
+  }),
+
+  // 'confirm-waitlist-spot': taking the spot you were offered.
+  confirmSpot: procedure(z.object({ sessionId: idSchema }), ({ sessionId }, ctx) => {
+    const offers = offersOf(ctx.db, sessionId);
+    if (!offers.includes(ctx.userId)) throw new AppError(NO_SPOT_OFFERED);
+    write(ctx.db, offersKey(sessionId), offers.filter((id) => id !== ctx.userId));
+    ctx.db.update(studySessionMembers).set({ status: 'going' }).where(and(eq(studySessionMembers.sessionId, sessionId), eq(studySessionMembers.userId, ctx.userId))).run();
+  }),
+
+  // 'host-approves-joins': the host lets someone in, or doesn't.
+  decideJoin: procedure(z.object({ sessionId: idSchema, userId: idSchema, approve: z.boolean() }), ({ sessionId, userId, approve }, ctx) => {
+    const session = hostedSession(ctx.db, ctx.userId, sessionId);
+    const asking = and(eq(studySessionMembers.sessionId, sessionId), eq(studySessionMembers.userId, userId));
+    if (!approve) {
+      ctx.db.delete(studySessionMembers).where(asking).run();
+    } else {
+      const [described] = describe(ctx.db, ctx.userId, [session], ctx.now());
+      ctx.db.update(studySessionMembers).set({ status: described.isFull ? 'waitlisted' : 'going' }).where(asking).run();
+    }
+    notify(ctx.db, userId, {
+      type: 'session-changed',
+      title: raw(approve ? `You're in "${session.title}"` : `The host of "${session.title}" said no this time`),
+      link: `/classes/${session.classId}/sessions`,
+    });
+  }),
+
+  // 'session-invite-by-email' and 'session-invite-notification': tell a classmate through UniLink.
+  invite: procedure(z.object({ sessionId: idSchema, email: z.string().trim().toLowerCase() }), ({ sessionId, email }, ctx) => {
+    const session = hostedSession(ctx.db, ctx.userId, sessionId);
+    const person = ctx.db.select({ id: users.id }).from(users).where(eq(users.email, email)).get();
+    if (!person || !isMember(ctx.db, person.id, session.classId)) throw new AppError(NOT_IN_CLASS);
+    write(ctx.db, invitesKey(sessionId), [...new Set([...invitesOf(ctx.db, sessionId), person.id])]);
+    notify(ctx.db, person.id, {
+      type: 'session-changed',
+      title: raw(`You're invited to "${session.title}"`),
+      link: `/classes/${session.classId}/sessions`,
+    });
+  }),
+
+  // 'session-chat': for the people going.
+  chat: procedure(z.object({ sessionId: idSchema, body: nonEmpty('Reply', 1000) }), ({ sessionId, body }, ctx) => {
+    if (membership(ctx.db, sessionId, ctx.userId)?.status !== 'going') throw new AppError(NOT_GOING, 'FORBIDDEN');
+    const me = ctx.db.select({ name: users.name }).from(users).where(eq(users.id, ctx.userId)).get();
+    write(ctx.db, chatKey(sessionId), [...chatOf(ctx.db, sessionId), { name: me?.name ?? '', body, at: ctx.now().getTime() }]);
+  }),
+
+  // 'suggest-session-change': anyone going suggests, the host decides.
+  suggest: procedure(z.object({ sessionId: idSchema, text: nonEmpty('Reply', 500) }), ({ sessionId, text }, ctx) => {
+    const session = getSession(ctx.db, sessionId);
+    if (membership(ctx.db, sessionId, ctx.userId)?.status !== 'going') throw new AppError(NOT_GOING, 'FORBIDDEN');
+    const me = ctx.db.select({ name: users.name }).from(users).where(eq(users.id, ctx.userId)).get();
+    const list = suggestionsOf(ctx.db, sessionId);
+    write(ctx.db, suggestionsKey(sessionId), [...list, { id: (list.at(-1)?.id ?? 0) + 1, name: me?.name ?? '', text }]);
+    notify(ctx.db, session.hostId, { type: 'session-changed', title: raw(`${me?.name ?? 'Someone'} suggested a change to "${session.title}"`), body: raw(text), link: `/classes/${session.classId}/sessions` });
+  }),
+
+  answerSuggestion: procedure(z.object({ sessionId: idSchema, id: z.number().int(), accept: z.boolean() }), ({ sessionId, id, accept }, ctx) => {
+    const session = hostedSession(ctx.db, ctx.userId, sessionId);
+    const list = suggestionsOf(ctx.db, sessionId);
+    const suggestion = list.find((s) => s.id === id);
+    write(ctx.db, suggestionsKey(sessionId), list.filter((s) => s.id !== id));
+    if (accept && suggestion) {
+      tellEveryone(ctx.db, session, ctx.userId, { type: 'session-changed', title: raw(`The host of "${session.title}" accepted a change`), body: raw(suggestion.text), link: `/classes/${session.classId}/sessions` });
+    }
+  }),
+
+  // 'session-goal-checklist': anyone going ticks off a goal for everyone.
+  toggleGoal: procedure(z.object({ sessionId: idSchema, index: z.number().int().min(0) }), ({ sessionId, index }, ctx) => {
+    if (membership(ctx.db, sessionId, ctx.userId)?.status !== 'going') throw new AppError(NOT_GOING, 'FORBIDDEN');
+    const done = goalsDone(ctx.db, sessionId);
+    write(ctx.db, goalsKey(sessionId), done.includes(index) ? done.filter((i) => i !== index) : [...done, index]);
   }),
 };

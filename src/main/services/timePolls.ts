@@ -1,7 +1,8 @@
 import { and, asc, eq, gte, inArray, isNull } from 'drizzle-orm';
 import { z } from 'zod';
+import { isOn } from '@shared/variants';
 import type { DB } from '../db/client';
-import { enrollments, studySessions, timePollOptions, timePolls, timePollVotes, users } from '../db/schema';
+import { enrollments, studySessionMembers, studySessions, timePollOptions, timePolls, timePollVotes, users } from '../db/schema';
 import { AppError, idSchema, nonEmpty, procedure } from '../rpc/core';
 import { classLabel, notFound, requireMember } from './access';
 import { busyChecker } from './calendar';
@@ -10,6 +11,10 @@ import { m, notify, raw } from './notifications';
 // S3: someone who doesn't know when suits people offers a few times, and the section says which
 // work. Votes are only ever counts, since members stay hidden until they post (S1). Picking a
 // time opens the normal session form; voters hear about it and decide for themselves to join.
+
+// Switches stay in English, so this isn't written where the French check would ask for a translation.
+const TOO_MANY_TIMES = 'Offer at most five times.';
+const TOO_MANY_OF_TEN = 'Offer at most ten times.';
 
 function pollOf(db: DB, pollId: number) {
   return db.select().from(timePolls).where(eq(timePolls.id, pollId)).get() ?? notFound('poll');
@@ -20,11 +25,15 @@ function optionOf(db: DB, optionId: number) {
   return { option, poll: pollOf(db, option.pollId) };
 }
 
+// 'polls-close-themselves': how long a poll stays open.
+const POLL_LASTS = 5 * 86_400_000;
+
 export const timePollsRouter = {
   // Open polls with a time still to come, in one section or all of yours. Votes from people who've
   // left the section don't count.
   list: procedure(z.object({ classId: idSchema.nullable() }), ({ classId }, ctx) => {
     if (classId != null) requireMember(ctx.db, ctx.userId, classId);
+    if (isOn('no-time-polls')) return [];
     const mine = ctx.db.select({ id: enrollments.classId }).from(enrollments).where(eq(enrollments.userId, ctx.userId));
     const polls = ctx.db
       .select({ poll: timePolls, hostName: users.name })
@@ -32,7 +41,8 @@ export const timePollsRouter = {
       .innerJoin(users, eq(timePolls.hostId, users.id))
       .where(and(classId != null ? eq(timePolls.classId, classId) : inArray(timePolls.classId, mine), isNull(timePolls.closedAt)))
       .orderBy(asc(timePolls.createdAt))
-      .all();
+      .all()
+      .filter(({ poll }) => !isOn('polls-close-themselves') || poll.createdAt.getTime() + POLL_LASTS > ctx.now().getTime());
     const busy = busyChecker(ctx.db, ctx.userId);
     return polls.flatMap(({ poll, hostName }) => {
       const options = ctx.db
@@ -43,9 +53,10 @@ export const timePollsRouter = {
         .all();
       if (!options.length) return [];
       const votes = ctx.db
-        .select({ optionId: timePollVotes.optionId, userId: timePollVotes.userId })
+        .select({ optionId: timePollVotes.optionId, userId: timePollVotes.userId, name: users.name })
         .from(timePollVotes)
         .innerJoin(enrollments, and(eq(enrollments.userId, timePollVotes.userId), eq(enrollments.classId, poll.classId)))
+        .innerJoin(users, eq(timePollVotes.userId, users.id))
         .where(inArray(timePollVotes.optionId, options.map((o) => o.id)))
         .all();
       return [
@@ -56,7 +67,9 @@ export const timePollsRouter = {
           title: poll.title,
           hostName,
           mine: poll.hostId === ctx.userId,
+          closesAt: isOn('polls-close-themselves') ? new Date(poll.createdAt.getTime() + POLL_LASTS) : null,
           options: options.map((o) => ({
+            voters: isOn('show-who-voted') ? votes.filter((v) => v.optionId === o.id).map((v) => v.name) : [],
             id: o.id,
             startsAt: o.startsAt,
             endsAt: o.endsAt,
@@ -70,9 +83,11 @@ export const timePollsRouter = {
   }),
 
   create: procedure(
-    z.object({ classId: idSchema, title: nonEmpty('Title', 120), minutes: z.number().int().min(15).max(8 * 60), times: z.array(z.date()).max(5) }),
+    z.object({ classId: idSchema, title: nonEmpty('Title', 120), minutes: z.number().int().min(15).max(8 * 60), times: z.array(z.date()).max(200) }),
     ({ classId, title, minutes, times }, ctx) => {
       requireMember(ctx.db, ctx.userId, classId);
+      if (times.length > 10 && isOn('poll-ten-times') && !isOn('availability-grid')) throw new AppError(TOO_MANY_OF_TEN);
+      if (times.length > 5 && !isOn('poll-ten-times') && !isOn('availability-grid')) throw new AppError(TOO_MANY_TIMES);
       if (times.length < 2) throw new AppError('Offer at least two times.');
       if (times.some((time) => time <= ctx.now())) throw new AppError('Pick times in the future.');
       if (new Set(times.map((time) => time.getTime())).size < times.length) throw new AppError('Those times are the same. Offer different ones.');
@@ -105,6 +120,16 @@ export const timePollsRouter = {
     const optionIds = ctx.db.select({ id: timePollOptions.id }).from(timePollOptions).where(eq(timePollOptions.pollId, poll.id)).all();
     const voters = ctx.db.select({ userId: timePollVotes.userId }).from(timePollVotes).where(inArray(timePollVotes.optionId, optionIds.map((o) => o.id))).all();
     ctx.db.update(timePolls).set({ closedAt: ctx.now() }).where(eq(timePolls.id, poll.id)).run();
+    // 'signup-poll-voters': whoever said this time works is going, as far as there's room.
+    if (isOn('signup-poll-voters')) {
+      const forThisTime = ctx.db.select({ userId: timePollVotes.userId }).from(timePollVotes).where(eq(timePollVotes.optionId, optionId)).all();
+      let room = (session.capacity ?? Infinity) - ctx.db.select({ userId: studySessionMembers.userId }).from(studySessionMembers).where(and(eq(studySessionMembers.sessionId, sessionId), eq(studySessionMembers.status, 'going'))).all().length;
+      for (const { userId } of forThisTime) {
+        if (userId === ctx.userId) continue;
+        ctx.db.insert(studySessionMembers).values({ sessionId, userId, status: room > 0 ? 'going' : 'waitlisted' }).onConflictDoNothing().run();
+        room--;
+      }
+    }
     for (const userId of new Set(voters.map((v) => v.userId))) {
       if (userId === ctx.userId) continue;
       notify(ctx.db, userId, {

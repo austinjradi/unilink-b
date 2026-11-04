@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Alert, Badge, Button, Card, Grid, Group, List, SimpleGrid, Stack, Switch, Text, ThemeIcon, Title } from '@mantine/core';
+import { Alert, Badge, Button, Card, Grid, Group, List, NumberInput, SimpleGrid, Stack, Switch, Text, ThemeIcon, Title } from '@mantine/core';
+import { Navigate } from 'react-router';
 import { IconBellOff, IconFocus2, IconInfoCircle } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Empty, Loading, PageHeader, SectionCard } from '../components/ui';
@@ -8,12 +9,18 @@ import { useAction } from '../lib/hooks';
 import { type Out, rpc } from '../lib/rpc';
 import { t, term } from '../lib/i18n';
 import { ReqInfo, WithInfo } from '../components/ReqInfo';
+import { useVariant } from '../lib/variants';
 
 type Status = Out<typeof rpc.studyMode.status>;
 
 // ST1: study mode, its own tab in the top navigation.
 export function StudyModePage() {
+  const toggleOnly = useVariant('study-mode-toggle');
+  const leaderboardOn = useVariant('focus-leaderboard');
+  const oneSetting = useVariant('one-study-setting');
+  const manualOnly = useVariant('manual-study-mode');
   const status = useQuery({ queryKey: ['studyMode', 'status'], queryFn: () => rpc.studyMode.status(), refetchInterval: 15_000 });
+  if (toggleOnly) return <Navigate to="/" replace />;
   if (status.isPending || !status.data) return <Loading />;
 
   return (
@@ -28,12 +35,13 @@ export function StudyModePage() {
           <Stack gap="lg">
             <StatusCard status={status.data} />
             <FocusTime />
+            {leaderboardOn && <Leaderboard />}
             <Settings status={status.data} />
           </Stack>
         </Grid.Col>
         <Grid.Col span={{ base: 12, lg: 5 }}>
           <Stack gap="lg">
-            <PerClass enabled={status.data.settings.autoForClasses} />
+            {!oneSetting && !manualOnly && <PerClass enabled={status.data.settings.autoForClasses} />}
             <Alert variant="light" icon={<IconInfoCircle size={18} />} title={<WithInfo id="study-limits">{t("What study mode can't do yet")}</WithInfo>}>
               <List size="sm" spacing={4}>
                 <List.Item>
@@ -57,6 +65,7 @@ export function StudyModePage() {
 
 // A clock counting down to the end of what's running.
 function TimeLeft({ until }: { until: Date }) {
+  const hidden = useVariant('hide-focus-clock');
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -66,6 +75,7 @@ function TimeLeft({ until }: { until: Date }) {
   const pad = (n: number) => String(n).padStart(2, '0');
   const hours = Math.floor(seconds / 3600);
   const clock = `${hours ? `${hours}:` : ''}${hours ? pad(Math.floor(seconds / 60) % 60) : Math.floor(seconds / 60)}:${pad(seconds % 60)}`;
+  if (hidden) return null;
   return (
     <Text fz={36} fw={700} lh={1.1} mt={6} className="display" role="timer" style={{ fontVariantNumeric: 'tabular-nums' }}>
       {t('{{time}} left', { time: clock })} <ReqInfo id="study-countdown" />
@@ -76,9 +86,32 @@ function TimeLeft({ until }: { until: Date }) {
 const duration = (minutes: number) => (minutes >= 60 ? `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')}` : `${minutes} min`);
 
 // ST1: how much time has gone into focus sessions. Only you see this.
+// 'focus-leaderboard': this week, across people who share a class with you.
+function Leaderboard() {
+  const board = useQuery({ queryKey: ['studyMode', 'leaderboard'], queryFn: () => rpc.studyMode.leaderboard() });
+  if (!board.data?.length) return null;
+  return (
+    <SectionCard info="study-focus-time" title="This week's leaderboard">
+      <Stack gap={4}>
+        {board.data.map((row, i) => (
+          <Group key={row.name} justify="space-between">
+            <Text size="sm" fw={row.me ? 800 : 500}>
+              {i + 1}. {row.name}
+            </Text>
+            <Text size="sm" c="dimmed">
+              {row.thisWeek} min
+            </Text>
+          </Group>
+        ))}
+      </Stack>
+    </SectionCard>
+  );
+}
+
 function FocusTime() {
+  const off = useVariant('no-focus-tracking');
   const time = useQuery({ queryKey: ['studyMode', 'focusTime'], queryFn: () => rpc.studyMode.focusTime(), refetchInterval: 60_000 });
-  if (!time.data) return null;
+  if (off || !time.data) return null;
   const { thisWeek, sessions, lastWeek, streak } = time.data;
   const stat = (label: string, value: string) => (
     <div>
@@ -113,6 +146,10 @@ function FocusTime() {
 }
 
 function StatusCard({ status }: { status: Status }) {
+  const noStop = useVariant('no-stopping-early');
+  const pomodoro = useVariant('pomodoro');
+  const anyLength = useVariant('any-focus-length');
+  const [length, setLength] = useState<number | string>(45);
   const start = useAction((minutes: number) => rpc.studyMode.start({ minutes }), { success: 'Focus session started' });
   const stop = useAction(() => rpc.studyMode.stop(), { success: 'Study mode off' });
 
@@ -154,7 +191,7 @@ function StatusCard({ status }: { status: Status }) {
             )}
           </div>
         </Group>
-        {status.active && (
+        {status.active && !(noStop && status.reason === 'manual') && (
           <WithInfo id="study-stop">
             <Button color="teal" variant="white" onClick={() => stop.mutate()} loading={stop.isPending}>
               {t('Stop')}
@@ -167,11 +204,24 @@ function StatusCard({ status }: { status: Status }) {
           <Text size="sm" fw={500} mr="xs">
             {t('Start a focus session:')} <ReqInfo id="study-focus-start" />
           </Text>
-          {[25, 50, 90].map((m) => (
+          {(pomodoro ? [25] : anyLength ? [] : [25, 50, 90]).map((m) => (
             <Button key={m} variant="light" size="xs" onClick={() => start.mutate(m)}>
               {m} min
             </Button>
           ))}
+          {pomodoro && (
+            <Text size="xs" c="dimmed">
+              25 minutes on, then 5 off.
+            </Text>
+          )}
+          {anyLength && (
+            <>
+              <NumberInput size="xs" w={110} suffix=" min" min={5} max={480} step={5} value={length} aria-label="Minutes" onChange={setLength} />
+              <Button variant="light" size="xs" onClick={() => start.mutate(Number(length) || 25)}>
+                Start
+              </Button>
+            </>
+          )}
         </Group>
       )}
     </Card>
@@ -179,23 +229,28 @@ function StatusCard({ status }: { status: Status }) {
 }
 
 function Settings({ status }: { status: Status }) {
+  const manual = useVariant('manual-study-mode');
   const s = status.settings;
   const update = useAction((patch: Partial<typeof s>) => rpc.studyMode.updateSettings({ ...s, ...patch }));
 
   return (
     <SectionCard info="study-settings" title={t('Settings')}>
       <Stack>
+        {!manual && (
         <Switch
           label={<WithInfo id="study-auto-classes">{t('Turn on during my class times')}</WithInfo>}
           description={t("Uses the class times on each class's Overview tab")}
           checked={s.autoForClasses}
           onChange={(e) => update.mutate({ autoForClasses: e.currentTarget.checked })}
         />
+        )}
+        {!manual && (
         <Switch
           label={<WithInfo id="study-auto-sessions">{t("Turn on during study sessions I'm going to")}</WithInfo>}
           checked={s.autoForSessions}
           onChange={(e) => update.mutate({ autoForSessions: e.currentTarget.checked })}
         />
+        )}
         <Switch
           label={<WithInfo id="study-hold">{t("Hold UniLink notifications while it's on")}</WithInfo>}
           description={t("You'll see them all when study mode ends")}

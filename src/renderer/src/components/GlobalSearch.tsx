@@ -1,18 +1,22 @@
 import { useEffect, useState } from 'react';
 import { ActionIcon, Group, Highlight, Modal, Stack, Text, TextInput, Tooltip, UnstyledButton } from '@mantine/core';
 import { useDebouncedValue, useHotkeys } from '@mantine/hooks';
-import { IconBook, IconCalendarDue, IconListCheck, IconMessage, IconMessages, IconPercentage, IconSearch, IconUsersGroup } from '@tabler/icons-react';
+import { IconBook, IconBooks, IconCalendarDue, IconUser, IconListCheck, IconMessage, IconMessages, IconPercentage, IconSearch, IconUsersGroup } from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
+import { useListOpen } from '../lib/reqView';
 import { fmtDateTime } from '../lib/format';
 import { t, tx } from '../lib/i18n';
 import { type Out, rpc } from '../lib/rpc';
+import { useVariant } from '../lib/variants';
 import { ReqInfo, WithInfo } from './ReqInfo';
 
 type Result = Out<typeof rpc.search.everything>[number];
 
 const GROUPS: { kind: Result['kind']; label: string; icon: typeof IconBook }[] = [
   { kind: 'class', label: tx('Courses'), icon: IconBook },
+  { kind: 'catalogue', label: 'Course catalogue', icon: IconBooks },
+  { kind: 'person', label: 'Classmates', icon: IconUser },
   { kind: 'post', label: tx('Discussion'), icon: IconMessage },
   { kind: 'deadline', label: tx('Deadlines'), icon: IconCalendarDue },
   { kind: 'graded', label: tx('Grades'), icon: IconPercentage },
@@ -21,20 +25,35 @@ const GROUPS: { kind: Result['kind']; label: string; icon: typeof IconBook }[] =
   { kind: 'chat', label: tx('Group chats'), icon: IconMessages },
 ];
 
+// 'search-this-page': what the page you're on is about, or everything on a page with no one thing.
+function isOnPage(r: Result, pathname: string) {
+  const classId = pathname.match(/^\/classes\/(\d+)/)?.[1];
+  if (classId) return r.to.startsWith(`/classes/${classId}`);
+  if (pathname.startsWith('/calendar')) return r.kind === 'deadline';
+  if (pathname.startsWith('/planner')) return r.kind === 'plan';
+  if (pathname.startsWith('/sessions')) return r.kind === 'session';
+  if (pathname.startsWith('/courses')) return r.kind === 'class' || r.kind === 'catalogue';
+  return pathname !== '/' || r.kind === 'post';
+}
+
 // One box for everything, from the search icon or Ctrl/Cmd+K. Enter opens the first result.
 export function GlobalSearch() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [debounced] = useDebouncedValue(query, 150);
-  useHotkeys([['mod+K', () => setOpen(true)]], []);
+  // The site's search stays out of the way while the requirements list has replaced the site.
+  const listOpen = useListOpen();
+  useHotkeys([['mod+K', () => !listOpen && setOpen(true)]], []);
   const results = useQuery({
     queryKey: ['search', debounced],
     queryFn: () => rpc.search.everything({ query: debounced }),
     enabled: open && debounced.trim().length >= 2,
     placeholderData: keepPreviousData,
   });
-  const found = debounced.trim().length >= 2 ? (results.data ?? []) : [];
+  const onlyThisPage = useVariant('search-this-page');
+  const { pathname } = useLocation();
+  const found = (debounced.trim().length >= 2 ? (results.data ?? []) : []).filter((r) => !onlyThisPage || isOnPage(r, pathname));
   // In the order they're shown, so Enter and the arrow keys follow what's on screen.
   const list = GROUPS.flatMap((g) => found.filter((r) => r.kind === g.kind));
   const [active, setActive] = useState(0);
@@ -64,7 +83,7 @@ export function GlobalSearch() {
             data-autofocus
             radius="xl"
             leftSection={<IconSearch size={16} />}
-            placeholder={t('Courses, posts, deadlines, sessions…')}
+            placeholder={onlyThisPage ? 'Search this page…' : t('Courses, posts, deadlines, sessions…')}
             aria-label={t('Search everything')}
             role="combobox"
             aria-expanded={list.length > 0}

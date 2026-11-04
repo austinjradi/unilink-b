@@ -6,15 +6,21 @@ import { useQuery } from '@tanstack/react-query';
 import { JoinByCode, SessionForm, SessionList, SessionsCard } from '../../components/Sessions';
 import { TimePollForm, TimePolls } from '../../components/TimePolls';
 import { Empty, Loading } from '../../components/ui';
+import { useMe } from '../../lib/hooks';
 import { rpc } from '../../lib/rpc';
+import { useVariant } from '../../lib/variants';
 import { t } from '../../lib/i18n';
 import { ReqInfo, WithInfo } from '../../components/ReqInfo';
 
 // S3: the class's upcoming study sessions.
 export function StudySessions({ classId }: { classId: number }) {
   const sessions = useQuery({ queryKey: ['studySessions', classId], queryFn: () => rpc.studySessions.list({ classId }) });
+  const role = useMe().role;
   const [creating, setCreating] = useState(false);
   const [asking, setAsking] = useState(false);
+  const noPolls = useVariant('no-time-polls');
+  const detailsOnly = useVariant('office-hours-details-only');
+  const hoursInDetails = detailsOnly && role === 'professor';
 
   return (
     <>
@@ -24,16 +30,20 @@ export function StudySessions({ classId }: { classId: number }) {
         </Title>
         <Group gap="sm">
           <JoinByCode />
-          <WithInfo id="poll-create">
-            <Button variant="default" leftSection={<IconCalendarQuestion size={16} />} onClick={() => setAsking(true)}>
-              {t('Find a time')}
-            </Button>
-          </WithInfo>
-          <WithInfo id="session-create">
-            <Button leftSection={<IconPlus size={16} />} onClick={() => setCreating(true)}>
-              {t('Create your study session')}
-            </Button>
-          </WithInfo>
+          {!noPolls && (
+            <WithInfo id="poll-create">
+              <Button variant="default" leftSection={<IconCalendarQuestion size={16} />} onClick={() => setAsking(true)}>
+                {t('Find a time')}
+              </Button>
+            </WithInfo>
+          )}
+          {!hoursInDetails && (
+            <WithInfo id="session-create">
+              <Button leftSection={<IconPlus size={16} />} onClick={() => setCreating(true)}>
+                {t('Create your study session')}
+              </Button>
+            </WithInfo>
+          )}
         </Group>
       </Group>
       <TimePolls classId={classId} />

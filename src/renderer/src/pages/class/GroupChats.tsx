@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type MouseEvent, useState } from 'react';
 import { Badge, Button, Card, Collapse, CopyButton, Divider, Group, Menu, Modal, Select, Stack, Text, TextInput, ThemeIcon, Title } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { modals } from '@mantine/modals';
@@ -23,12 +23,13 @@ import {
 } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
-import { LINK_PURPOSES, type LinkPurpose, parseChatLink } from '@shared/links';
+import { LINK_PURPOSES, type LinkPurpose, parseChatLink, CHAT_PLATFORMS } from '@shared/links';
 import { Empty, Loading, Tag } from '../../components/ui';
 import { fromNow } from '../../lib/format';
-import { useAction } from '../../lib/hooks';
+import { useAction, useMe } from '../../lib/hooks';
 import { type Out, rpc } from '../../lib/rpc';
 import { t } from '../../lib/i18n';
+import { useVariant } from '../../lib/variants';
 import { ReqInfo, WithInfo } from '../../components/ReqInfo';
 
 type ChatLink = Out<typeof rpc.links.list>[number];
@@ -56,8 +57,10 @@ export function GroupChats({ classId, classLabel }: { classId: number; classLabe
   const links = useQuery({ queryKey: ['links', classId], queryFn: () => rpc.links.list({ classId }) });
   const [editing, setEditing] = useState<ChatLink | 'new' | null>(null);
   const [showHidden, setShowHidden] = useState(false);
-  const shown = links.data?.filter((l) => !l.hidden) ?? [];
+  const noBrowseLinks = useVariant('no-browse-links');
+  const shown = links.data?.filter((l) => !l.hidden && !l.pending) ?? [];
   const hidden = links.data?.filter((l) => l.hidden) ?? [];
+  const pending = links.data?.filter((l) => l.pending) ?? [];
 
   return (
     <>
@@ -79,11 +82,19 @@ export function GroupChats({ classId, classLabel }: { classId: number; classLabe
 
       {links.isPending ? (
         <Loading />
-      ) : shown.length || hidden.length ? (
+      ) : shown.length || hidden.length || pending.length ? (
         <Stack gap="lg">
           {shown.map((l) => (
             <LinkCard key={l.id} link={l} classLabel={classLabel} onEdit={() => setEditing(l)} />
           ))}
+          {pending.length > 0 && (
+            <>
+              <Text fw={700}>Waiting for approval</Text>
+              {pending.map((l) => (
+                <LinkCard key={l.id} link={l} classLabel={classLabel} onEdit={() => setEditing(l)} />
+              ))}
+            </>
+          )}
           {hidden.length > 0 && (
             <>
               <WithInfo id="chat-hidden">
@@ -115,15 +126,17 @@ export function GroupChats({ classId, classLabel }: { classId: number; classLabe
         </Card>
       )}
 
-      <Group justify="center" mt="xl" gap="lg">
-        <Button size="md" variant="default" component={Link} to="/courses/mine" bg="var(--ul-soft)">
-          {t('Browse other courses')}
-        </Button>
-        <Button size="md" color="yellow" variant="light" component={Link} to="/courses/find">
-          {t("Can't find your class?")}
-        </Button>
-        <ReqInfo id="chats-browse" />
-      </Group>
+      {!noBrowseLinks && (
+        <Group justify="center" mt="xl" gap="lg">
+          <Button size="md" variant="default" component={Link} to="/courses/mine" bg="var(--ul-soft)">
+            {t('Browse other courses')}
+          </Button>
+          <Button size="md" color="yellow" variant="light" component={Link} to="/courses/find">
+            {t("Can't find your class?")}
+          </Button>
+          <ReqInfo id="chats-browse" />
+        </Group>
+      )}
 
       <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing === 'new' ? <WithInfo id="chat-add">{t('Add a group link')}</WithInfo> : <WithInfo id="chat-manage">{t('Edit link')}</WithInfo>}>
         {editing && (
@@ -135,6 +148,8 @@ export function GroupChats({ classId, classLabel }: { classId: number; classLabe
 }
 
 function LinkCard({ link, classLabel, onEdit }: { link: ChatLink; classLabel: string; onEdit: () => void }) {
+  const profEdits = useVariant('prof-edit-links');
+  const me = useMe();
   const platform = PLATFORMS[link.platform] ?? { icon: IconLink, color: 'gray' };
   const works = useAction(() => rpc.links.vote({ linkId: link.id, vote: 'works', reason: null }), {
     success: 'Thanks for checking!',
@@ -145,6 +160,28 @@ function LinkCard({ link, classLabel, onEdit }: { link: ChatLink; classLabel: st
   const unvote = useAction(() => rpc.links.unvote({ linkId: link.id }));
   const fixed = useAction(() => rpc.links.markFixed({ linkId: link.id }), { success: 'Reports cleared' });
   const remove = useAction(() => rpc.links.remove({ linkId: link.id }), { success: 'Link removed' });
+  const share = useAction(() => rpc.links.share({ linkId: link.id }));
+  const approve = useAction(() => rpc.links.approve({ linkId: link.id }));
+  const decide = useAction((keep: boolean) => rpc.links.decide({ linkId: link.id, keep }));
+  const plain = useVariant('plain-link-list');
+  const noPurpose = useVariant('no-link-purpose');
+  const noName = useVariant('no-link-name');
+  const hideOwner = useVariant('hide-link-owner');
+  const warnLeaving = useVariant('warn-leaving-site');
+  const noCopy = useVariant('no-copy-link');
+  const anyoneFixes = useVariant('anyone-fixes-links');
+  const noWorks = useVariant('no-works-votes');
+
+  const openLink = (event: MouseEvent) => {
+    if (!warnLeaving) return;
+    event.preventDefault();
+    modals.openConfirmModal({
+      title: <WithInfo id="chat-open">You’re leaving UniLink</WithInfo>,
+      children: <Text size="sm">This opens {new URL(link.url).hostname}, which isn’t part of UniLink.</Text>,
+      labels: { confirm: 'Open it', cancel: 'Stay here' },
+      onConfirm: () => window.open(link.url, '_blank', 'noopener'),
+    });
+  };
 
   const confirmRemove = () =>
     modals.openConfirmModal({
@@ -156,9 +193,148 @@ function LinkCard({ link, classLabel, onEdit }: { link: ChatLink; classLabel: st
 
   const status = link.hidden
     ? { label: t('Hidden'), color: 'red' }
-    : link.works > 0
-      ? { label: t('Works'), color: 'teal' }
-      : { label: t('New'), color: 'gray' };
+    : link.likelyBroken
+      ? { label: 'Likely broken', color: 'orange' }
+      : link.works > 0 && !noWorks
+        ? { label: t('Works'), color: 'teal' }
+        : { label: t('New'), color: 'gray' };
+
+  const copyName = useVariant('copy-with-name');
+  const name = noName || !link.label ? t('{{platform}} group', { platform: link.platform }) : link.label;
+  const actions = (
+    <>
+      <WithInfo id="chat-open" block>
+        <Button component="a" href={link.url} target="_blank" color="periwinkle" variant="light" leftSection={<IconExternalLink size={16} />} onClick={openLink}>
+          {t('Open link')}
+        </Button>
+      </WithInfo>
+      {/* To pass the chat on to a classmate outside UniLink. */}
+      {!noCopy && (
+        <WithInfo id="chat-copy" block>
+          <CopyButton value={copyName ? `${name}: ${link.url}` : link.url}>
+            {({ copied, copy }) => (
+              <Button variant="default" color={copied ? 'teal' : undefined} leftSection={copied ? <IconCircleCheck size={16} /> : <IconCopy size={16} />} onClick={copy}>
+                {copied ? t('Copied') : t('Copy')}
+              </Button>
+            )}
+          </CopyButton>
+        </WithInfo>
+      )}
+      {link.pending && !link.mine && (
+        <WithInfo id="chat-add" block>
+          <Button onClick={() => approve.mutate()} loading={approve.isPending}>
+            Approve
+          </Button>
+        </WithInfo>
+      )}
+      {link.canDecide && (
+        <WithInfo id="chat-report" block>
+          <Group gap={6} grow>
+            <Button variant="default" onClick={() => decide.mutate(true)}>
+              Keep
+            </Button>
+            <Button variant="light" color="red" onClick={() => decide.mutate(false)}>
+              Take down
+            </Button>
+          </Group>
+        </WithInfo>
+      )}
+      {anyoneFixes && !link.mine && (
+        <WithInfo id="chat-manage" block>
+          <Button variant="default" leftSection={<IconPencil size={16} />} onClick={onEdit}>
+            Fix this link
+          </Button>
+        </WithInfo>
+      )}
+      {link.mine || (profEdits && me.role === 'professor') ? (
+        <WithInfo id="chat-manage" block>
+          <Menu position="bottom-end">
+            <Menu.Target>
+              <Button variant="default" leftSection={<IconDots size={16} />}>
+                {t('Manage')}
+              </Button>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Item leftSection={<IconPencil size={14} />} onClick={onEdit}>
+                {t('Edit')}
+              </Menu.Item>
+              {!link.isPublic && (
+                <Menu.Item leftSection={<IconLink size={14} />} onClick={() => share.mutate()}>
+                  Share with the class
+                </Menu.Item>
+              )}
+              {link.reports > 0 && (
+                <Menu.Item leftSection={<IconTool size={14} />} onClick={() => fixed.mutate()}>
+                  {t('Mark as fixed')}
+                </Menu.Item>
+              )}
+              <Menu.Item leftSection={<IconTrash size={14} />} color="red" onClick={confirmRemove}>
+                {t('Remove')}
+              </Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
+        </WithInfo>
+      ) : link.myVote && !(noWorks && link.myVote === 'works') ? (
+        <WithInfo id={link.myVote === 'works' ? 'chat-works' : 'chat-report'} block>
+          <Button variant="default" onClick={() => unvote.mutate()}>
+            {link.myVote === 'works' ? t('Undo “works”') : t('Undo report')}
+          </Button>
+        </WithInfo>
+      ) : (
+        <>
+          {!noWorks && (
+            <WithInfo id="chat-works" block>
+              <Button variant="default" leftSection={<IconThumbUp size={16} />} onClick={() => works.mutate()} loading={works.isPending}>
+                {t('It works')}
+              </Button>
+            </WithInfo>
+          )}
+          <WithInfo id="chat-report" block>
+            <Menu position="bottom-end">
+              <Menu.Target>
+                <Button variant="default" leftSection={<IconAlertTriangle size={16} />}>
+                  {t('Report link')}
+                </Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Label>{t("What's wrong with it?")}</Menu.Label>
+                {FLAG_REASONS.map((r) => (
+                  <Menu.Item key={r} onClick={() => report.mutate(r)}>
+                    {t(r)}
+                  </Menu.Item>
+                ))}
+              </Menu.Dropdown>
+            </Menu>
+          </WithInfo>
+        </>
+      )}
+    </>
+  );
+
+  if (plain) {
+    return (
+      <Card padding="sm" style={{ opacity: link.hidden ? 0.75 : 1 }}>
+        <Group justify="space-between" gap="sm">
+          <Group gap="xs" style={{ minWidth: 0 }}>
+            <platform.icon size={18} />
+            <Text fw={700}>{name}</Text>
+            <Text size="sm" c="dimmed">
+              {link.platform}
+            </Text>
+            <WithInfo id="chat-status">
+              <Badge size="sm" color={status.color} variant="light">
+                {status.label}
+              </Badge>
+            </WithInfo>
+            {link.reports > 0 && <Text size="xs" c="orange">{t('Reported by {{count}} classmates', { count: link.reports })}</Text>}
+          </Group>
+          <Group gap="xs" className="link-actions">
+            {actions}
+          </Group>
+        </Group>
+      </Card>
+    );
+  }
 
   return (
     <Card padding="lg" radius={44} style={{ borderWidth: 2, opacity: link.hidden ? 0.75 : 1 }}>
@@ -180,12 +356,15 @@ function LinkCard({ link, classLabel, onEdit }: { link: ChatLink; classLabel: st
           </Group>
           <Group gap="xs">
             <WithInfo id="chat-label">
-              <Text fw={700}>{link.label || t('{{platform}} group', { platform: link.platform })}</Text>
+              <Text fw={700}>{name}</Text>
             </WithInfo>
-            <WithInfo id="chat-purpose">
-              <Tag color={PURPOSE_COLORS[link.purpose]}>{t(LINK_PURPOSES[link.purpose])}</Tag>
-            </WithInfo>
-            {link.ownerRole === 'professor' && (
+            {!noPurpose && (
+              <WithInfo id="chat-purpose">
+                <Tag color={PURPOSE_COLORS[link.purpose]}>{t(LINK_PURPOSES[link.purpose])}</Tag>
+              </WithInfo>
+            )}
+            {!link.isPublic && <Tag>Only you can see this</Tag>}
+            {link.ownerRole === 'professor' && !hideOwner && (
               <WithInfo id="chat-from-prof">
                 <Tag color="periwinkle">{t('From the professor')}</Tag>
               </WithInfo>
@@ -193,11 +372,12 @@ function LinkCard({ link, classLabel, onEdit }: { link: ChatLink; classLabel: st
           </Group>
           <WithInfo id="chat-added-by">
             <Text size="sm" c="dimmed" truncate>
-              {t('Added by {{name}} {{when}}', { name: link.mine ? t('you') : link.ownerName, when: fromNow(link.createdAt) })} · {link.url}
+              {hideOwner && !link.mine ? fromNow(link.createdAt) : t('Added by {{name}} {{when}}', { name: link.mine ? t('you') : link.ownerName, when: fromNow(link.createdAt) })}
+              {!noCopy && ` · ${link.url}`}
             </Text>
           </WithInfo>
           <Group gap="md" mt={4}>
-            {link.works > 0 && (
+            {link.works > 0 && !noWorks && (
               <Group gap={4} c="teal">
                 <IconCircleCheck size={14} />
                 <Text size="xs" fw={700}>
@@ -220,76 +400,7 @@ function LinkCard({ link, classLabel, onEdit }: { link: ChatLink; classLabel: st
         </div>
         <Divider orientation="vertical" />
         <Stack gap="sm" w={190}>
-          <WithInfo id="chat-open" block>
-            <Button component="a" href={link.url} target="_blank" color="periwinkle" variant="light" leftSection={<IconExternalLink size={16} />}>
-              {t('Open link')}
-            </Button>
-          </WithInfo>
-          {/* To pass the chat on to a classmate outside UniLink. */}
-          <WithInfo id="chat-copy" block>
-            <CopyButton value={link.url}>
-              {({ copied, copy }) => (
-                <Button variant="default" color={copied ? 'teal' : undefined} leftSection={copied ? <IconCircleCheck size={16} /> : <IconCopy size={16} />} onClick={copy}>
-                  {copied ? t('Copied') : t('Copy')}
-                </Button>
-              )}
-            </CopyButton>
-          </WithInfo>
-          {link.mine ? (
-            <WithInfo id="chat-manage" block>
-              <Menu position="bottom-end">
-                <Menu.Target>
-                  <Button variant="default" leftSection={<IconDots size={16} />}>
-                    {t('Manage')}
-                  </Button>
-                </Menu.Target>
-                <Menu.Dropdown>
-                  <Menu.Item leftSection={<IconPencil size={14} />} onClick={onEdit}>
-                    {t('Edit')}
-                  </Menu.Item>
-                  {link.reports > 0 && (
-                    <Menu.Item leftSection={<IconTool size={14} />} onClick={() => fixed.mutate()}>
-                      {t('Mark as fixed')}
-                    </Menu.Item>
-                  )}
-                  <Menu.Item leftSection={<IconTrash size={14} />} color="red" onClick={confirmRemove}>
-                    {t('Remove')}
-                  </Menu.Item>
-                </Menu.Dropdown>
-              </Menu>
-            </WithInfo>
-          ) : link.myVote ? (
-            <WithInfo id={link.myVote === 'works' ? 'chat-works' : 'chat-report'} block>
-              <Button variant="default" onClick={() => unvote.mutate()}>
-                {link.myVote === 'works' ? t('Undo “works”') : t('Undo report')}
-              </Button>
-            </WithInfo>
-          ) : (
-            <>
-              <WithInfo id="chat-works" block>
-                <Button variant="default" leftSection={<IconThumbUp size={16} />} onClick={() => works.mutate()} loading={works.isPending}>
-                  {t('It works')}
-                </Button>
-              </WithInfo>
-              <WithInfo id="chat-report" block>
-                <Menu position="bottom-end">
-                  <Menu.Target>
-                    <Button variant="default" leftSection={<IconAlertTriangle size={16} />}>
-                      {t('Report link')}
-                    </Button>
-                  </Menu.Target>
-                  <Menu.Dropdown>
-                    <Menu.Label>{t("What's wrong with it?")}</Menu.Label>
-                    {FLAG_REASONS.map((r) => (
-                      <Menu.Item key={r} onClick={() => report.mutate(r)}>
-                        {t(r)}
-                      </Menu.Item>
-                    ))}
-                  </Menu.Dropdown>
-                </Menu>
-              </WithInfo>
-            </>
-          )}
+          {actions}
         </Stack>
       </Group>
     </Card>
@@ -298,14 +409,22 @@ function LinkCard({ link, classLabel, onEdit }: { link: ChatLink; classLabel: st
 
 function LinkForm({ classId, existing, onDone }: { classId: number; existing: ChatLink | null; onDone: () => void }) {
   const form = useForm({
-    initialValues: { url: existing?.url ?? '', label: existing?.label ?? '', purpose: (existing?.purpose ?? 'course') as LinkPurpose },
+    initialValues: { url: existing?.url ?? '', label: existing?.label ?? '', purpose: (existing?.purpose ?? 'course') as LinkPurpose, platform: existing?.platform ?? '' },
     validate: { url: (v) => (parseChatLink(v) ? null : t('Paste a full link, starting with https://')) },
   });
   const detected = parseChatLink(form.values.url);
+  const noPurpose = useVariant('no-link-purpose');
+  const noName = useVariant('no-link-name');
+  const pickPlatform = useVariant('pick-link-platform');
+  const twoPlatforms = useVariant('whatsapp-discord-only');
+  const sameUrlOnly = useVariant('link-same-url-only');
+  const privateLinks = useVariant('private-links');
+  const approval = useVariant('approve-links');
   const save = useAction(
     async (v: typeof form.values) => {
-      if (existing) await rpc.links.update({ linkId: existing.id, ...v });
-      else await rpc.links.add({ classId, ...v });
+      const fields = { ...v, platform: v.platform || undefined };
+      if (existing) await rpc.links.update({ linkId: existing.id, ...fields });
+      else await rpc.links.add({ classId, ...fields });
     },
     { success: existing ? t('Link updated') : t('Link shared with the class'), onSuccess: onDone },
   );
@@ -317,18 +436,28 @@ function LinkForm({ classId, existing, onDone }: { classId: number; existing: Ch
           label={<WithInfo id="chat-url">{t('Invite link')}</WithInfo>}
           placeholder="https://chat.whatsapp.com/…"
           data-autofocus
-          description={detected ? t('Detected: {{platform}}', { platform: detected.platform }) : 'WhatsApp, Discord, Messenger, Telegram, Teams…'}
+          description={pickPlatform ? undefined : detected ? t('Detected: {{platform}}', { platform: detected.platform }) : twoPlatforms ? 'WhatsApp or Discord' : 'WhatsApp, Discord, Messenger, Telegram, Teams…'}
           {...form.getInputProps('url')}
         />
-        <Select
-          label={<WithInfo id="chat-purpose">{t('Who is it for?')}</WithInfo>}
-          data={(Object.keys(LINK_PURPOSES) as LinkPurpose[]).map((p) => ({ value: p, label: t(LINK_PURPOSES[p]) }))}
-          allowDeselect={false}
-          {...form.getInputProps('purpose')}
-        />
-        <TextInput label={<WithInfo id="chat-label">{t('Name')}</WithInfo>} placeholder={t('General course group, study server…')} {...form.getInputProps('label')} />
+        {pickPlatform && <Select label={<WithInfo id="chat-platform">Platform</WithInfo>} placeholder={detected?.platform ?? 'Pick one'} data={CHAT_PLATFORMS} clearable {...form.getInputProps('platform')} />}
+        {!noPurpose && (
+          <Select
+            label={<WithInfo id="chat-purpose">{t('Who is it for?')}</WithInfo>}
+            data={(Object.keys(LINK_PURPOSES) as LinkPurpose[]).map((p) => ({ value: p, label: t(LINK_PURPOSES[p]) }))}
+            allowDeselect={false}
+            {...form.getInputProps('purpose')}
+          />
+        )}
+        {!noName && <TextInput label={<WithInfo id="chat-label">{t('Name')}</WithInfo>} placeholder={t('General course group, study server…')} {...form.getInputProps('label')} />}
         <Text size="xs" c="dimmed">
-          {t('Everyone in this section will see the link right away. Each chat can be shared once per course, across all sections.')} <ReqInfo id="chat-add" />
+          {privateLinks
+            ? 'Only you see the link until you share it with the class.'
+            : approval
+              ? 'Someone else in the section has to approve the link before it appears.'
+              : sameUrlOnly
+                ? 'Everyone in this section will see the link right away.'
+                : t('Everyone in this section will see the link right away. Each chat can be shared once per course, across all sections.')}{' '}
+          <ReqInfo id="chat-add" />
         </Text>
         <Group justify="flex-end">
           <Button type="submit" loading={save.isPending}>

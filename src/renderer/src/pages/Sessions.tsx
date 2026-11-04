@@ -4,16 +4,25 @@ import { useDebouncedValue } from '@mantine/hooks';
 import { IconPlus, IconSearch, IconUsersGroup } from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { Link, useParams } from 'react-router';
+import { Link, Navigate, useParams } from 'react-router';
 import { JoinByCode, SessionForm, SessionInvite, SessionList, SessionsCard } from '../components/Sessions';
 import { TimePolls } from '../components/TimePolls';
 import { Empty, Loading, PageHeader } from '../components/ui';
+import { useMe } from '../lib/hooks';
 import { rpc } from '../lib/rpc';
+import { useVariant } from '../lib/variants';
 import { t } from '../lib/i18n';
 import { ReqInfo, WithInfo } from '../components/ReqInfo';
 
+// 'session-filters-time-building': the part of the day it starts in, and the place's first word.
+const timeOfDay = (start: Date) => (start.getHours() < 12 ? 'morning' : start.getHours() < 17 ? 'afternoon' : 'evening');
+const buildingOf = (location: string) => location.split(/\s+/)[0] ?? '';
+
 function CreateButton() {
   const [open, setOpen] = useState(false);
+  const role = useMe().role;
+  const detailsOnly = useVariant('office-hours-details-only');
+  if (detailsOnly && role === 'professor') return null;
   return (
     <>
       <WithInfo id="session-create">
@@ -30,7 +39,13 @@ function CreateButton() {
 
 // "My upcoming study sessions" (A2Team.pdf p. 13).
 export function SessionsPage() {
-  const mine = useQuery({ queryKey: ['studySessions', 'mine'], queryFn: () => rpc.studySessions.mine() });
+  const allOnMyPage = useVariant('all-sessions-on-my-page');
+  const onlyOnClass = useVariant('sessions-only-on-class');
+  const mine = useQuery({
+    queryKey: ['studySessions', 'mine', allOnMyPage],
+    queryFn: () => (allOnMyPage ? rpc.studySessions.browse({ search: '' }) : rpc.studySessions.mine()),
+  });
+  if (onlyOnClass) return <Navigate to="/courses" replace />;
   return (
     <>
       <PageHeader
@@ -75,6 +90,11 @@ export function SessionSearchPage() {
   const [format, setFormat] = useState<'in-person' | 'online' | null>(null);
   const [hasRoom, setHasRoom] = useState(false);
   const [soon, setSoon] = useState(false);
+  const moreFilters = useVariant('session-filters-time-building');
+  const byHost = useVariant('search-session-host');
+  const onlyOnClass = useVariant('sessions-only-on-class');
+  const [slot, setSlot] = useState<string | null>(null);
+  const [building, setBuilding] = useState<string | null>(null);
   const classes = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
   const found = useQuery({
     queryKey: ['studySessions', 'browse', debounced],
@@ -87,8 +107,11 @@ export function SessionSearchPage() {
       (!classId || s.classId === Number(classId)) &&
       (!format || s.format === format) &&
       (!hasRoom || !s.isFull) &&
-      (!soon || dayjs(s.startsAt).isBefore(nextWeek)),
+      (!soon || dayjs(s.startsAt).isBefore(nextWeek)) &&
+      (!moreFilters || !slot || timeOfDay(new Date(s.startsAt)) === slot) &&
+      (!moreFilters || !building || buildingOf(s.location) === building),
   );
+  if (onlyOnClass) return <Navigate to="/courses" replace />;
   const filtering = !!classId || !!format || hasRoom || soon;
   return (
     <>
@@ -104,7 +127,7 @@ export function SessionSearchPage() {
           size="md"
           radius="xl"
           style={{ flex: 1 }}
-          placeholder={t('Search by course, topic, type or place')}
+          placeholder={byHost ? 'Search by course, topic, type, place or host' : t('Search by course, topic, type or place')}
           aria-label={t('Search by course, topic, type or place')}
           leftSection={<IconSearch size={18} />}
           value={search}
@@ -137,6 +160,36 @@ export function SessionSearchPage() {
         <Chip size="sm" variant="outline" checked={soon} onChange={setSoon}>
           {t('Next 7 days')}
         </Chip>
+        {moreFilters && (
+          <>
+            <Select
+              size="xs"
+              radius="xl"
+              w={140}
+              clearable
+              placeholder="Any time of day"
+              aria-label="Time of day"
+              data={[
+                { value: 'morning', label: 'Morning' },
+                { value: 'afternoon', label: 'Afternoon' },
+                { value: 'evening', label: 'Evening' },
+              ]}
+              value={slot}
+              onChange={setSlot}
+            />
+            <Select
+              size="xs"
+              radius="xl"
+              w={160}
+              clearable
+              placeholder="Any building"
+              aria-label="Building"
+              data={[...new Set((found.data ?? []).map((s) => buildingOf(s.location)).filter(Boolean))]}
+              value={building}
+              onChange={setBuilding}
+            />
+          </>
+        )}
         <ReqInfo id="sessions-filters" />
       </Group>
       {found.isPending ? (

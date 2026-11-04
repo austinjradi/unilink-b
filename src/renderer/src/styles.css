@@ -367,6 +367,66 @@ h3,
   }
 }
 
+/* A ninth tab, when the course record and degree plan have their own: tighter for longer, and
+   into the menu sooner. */
+@media (max-width: 1520px) {
+  header:has(.nav-pill:nth-child(9)) .nav-pill {
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 1325px) {
+  header:has(.nav-pill:nth-child(9)) .nav-tabs {
+    display: none;
+  }
+
+  header:has(.nav-pill:nth-child(9)) .nav-menu {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 1590px) {
+  :root[lang='fr'] header:has(.nav-pill:nth-child(9)) .nav-pill {
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 1480px) {
+  header:has(.study-pill):has(.nav-pill:nth-child(9)) .nav-tabs {
+    display: none;
+  }
+
+  header:has(.study-pill):has(.nav-pill:nth-child(9)) .nav-menu {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 1475px) {
+  :root[lang='fr'] header:has(.nav-pill:nth-child(9)) .nav-tabs {
+    display: none;
+  }
+
+  :root[lang='fr'] header:has(.nav-pill:nth-child(9)) .nav-menu {
+    display: inline-flex;
+  }
+}
+
+.course-row {
+  color: inherit;
+  text-decoration: none;
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+
+.course-row:first-child {
+  border-top: 0;
+}
+
+.course-row:hover {
+  background: var(--mantine-color-default-hover);
+}
+
 /* Phones: shorter month cells, and the week as a list of days. */
 @media (max-width: 640px) {
   .month-cell {
@@ -424,6 +484,46 @@ h3,
   background: var(--mantine-color-periwinkle-light);
 }
 
+/* Below the modals, which cover it. */
+.req-dock {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 150;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: calc(100vw - 32px);
+}
+
+/* On a phone the two tools are just their icons, so they cover less of the page. */
+@media (max-width: 480px) {
+  .req-dock-label {
+    display: none;
+  }
+
+  .req-dock .mantine-Button-section[data-position='left'] {
+    margin-inline-end: 0;
+  }
+
+  .req-page-back-rest {
+    display: none;
+  }
+}
+
+/* Every info button at once, without touching any of them. */
+html[data-info-hidden] .req-info {
+  display: none;
+}
+
+.req-page-bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding-block: 12px;
+  background: var(--ul-page);
+}
+
 .req-with {
   display: inline-flex;
   align-items: center;
@@ -454,4 +554,108 @@ h3,
   padding: 1px;
   margin-left: -2px;
   margin-right: -6px;
+}
+
+/* 'require-connection' and 'refuse-no-storage': under the switches pill, so they can be switched back. */
+.site-block {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--mantine-color-body);
+}
+
+/* 'scrolling-tabs': the tabs stay in the header at every width. */
+.with-scrolling-tabs .nav-tabs {
+  display: flex !important;
+}
+
+.with-scrolling-tabs .nav-menu {
+  display: none !important;
+}
+
+@media (max-width: 760px) {
+  .with-scrolling-tabs .header-logo {
+    display: none;
+  }
+}
+
+/* 'bottom-tabs': on phones, the tabs move to the bottom of the screen. */
+.bottom-tabs {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .with-bottom-tabs .bottom-tabs {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 130;
+    display: flex;
+    overflow-x: auto;
+    background: var(--mantine-color-body);
+    border-top: 2px solid var(--ul-rule);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .with-bottom-tabs .nav-menu {
+    display: none !important;
+  }
+
+  .with-bottom-tabs main {
+    padding-bottom: 72px;
+  }
+
+  body:has(.with-bottom-tabs) .req-dock {
+    bottom: 64px;
+  }
+}
+
+.bottom-tab {
+  flex: 1 0 auto;
+  padding: 14px 12px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: inherit;
+  text-decoration: none;
+}
+
+.bottom-tab[data-active] {
+  color: var(--mantine-primary-color-filled);
+}
+
+/* 'offline-queue': says so without getting in the way. */
+.site-note {
+  position: fixed;
+  top: 76px;
+  left: 50%;
+  z-index: 120;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  background: var(--mantine-color-yellow-light);
+}
+
+/* 'high-contrast': dimmed text and borders go to full strength, in both colour schemes. */
+:root[data-high-contrast][data-mantine-color-scheme='light'],
+:root[data-high-contrast][data-mantine-color-scheme='dark'] {
+  --mantine-color-dimmed: var(--mantine-color-text);
+  --mantine-color-default-border: var(--mantine-color-text);
+}
+
+[data-high-contrast] a,
+[data-high-contrast] .mantine-Anchor-root {
+  text-decoration: underline;
+}
+
+/* 'larger-text': sizes are in rem, so everything grows together. */
+html[data-larger-text] {
+  font-size: 18px;
 }

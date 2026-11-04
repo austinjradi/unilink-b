@@ -15,9 +15,9 @@ declare global {
       // Asks the browser not to clear what's saved here to free up space.
       keepData: () => Promise<void>;
       // Downloads everything saved in this browser as one file.
-      downloadBackup: () => Promise<void>;
+      downloadBackup: (passphrase?: string) => Promise<void>;
       // Replaces everything saved in this browser and reloads. false if the file isn't a backup.
-      restoreBackup: (file: File) => Promise<boolean>;
+      restoreBackup: (file: File, passphrase?: string) => Promise<boolean>;
     };
   }
 }

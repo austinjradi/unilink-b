@@ -36,6 +36,38 @@ export function writeBackup({ db, files }: Backup, createdAt: Date) {
   });
 }
 
+// 'encrypt-backup': the same file, sealed with a passphrase.
+async function keyFrom(passphrase: string, salt: Uint8Array) {
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(passphrase) as BufferSource, 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: salt as BufferSource, iterations: 200_000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+
+export async function sealBackup(text: string, passphrase: string) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const data = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await keyFrom(passphrase, salt), new TextEncoder().encode(text));
+  return JSON.stringify({ app: BACKUP_APP, sealed: 1, salt: toBase64(salt), iv: toBase64(iv), data: toBase64(new Uint8Array(data)) });
+}
+
+export function isSealed(text: string) {
+  try {
+    return JSON.parse(text)?.sealed === 1;
+  } catch {
+    return false;
+  }
+}
+
+// null when the passphrase is wrong.
+export async function openSealed(text: string, passphrase: string) {
+  try {
+    const { salt, iv, data } = JSON.parse(text);
+    const opened = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromBase64(iv) as BufferSource }, await keyFrom(passphrase, fromBase64(salt)), fromBase64(data) as BufferSource);
+    return new TextDecoder().decode(opened);
+  } catch {
+    return null;
+  }
+}
+
 // null when it isn't one of ours, or something in it isn't what it should be.
 export function readBackup(text: string): Backup | null {
   try {

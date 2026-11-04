@@ -1,6 +1,7 @@
-import { and, asc, desc, eq, gte, inArray, isNull, like, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, like, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { assessments, chatLinks, classes, courses, enrollments, plannerAssignments, posts, replies, studySessions } from '../db/schema';
+import { isOn } from '@shared/variants';
+import { assessments, chatLinks, classes, courses, enrollments, plannerAssignments, posts, replies, studySessions, users } from '../db/schema';
 import { procedure } from '../rpc/core';
 import { classLabels, sectionCode } from './access';
 import { canSeePost } from './board';
@@ -21,7 +22,7 @@ export const searchRouter = {
     const mine = db.select({ id: enrollments.classId }).from(enrollments).where(eq(enrollments.userId, userId)).all().map((r) => r.id);
     const label = classLabels(db);
     const labelOf = (classId: number | null) => (classId == null ? null : (label.get(classId) ?? null));
-    const results: { kind: 'class' | 'post' | 'deadline' | 'graded' | 'session' | 'plan' | 'chat'; id: number; title: string; sub: string | null; when?: Date; to: string }[] = [];
+    const results: { kind: 'class' | 'catalogue' | 'person' | 'post' | 'deadline' | 'graded' | 'session' | 'plan' | 'chat'; id: number; title: string; sub: string | null; when?: Date; to: string }[] = [];
 
     if (mine.length) {
       for (const c of db
@@ -81,7 +82,7 @@ export const searchRouter = {
       for (const l of db
         .select({ id: chatLinks.id, label: chatLinks.label, platform: chatLinks.platform, classId: chatLinks.classId })
         .from(chatLinks)
-        .where(and(inArray(chatLinks.classId, mine), or(like(chatLinks.label, term), like(chatLinks.platform, term))))
+        .where(and(inArray(chatLinks.classId, mine), isOn('private-links') ? or(eq(chatLinks.isPublic, true), eq(chatLinks.ownerId, ctx.userId)) : undefined, or(like(chatLinks.label, term), like(chatLinks.platform, term))))
         .limit(5)
         .all()) {
         results.push({ kind: 'chat', id: l.id, title: l.label || l.platform, sub: labelOf(l.classId), to: `/classes/${l.classId}/chats` });
@@ -110,6 +111,33 @@ export const searchRouter = {
       .limit(5)
       .all()) {
       results.push({ kind: 'plan', id: p.id, title: p.title, sub: labelOf(p.classId), to: '/planner' });
+    }
+
+    if (isOn('search-catalogue')) {
+      for (const c of db
+        .select({ id: courses.id, subject: courses.subject, number: courses.number, title: courses.title })
+        .from(courses)
+        .where(or(like(sql`${courses.subject} || ' ' || ${courses.number}`, term), like(sql`${courses.subject} || ${courses.number}`, term), like(courses.title, term)))
+        .limit(8)
+        .all()) {
+        const code = `${c.subject} ${c.number}`;
+        results.push({ kind: 'catalogue', id: c.id, title: code, sub: c.title, to: `/courses/find?q=${encodeURIComponent(code)}` });
+      }
+    }
+
+    if (isOn('search-classmates') && mine.length) {
+      const seen = new Set<number>();
+      for (const p of db
+        .select({ id: users.id, name: users.name, classId: enrollments.classId })
+        .from(users)
+        .innerJoin(enrollments, eq(enrollments.userId, users.id))
+        .where(and(inArray(enrollments.classId, mine), like(users.name, term), ne(users.id, userId)))
+        .limit(20)
+        .all()) {
+        if (seen.has(p.id)) continue;
+        seen.add(p.id);
+        results.push({ kind: 'person', id: p.id, title: p.name, sub: labelOf(p.classId), to: `/classes/${p.classId}` });
+      }
     }
 
     return results;

@@ -1,4 +1,4 @@
-import { Button, Card, Group, Stack, Tabs, Text } from '@mantine/core';
+import { Box, Button, Card, Group, Stack, Tabs, Text } from '@mantine/core';
 import { IconBrandWhatsapp, IconFileText, IconInfoCircle, IconMessages, IconPercentage, IconUsersGroup } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router';
@@ -7,6 +7,7 @@ import { fmtMeetings } from '../lib/format';
 import { useAction, useMe } from '../lib/hooks';
 import { t, term, tx } from '../lib/i18n';
 import { rpc } from '../lib/rpc';
+import { useShowCount, useVariant } from '../lib/variants';
 import { Assignments } from './class/Assignments';
 import { Discussion } from './class/Discussion';
 import { Grades } from './class/Grades';
@@ -28,7 +29,7 @@ export function ClassPage() {
   const params = useParams();
   const navigate = useNavigate();
   const classId = Number(params.classId);
-  const tab = TABS.some((tabItem) => tabItem.value === params.tab) ? params.tab! : 'overview';
+  const tabInUrl = TABS.some((tabItem) => tabItem.value === params.tab) ? params.tab! : 'overview';
 
   const cls = useQuery({ queryKey: ['classes', classId], queryFn: () => rpc.classes.get({ classId }) });
   const professor = useMe().role === 'professor';
@@ -37,6 +38,12 @@ export function ClassPage() {
   });
   const switchHere = useAction(() => rpc.classes.switchSection({ classId }), { success: 'Switched sections' });
 
+  const showCount = useShowCount();
+  const noTimes = useVariant('no-section-times');
+  const chatsOnOverview = useVariant('chats-on-overview');
+  const noProfessors = useVariant('no-professor-features');
+  const postWithoutJoining = useVariant('post-without-joining');
+  const tab = chatsOnOverview && tabInUrl === 'chats' ? 'overview' : tabInUrl;
   if (cls.isPending) return <Loading />;
   if (!cls.data) return <Text c="red">{cls.error?.message}</Text>;
   const c = cls.data;
@@ -50,7 +57,8 @@ export function ClassPage() {
         title={code}
         subtitle={
           <>
-            {c.title} · {t('{{count}} credits', { count: c.credits })} · {t('{{count}} students on UniLink', { count: c.memberCount })}
+            {c.title} · {t('{{count}} credits', { count: c.credits })}
+            {showCount(c.memberCount) && ` · ${t('{{count}} students on UniLink', { count: c.memberCount })}`}
             {c.professors.length > 0 && ` · ${t('Taught by {{names}}', { names: c.professors.map((p) => p.name).join(', ') })}`}{' '}
             <Tag>{term(c.term)}</Tag>
           </>
@@ -58,8 +66,9 @@ export function ClassPage() {
       />
 
       {!c.joined ? (
+        <>
         <Card padding="xl">
-          {(c.times.length > 0 || c.clashesWith.length > 0) && (
+          {!noTimes && (c.times.length > 0 || c.clashesWith.length > 0) && (
             <Stack gap={2} mb="md">
               {c.times.length > 0 && <Text size="sm">{t('Class times: {{times}}', { times: fmtMeetings(c.times) })} <ReqInfo id="find-times" /></Text>}
               <ClashNote codes={c.clashesWith} />
@@ -115,10 +124,16 @@ export function ClassPage() {
             </Text>
           )}
         </Card>
+        {postWithoutJoining && (
+          <Box mt="lg">
+            <Discussion classId={classId} />
+          </Box>
+        )}
+        </>
       ) : (
         <Tabs value={tab} onChange={(v) => navigate(`/classes/${classId}/${v}`)} keepMounted={false} variant="pills" radius="xl">
           <Tabs.List mb="lg">
-            {TABS.map(({ value, label, icon: Icon, info }) => (
+            {TABS.filter((tabItem) => (!chatsOnOverview || tabItem.value !== 'chats') && (!noProfessors || tabItem.value !== 'assignments')).map(({ value, label, icon: Icon, info }) => (
               <Tabs.Tab key={value} value={value} leftSection={<Icon size={16} />} rightSection={<ReqInfo id={info} />}>
                 {value === 'grades' && c.teaching ? t('Grading scheme') : t(label)}
               </Tabs.Tab>
@@ -126,6 +141,11 @@ export function ClassPage() {
           </Tabs.List>
           <Tabs.Panel value="overview">
             <Overview classId={classId} cls={c} />
+            {chatsOnOverview && (
+              <Box mt="xl">
+                <GroupChats classId={classId} classLabel={code} />
+              </Box>
+            )}
           </Tabs.Panel>
           <Tabs.Panel value="discussion">
             <Discussion classId={classId} />

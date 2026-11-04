@@ -1,4 +1,5 @@
-import { createContext, type KeyboardEvent, useContext, useState } from 'react';
+import { isOn } from '@shared/variants';
+import { createContext, type CSSProperties, type DragEvent, type KeyboardEvent, useContext, useState } from 'react';
 import type { ReqTopicId } from '../lib/reqTopics';
 import {
   ActionIcon,
@@ -40,6 +41,7 @@ import {
   IconUpload, IconFileText } from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
+import { modals } from '@mantine/modals';
 import { useNavigate } from 'react-router';
 import { addDays, CURRENT_TERM, eachDay, TERMS, ymd } from '@shared/dates';
 import { isBusyWeek } from '@shared/grades';
@@ -49,12 +51,15 @@ import { chipStyle, Empty, KindBadge, kindColor, Loading, PageHeader, Tag } from
 import { fmtDateTime, fmtTime, toDate } from '../lib/format';
 import { useAction } from '../lib/hooks';
 import { type Out, rpc, RpcError } from '../lib/rpc';
+import { useUndo } from '../lib/undo';
+import { useVariant } from '../lib/variants';
 import { t, term, tx } from '../lib/i18n';
 import { ReqInfo, WithInfo } from '../components/ReqInfo';
+import { PlannerPage } from './Planner';
 
 type Deadline = Out<typeof rpc.calendar.deadlines>[number];
 type CalEvent = Out<typeof rpc.calendar.range>[number];
-type View = 'month' | 'week' | 'semester' | 'key';
+type View = 'month' | 'week' | 'semester' | 'key' | 'agenda';
 
 const KINDS = [
   { value: 'assignment', label: tx('Assignment') },
@@ -64,16 +69,54 @@ const KINDS = [
 ];
 
 const eventKind = (e: CalEvent) => (e.kind === 'deadline' ? e.detail : e.kind);
+
+// 'colour-by-class': a class keeps one colour wherever it shows.
+const CLASS_COLOURS = ['periwinkle', 'teal', 'orange', 'grape', 'cyan', 'red', 'yellow', 'green'];
+const classStyle = (classId: number | null): CSSProperties =>
+  ({
+    '--chip-bg': `var(--mantine-color-${CLASS_COLOURS[(classId ?? 0) % CLASS_COLOURS.length]}-light)`,
+    '--chip-fg': `var(--mantine-color-${CLASS_COLOURS[(classId ?? 0) % CLASS_COLOURS.length]}-light-color)`,
+  }) as CSSProperties;
+
+function useEventStyle() {
+  const byClass = useVariant('colour-by-class');
+  return (e: CalEvent) => (byClass ? classStyle(e.classId) : chipStyle(eventKind(e)));
+}
 // Final exams and the term's key deadlines read fine on their own; other deadlines get "Due:".
 const eventLabel = (e: CalEvent) => (e.kind === 'deadline' && e.detail !== 'final' && e.detail !== 'key' ? t('Due: {{title}}', { title: e.title }) : e.title);
+// The first day of the week: a Monday, or a Sunday with 'week-starts-sunday'.
 const mondayOf = (day: string) => {
   const d = dayjs(day);
-  return ymd(d.subtract((d.day() + 6) % 7, 'day').toDate());
+  return ymd(d.subtract(isOn('week-starts-sunday') ? d.day() : (d.day() + 6) % 7, 'day').toDate());
 };
 
 // A3 in the layout of the wireframe (A2Team.pdf p. 7).
 // Classes switched off in the calendar's filter. What belongs to no class always shows.
 const HiddenClasses = createContext<number[]>([]);
+
+// 'filter-by-event-kind': kinds switched off, instead of classes.
+const HiddenKinds = createContext<string[]>([]);
+
+const FILTER_KINDS = [
+  { value: 'class', label: tx('Lecture') },
+  { value: 'session', label: tx('Study') },
+  { value: 'task', label: tx('Task') },
+  { value: 'deadline', label: tx('Due') },
+  { value: 'key', label: tx('Key date') },
+];
+
+function KindFilter({ hidden, onChange }: { hidden: string[]; onChange: (hidden: string[]) => void }) {
+  return (
+    <Group gap={6} mb="md" role="group" aria-label="Kinds of event shown on the calendar">
+      {FILTER_KINDS.map((k) => (
+        <Chip key={k.value} size="xs" variant="outline" checked={!hidden.includes(k.value)} onChange={(shown) => onChange(shown ? hidden.filter((other) => other !== k.value) : [...hidden, k.value])}>
+          {t(k.label)}
+        </Chip>
+      ))}
+      <ReqInfo id="cal-filter" />
+    </Group>
+  );
+}
 
 function ClassFilter({ hidden, onChange }: { hidden: number[]; onChange: (hidden: number[]) => void }) {
   const mine = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
@@ -97,8 +140,52 @@ function ClassFilter({ hidden, onChange }: { hidden: number[]; onChange: (hidden
   );
 }
 
+// 'no-calendar-page': nothing here but sending events to the student's own calendar.
+function ExportOnly() {
+  const exportIcs = useAction((tasks: boolean) => rpc.calendar.exportIcs({ tasks }), {
+    success: (r) => (r ? t('Exported {{count}} events. Import the file into Google Calendar.', { count: r.count }) : ''),
+  });
+  return (
+    <>
+      <PageHeader info="nav-calendar" title={t('Calendar')} />
+      <Card padding="lg">
+        <Text mb="md">UniLink doesn't keep a calendar. Send your class times, deadlines and sessions to your own instead.</Text>
+        <Group>
+          <Button leftSection={<IconDownload size={16} />} onClick={() => exportIcs.mutate(false)}>
+            {t('Export for Google Calendar (.ics)')}
+          </Button>
+          <Button variant="default" leftSection={<IconDownload size={16} />} onClick={() => exportIcs.mutate(true)}>
+            {t('Export with my planned tasks (.ics)')}
+          </Button>
+        </Group>
+      </Card>
+    </>
+  );
+}
+
 export function CalendarPage() {
+  const noCalendar = useVariant('no-calendar-page');
+  return noCalendar ? <ExportOnly /> : <FullCalendar />;
+}
+
+function FullCalendar() {
   const navigate = useNavigate();
+  const noSyllabus = useVariant('no-syllabus-import');
+  const professorDates = useVariant('professor-enters-dates');
+  const oneForm = useVariant('one-add-form');
+  const continuous = useVariant('continuous-calendar');
+  const agenda = useVariant('agenda-view');
+  const onlyMonthWeek = useVariant('only-month-week');
+  const hideKeyDates = useVariant('hide-key-dates');
+  const kindFilter = useVariant('filter-by-event-kind');
+  const dayPopup = useVariant('day-popup');
+  const separatePlans = useVariant('calendar-without-plans');
+  const plannerHere = useVariant('planner-in-calendar');
+  const noExportTasks = useVariant('no-export-tasks');
+  const planAfter = useVariant('calendar-first-then-plan');
+  const [dayOpen, setDayOpen] = useState(false);
+  const [hiddenKinds, setHiddenKinds] = useState<string[]>([]);
+  const canImport = !noSyllabus && !professorDates;
   const today = ymd(new Date());
   const [view, setView] = useState<View>('month');
   const [cursor, setCursor] = useState(today);
@@ -106,6 +193,7 @@ export function CalendarPage() {
   const [selected, setSelected] = useState(today);
   const pick = (day: string) => {
     setSelected(day);
+    if (dayPopup) setDayOpen(true);
     // When the list sits below the calendar (narrow windows), bring it into view.
     if (window.innerWidth < 1200) document.getElementById('day-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
@@ -139,7 +227,7 @@ export function CalendarPage() {
     <>
       <PageHeader
         info="calendar-page"
-        title={t('Calendar & Planner')}
+        title={separatePlans ? t('Calendar') : t('Calendar & Planner')}
         actions={
           <>
             <WithInfo id="cal-sync">
@@ -153,7 +241,7 @@ export function CalendarPage() {
                   <Menu.Item leftSection={<IconDownload size={14} />} rightSection={<ReqInfo id="cal-export" />} onClick={() => exportIcs.mutate(false)}>
                     {t('Export for Google Calendar (.ics)')}
                   </Menu.Item>
-                  <Menu.Item leftSection={<IconDownload size={14} />} rightSection={<ReqInfo id="cal-export-tasks" />} onClick={() => exportIcs.mutate(true)}>
+                  <Menu.Item display={noExportTasks ? 'none' : undefined} leftSection={<IconDownload size={14} />} rightSection={<ReqInfo id="cal-export-tasks" />} onClick={() => exportIcs.mutate(true)}>
                     {t('Export with my planned tasks (.ics)')}
                   </Menu.Item>
                   <Menu.Item leftSection={<IconUpload size={14} />} rightSection={<ReqInfo id="cal-import" />} onClick={() => importIcs.mutate()}>
@@ -162,6 +250,13 @@ export function CalendarPage() {
                 </Menu.Dropdown>
               </Menu>
             </WithInfo>
+            {oneForm ? (
+              <WithInfo id="cal-add">
+                <Button size="md" leftSection={<IconPlus size={18} />} onClick={() => setEditing('new')}>
+                  {t('Add event/assignment')}
+                </Button>
+              </WithInfo>
+            ) : (
             <WithInfo id="cal-add">
               <Menu position="bottom-end">
                 <Menu.Target>
@@ -171,22 +266,24 @@ export function CalendarPage() {
                 </Menu.Target>
                 <Menu.Dropdown>
                   <Menu.Item rightSection={<ReqInfo id="deadline-add" />} onClick={() => setEditing('new')}>{t('Deadline, exam or quiz')}</Menu.Item>
-                  <Menu.Item rightSection={<ReqInfo id="cal-add-plan" />} onClick={() => navigate('/planner?new=1')}>{t('Assignment to plan out')}</Menu.Item>
-                  <Menu.Item rightSection={<ReqInfo id="syllabus-import" />} onClick={() => setImporting(true)}>{t('Dates from a syllabus')}</Menu.Item>
+                  {!separatePlans && !planAfter && <Menu.Item rightSection={<ReqInfo id="cal-add-plan" />} onClick={() => navigate('/planner?new=1')}>{t('Assignment to plan out')}</Menu.Item>}
+                  {canImport && <Menu.Item rightSection={<ReqInfo id="syllabus-import" />} onClick={() => setImporting(true)}>{t('Dates from a syllabus')}</Menu.Item>}
                 </Menu.Dropdown>
               </Menu>
             </WithInfo>
+            )}
           </>
         }
       />
 
-      <HiddenClasses.Provider value={hidden}>
+      <HiddenClasses.Provider value={kindFilter ? [] : hidden}>
+      <HiddenKinds.Provider value={kindFilter ? hiddenKinds : []}>
       <Grid gap="lg" columns={24}>
         <Grid.Col span={{ base: 24, lg: 17 }}>
           <Card padding="md">
             <Group justify="space-between" mb="md">
               <Group gap={4}>
-                {view !== 'semester' && view !== 'key' && (
+                {view !== 'semester' && view !== 'key' && view !== 'agenda' && !(continuous && view === 'month') && (
                   <ActionIcon variant="subtle" onClick={() => step(-1)} aria-label={t('Previous')}>
                     <IconChevronLeft size={20} />
                   </ActionIcon>
@@ -194,7 +291,7 @@ export function CalendarPage() {
                 <Title order={3} miw={190} ta="center">
                   {view === 'key' ? t('Key dates and exams') : title}
                 </Title>
-                {view !== 'semester' && view !== 'key' && (
+                {view !== 'semester' && view !== 'key' && view !== 'agenda' && !(continuous && view === 'month') && (
                   <ActionIcon variant="subtle" onClick={() => step(1)} aria-label={t('Next')}>
                     <IconChevronRight size={20} />
                   </ActionIcon>
@@ -221,14 +318,29 @@ export function CalendarPage() {
                   data={[
                     { value: 'month', label: t('Month') },
                     { value: 'week', label: t('Week') },
-                    { value: 'semester', label: t('Semester') },
-                    { value: 'key', label: t('Key dates') },
+                    ...(agenda ? [{ value: 'agenda', label: 'Agenda' }] : []),
+                    ...(onlyMonthWeek ? [] : [{ value: 'semester', label: t('Semester') }]),
+                    ...(onlyMonthWeek || hideKeyDates ? [] : [{ value: 'key', label: t('Key dates') }]),
                   ]}
                 />
               </WithInfo>
             </Group>
-            {view !== 'key' && <ClassFilter hidden={hidden} onChange={setHidden} />}
-            {view === 'month' && <MonthView cursor={cursor} today={today} selected={selected} onSelect={pick} />}
+            {view !== 'key' && !kindFilter && <ClassFilter hidden={hidden} onChange={setHidden} />}
+            {view !== 'key' && kindFilter && <KindFilter hidden={hiddenKinds} onChange={setHiddenKinds} />}
+            {view === 'month' && !continuous && <MonthView cursor={cursor} today={today} selected={selected} onSelect={pick} />}
+            {view === 'month' && continuous && (
+              <Box style={{ maxHeight: 680, overflowY: 'auto' }}>
+                {Array.from({ length: 12 }, (_, n) => ymd(dayjs(today).startOf('month').add(n - 1, 'month').toDate())).map((month) => (
+                  <Box key={month} mb="lg">
+                    <Text fw={800} mb={4}>
+                      {dayjs(month).format('MMMM YYYY')}
+                    </Text>
+                    <MonthView cursor={month} today={today} selected={selected} onSelect={pick} />
+                  </Box>
+                ))}
+              </Box>
+            )}
+            {view === 'agenda' && <AgendaView today={today} />}
             {view === 'week' && <WeekView start={mondayOf(cursor)} today={today} selected={selected} onSelect={pick} />}
             {view === 'semester' && <SemesterView />}
             {view === 'key' && <KeyDatesView />}
@@ -237,14 +349,52 @@ export function CalendarPage() {
         <Grid.Col span={{ base: 24, lg: 7 }}>
           <Upcoming onViewAll={() => setShowAll(true)} />
         </Grid.Col>
-        <Grid.Col span={24}>
-          <DayList day={selected} today={today} />
-        </Grid.Col>
+        {!dayPopup && (
+          <Grid.Col span={24}>
+            <DayList day={selected} today={today} />
+          </Grid.Col>
+        )}
+        {plannerHere && (
+          <Grid.Col span={24}>
+            <PlannerPage />
+          </Grid.Col>
+        )}
       </Grid>
+      {dayPopup && (
+        <Modal opened={dayOpen} onClose={() => setDayOpen(false)} title={dayjs(selected).format(t('dddd, MMMM D'))} size="lg" padding={0}>
+          <DayList day={selected} today={today} />
+        </Modal>
+      )}
+      </HiddenKinds.Provider>
       </HiddenClasses.Provider>
 
       <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing === 'new' ? <WithInfo id="deadline-add">{t('Add deadline')}</WithInfo> : <WithInfo id="deadline-manage">{t('Edit deadline')}</WithInfo>}>
-        {editing && <DeadlineForm key={editing === 'new' ? 'new' : editing.id} existing={editing === 'new' ? null : editing} onDone={() => setEditing(null)} />}
+        {editing && (
+          <DeadlineForm
+            key={editing === 'new' ? 'new' : editing.id}
+            existing={editing === 'new' ? null : editing}
+            onDone={(saved) => {
+              setEditing(null);
+              if (planAfter && saved) {
+                modals.openConfirmModal({
+                  title: <WithInfo id="cal-add-plan">Plan it out?</WithInfo>,
+                  children: <Text size="sm">It's on your calendar. Want to split it into tasks too?</Text>,
+                  labels: { confirm: t('Plan it'), cancel: 'Not now' },
+                  onConfirm: () => navigate(`/planner?new=1&from=deadline-${saved}`),
+                });
+              }
+            }}
+            onPickOther={
+              oneForm
+                ? (choice) => {
+                    setEditing(null);
+                    if (choice === 'plan') navigate('/planner?new=1');
+                    else setImporting(true);
+                  }
+                : undefined
+            }
+          />
+        )}
       </Modal>
       <Modal opened={importing} onClose={() => setImporting(false)} title={<WithInfo id="syllabus-import">{t('Import dates from a syllabus')}</WithInfo>} size="xl">
         {importing && <SyllabusImport onDone={() => setImporting(false)} />}
@@ -258,11 +408,12 @@ export function CalendarPage() {
 
 function useRange(from: string, to: string) {
   const hidden = useContext(HiddenClasses);
+  const hiddenKinds = useContext(HiddenKinds);
   return useQuery({
     queryKey: ['calendar', from, to],
     queryFn: () => rpc.calendar.range({ from, to }),
     placeholderData: keepPreviousData,
-    select: (events) => events.filter((e) => e.classId == null || !hidden.includes(e.classId)),
+    select: (events) => events.filter((e) => (e.classId == null || !hidden.includes(e.classId)) && !hiddenKinds.includes(e.kind)),
   });
 }
 
@@ -290,11 +441,23 @@ function MonthView({ cursor, today, selected, onSelect }: { cursor: string } & D
   const end = addDays(mondayOf(ymd(dayjs(cursor).endOf('month').toDate())), 6);
   const days = eachDay(start, end);
   const events = useRange(start, end);
+  const styleOf = useEventStyle();
+  const byClass = useVariant('colour-by-class');
+  const canDrag = useVariant('drag-tasks');
+  const moveTask = useAction((v: { taskId: number; day: string }) => rpc.planner.moveTask(v));
+  const dragTask = (e: CalEvent) => ({ draggable: true, onDragStart: (event: DragEvent) => event.dataTransfer.setData('text/unilink-task', e.key.slice(5)) });
+  const dropOn = (day: string) => ({
+    onDragOver: (event: DragEvent) => event.preventDefault(),
+    onDrop: (event: DragEvent) => {
+      const id = Number(event.dataTransfer.getData('text/unilink-task'));
+      if (id) moveTask.mutate({ taskId: id, day });
+    },
+  });
 
   return (
     <>
       <div className="month-grid" style={{ borderTop: 'none', borderLeft: 'none' }}>
-        {[1, 2, 3, 4, 5, 6, 0].map((i) => dayjs().day(i).format('ddd')).map((d) => (
+        {(isOn('week-starts-sunday') ? [0, 1, 2, 3, 4, 5, 6] : [1, 2, 3, 4, 5, 6, 0]).map((i) => dayjs().day(i).format('ddd')).map((d) => (
           <Text key={d} size="xs" fw={800} c="dimmed" tt="uppercase" pb={4} pl={6}>
             {d}
           </Text>
@@ -312,6 +475,7 @@ function MonthView({ cursor, today, selected, onSelect }: { cursor: string } & D
               data-today={day === today || undefined}
               data-selected={day === selected || undefined}
               {...dayButton(day, onSelect)}
+              {...(canDrag ? dropOn(day) : {})}
             >
               <Group justify="space-between" gap={2}>
                 <Text size="sm" fw={700} className="day-number">
@@ -326,13 +490,13 @@ function MonthView({ cursor, today, selected, onSelect }: { cursor: string } & D
               {phone ? (
                 <div className="dots">
                   {dayEvents.slice(0, 8).map((e) => (
-                    <span key={e.key} className="dot" style={chipStyle(eventKind(e))} data-done={e.done || undefined} />
+                    <span key={e.key} className="dot" style={styleOf(e)} data-done={e.done || undefined} />
                   ))}
                 </div>
               ) : (
                 dayEvents.slice(0, 3).map((e) => (
                   <Tooltip key={e.key} label={[eventLabel(e), e.classLabel, e.end ? `${fmtTime(e.start)}–${fmtTime(e.end)}` : !e.allDay && fmtTime(e.start)].filter(Boolean).join(' · ')}>
-                    <span className="chip" style={chipStyle(eventKind(e))} data-done={e.done || undefined}>
+                    <span className="chip" style={styleOf(e)} data-done={e.done || undefined} {...(canDrag && e.kind === 'task' ? dragTask(e) : {})}>
                       {e.kind === 'deadline' ? e.title : e.title.split(' · ')[0]}
                     </span>
                   </Tooltip>
@@ -348,7 +512,7 @@ function MonthView({ cursor, today, selected, onSelect }: { cursor: string } & D
         })}
       </div>
       <Group gap="xs" mt="sm">
-        {['session', 'task', 'assignment', 'exam', 'quiz', 'graded', 'final', 'key'].map((k) => (
+        {!byClass && ['session', 'task', 'assignment', 'exam', 'quiz', 'graded', 'final', 'key'].map((k) => (
           <KindBadge key={k} kind={k} />
         ))}
         <Text size="xs" c="dimmed">
@@ -396,8 +560,39 @@ function WeekView({ start, today, selected, onSelect }: { start: string } & DayP
   );
 }
 
+// 'agenda-view': what's coming, in order.
+function AgendaView({ today }: { today: string }) {
+  const events = useRange(today, addDays(today, 60));
+  if (events.isPending) return <Loading />;
+  const shown = (events.data ?? []).filter((e) => e.kind !== 'class');
+  if (!shown.length) return <Empty>{t('Nothing on this day.')}</Empty>;
+  const days = [...new Set(shown.map((e) => ymd(e.start)))].sort();
+  return (
+    <Stack gap="sm">
+      {days.map((day) => (
+        <div key={day}>
+          <Text size="sm" fw={800}>
+            {dayjs(day).format(t('dddd, MMMM D'))} <ReqInfo id="cal-views" />
+          </Text>
+          {shown
+            .filter((e) => ymd(e.start) === day)
+            .map((e) => (
+              <Text key={e.key} size="sm" td={e.done ? 'line-through' : undefined}>
+                {e.allDay ? '' : `${fmtTime(e.start)} · `}
+                {eventLabel(e)}
+                {e.classLabel && e.classLabel !== e.title ? ` · ${e.classLabel}` : ''}
+              </Text>
+            ))}
+        </div>
+      ))}
+    </Stack>
+  );
+}
+
 // The whole term at a glance: deadlines, exams and sessions week by week.
 function SemesterView() {
+  const printable = useVariant('print-semester');
+  const styleOf = useEventStyle();
   const { start, end } = termWithExams(CURRENT_TERM) ?? { start: ymd(new Date()), end: addDays(ymd(new Date()), 120) };
   const events = useRange(start, end);
   if (events.isPending) return <Loading />;
@@ -415,6 +610,13 @@ function SemesterView() {
 
   return (
     <Stack gap="sm">
+      {printable && (
+        <WithInfo id="cal-semester">
+          <Button size="xs" variant="default" w="fit-content" onClick={() => window.print()}>
+            Print this term
+          </Button>
+        </WithInfo>
+      )}
       {weeks.map((week) => (
         <Group key={week} align="flex-start" wrap="nowrap" gap="md">
           <div style={{ flex: 'none', width: 110 }}>
@@ -428,7 +630,7 @@ function SemesterView() {
               .filter((e) => mondayOf(ymd(e.start)) === week)
               .map((e) => (
                 <Tooltip key={e.key} label={`${fmtDateTime(e.start)}${e.classLabel ? ` · ${e.classLabel}` : ''}`}>
-                  <span className="chip" style={{ ...chipStyle(eventKind(e)), display: 'inline-block', marginTop: 0 }} data-done={e.done || undefined}>
+                  <span className="chip" style={{ ...styleOf(e), display: 'inline-block', marginTop: 0 }} data-done={e.done || undefined}>
                     {e.classLabel && e.classLabel !== e.title ? `${e.classLabel}: ` : ''}
                     {e.title}
                   </span>
@@ -458,6 +660,13 @@ function BusyWeek({ week, due }: { week: string; due: { weight?: number }[] }) {
 
 // A3: the term's key dates and the final exam schedule (shared/keyDates.ts).
 function KeyDatesView() {
+  const linkOfficial = useVariant('link-official-dates');
+  const onlyOfficial = useVariant('only-official-dates');
+  const onlyUpcoming = useVariant('only-upcoming-dates');
+  const exactConflicts = useVariant('exact-exam-conflicts');
+  const conflictRules = useVariant('exam-conflict-rules');
+  const onlyMine = useVariant('only-my-exams');
+  const manualFinals = useVariant('manual-final-exams');
   const today = ymd(new Date());
   const [termName, setTermName] = useState<string>(CURRENT_TERM);
   const [search, setSearch] = useState('');
@@ -467,13 +676,13 @@ function KeyDatesView() {
     queryFn: () => rpc.catalogue.search({ query: '', term: termName, level: null }),
   });
 
-  const dates = keyDatesFor(termName);
+  const dates = keyDatesFor(termName).filter((d) => (!onlyOfficial || !d.approximate) && (!onlyUpcoming || (d.end ?? d.date) >= today));
   const next = dates.find((d) => (d.end ?? d.date) >= today);
   const titles = new Map((catalogue.data ?? []).map((c) => [`${c.subject} ${c.number}`, c.title]));
   const myCourses = new Set((mine.data ?? []).filter((c) => c.term === termName).map((c) => `${c.subject} ${c.number}`));
   const exams = FINAL_EXAMS.filter((e) => e.term === termName).sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`));
   const myExams = exams.filter((e) => myCourses.has(e.course));
-  const conflicts = examConflicts(myExams);
+  const conflicts = new Map([...examConflicts(myExams)].filter(([, conflict]) => !exactConflicts || conflict.overlap));
   const query = search.trim().toLowerCase().replace(/\s+/g, '');
   const listed = exams.filter((e) => !query || `${e.course}${titles.get(e.course) ?? ''}`.toLowerCase().replace(/\s+/g, '').includes(query));
   const day = (date: string) => dayjs(date).format(t('ddd, MMM D'));
@@ -488,7 +697,16 @@ function KeyDatesView() {
         <Title order={4} mb="xs">
           {t('Key dates')} <ReqInfo id="key-dates" />
         </Title>
-        {dates.map((d) => (
+        {linkOfficial && (
+          <Text size="sm">
+            McGill keeps these up to date on{' '}
+            <a href="https://www.mcgill.ca/importantdates/" target="_blank" rel="noopener noreferrer">
+              its official dates page
+            </a>
+            .
+          </Text>
+        )}
+        {!linkOfficial && dates.map((d) => (
           <Group
             key={`${d.title}-${d.date}`}
             py={6}
@@ -521,6 +739,11 @@ function KeyDatesView() {
         ))}
       </div>
 
+      {manualFinals ? (
+        <Text size="sm" c="dimmed">
+          Add your final exams by hand, like any exam date. <ReqInfo id="final-exam" />
+        </Text>
+      ) : (
       <div>
         <Title order={4} mb="xs">
           {t('Final exam schedule')} <ReqInfo id="final-exam" />
@@ -559,8 +782,18 @@ function KeyDatesView() {
                     </Text>
                   </Group>
                 ))}
+                {conflictRules && conflicts.size > 0 && (
+                  <Text size="xs" mt="xs">
+                    Two exams at once or three in a day can be changed.{' '}
+                    <a href="https://www.mcgill.ca/exams/" target="_blank" rel="noopener noreferrer">
+                      See McGill's rules and how to ask
+                    </a>
+                    .
+                  </Text>
+                )}
               </Card>
             )}
+            {!onlyMine && <>
             <WithInfo id="final-search" block>
               <TextInput
                 placeholder={t('Search by course code or title')}
@@ -603,20 +836,25 @@ function KeyDatesView() {
                 </Table.Tbody>
               </Table>
             </Table.ScrollContainer>
+            </>}
           </Stack>
         )}
       </div>
+      )}
     </Stack>
   );
 }
 
 function Upcoming({ onViewAll }: { onViewAll: () => void }) {
   const hidden = useContext(HiddenClasses);
-  const upcoming = useQuery({ queryKey: ['calendar', 'upcoming', 7], queryFn: () => rpc.calendar.upcoming({ days: 7 }) });
+  const chooseLength = useVariant('choose-upcoming-length');
+  const [chosenDays, setChosenDays] = useLocalStorage<string>({ key: 'unilink-calendar-upcoming-days', defaultValue: '14' });
+  const days = chooseLength ? Number(chosenDays) : 7;
+  const upcoming = useQuery({ queryKey: ['calendar', 'upcoming', days], queryFn: () => rpc.calendar.upcoming({ days }) });
   const sessions = useQuery({ queryKey: ['studySessions', 'mine'], queryFn: () => rpc.studySessions.mine() });
   const remove = useAction((id: number) => rpc.calendar.removeDeadline({ id }), { success: 'Deadline removed' });
 
-  const soon = dayjs().add(7, 'day');
+  const soon = dayjs().add(days, 'day');
   const items = [
     ...(upcoming.data ?? []).filter((e) => e.classId == null || !hidden.includes(e.classId)).map((e) => ({ key: e.key, title: e.title, sub: e.classLabel, when: e.start, end: null as Date | null, kind: eventKind(e), deadlineId: e.addedBy == null ? e.deadlineId : null, addedBy: e.addedBy })),
     ...(sessions.data ?? [])
@@ -627,8 +865,13 @@ function Upcoming({ onViewAll }: { onViewAll: () => void }) {
   return (
     <Card padding={0} h="100%">
       <Text fw={800} size="lg" className="display" px="md" py="sm" style={{ borderBottom: '1.5px solid var(--ul-border)' }}>
-        {t('Upcoming (next 7 days)')} <ReqInfo id="cal-upcoming" />
+        {chooseLength ? `Upcoming (next ${days} days)` : t('Upcoming (next 7 days)')} <ReqInfo id="cal-upcoming" />
       </Text>
+      {chooseLength && (
+        <Box px="md" pt="xs">
+          <SegmentedControl size="xs" value={chosenDays} onChange={setChosenDays} data={['7', '14', '30']} aria-label="Days ahead" />
+        </Box>
+      )}
       {upcoming.isPending ? (
         <Loading />
       ) : items.length ? (
@@ -660,7 +903,7 @@ function Upcoming({ onViewAll }: { onViewAll: () => void }) {
           </Group>
         ))
       ) : (
-        <Empty>{t('Nothing in the next 7 days.')}</Empty>
+        <Empty>{chooseLength ? `Nothing in the next ${days} days.` : t('Nothing in the next 7 days.')}</Empty>
       )}
       <Box p="sm">
         <WithInfo id="cal-all-deadlines" block>
@@ -679,6 +922,10 @@ function DayList({ day, today }: { day: string; today: string }) {
   const events = useRange(day, day);
   const setTask = useAction((v: { id: number; done: boolean }) => rpc.planner.setDone({ taskId: v.id, done: v.done }));
   const setDeadline = useAction((v: { id: number; done: boolean }) => rpc.calendar.setDeadlineDone(v));
+  const noCheck = useVariant('no-check-on-calendar');
+  const colourOnly = useVariant('colour-only-event-kind');
+  const oneOffChanges = useVariant('cancel-one-lecture');
+  const toggleLecture = useAction((v: { meetingId: number; classId: number; day: string }) => rpc.calendar.toggleLecture(v));
 
   const duration = (e: CalEvent) => {
     if (!e.end) return null;
@@ -698,6 +945,7 @@ function DayList({ day, today }: { day: string; today: string }) {
           const taskId = e.kind === 'task' ? Number(e.key.slice(5)) : null;
           return (
             <Group key={e.key} px="md" py="sm" wrap="nowrap" style={{ borderBottom: '1.5px solid var(--ul-border)' }}>
+              {!noCheck && (
               <WithInfo id="cal-check">
                 <Checkbox
                   disabled={taskId == null && e.deadlineId == null}
@@ -710,6 +958,7 @@ function DayList({ day, today }: { day: string; today: string }) {
                   aria-label={t('Done: {{title}}', { title: e.title })}
                 />
               </WithInfo>
+              )}
               <div style={{ width: 64 }}>
                 <Text size="sm" fw={800}>
                   {e.allDay ? t('Any time') : fmtTime(e.start)}
@@ -729,10 +978,19 @@ function DayList({ day, today }: { day: string; today: string }) {
                   </Text>
                 )}
               </div>
-              <Badge variant="outline" color={kindColor(eventKind(e))} size="lg" visibleFrom="xs">
-                {t(PILL[e.detail === 'final' ? 'final' : e.kind] ?? e.kind)}
-              </Badge>
-              <ReqInfo id="cal-event-kind" />
+              {oneOffChanges && e.kind === 'class' && e.classId != null && (
+                <WithInfo id="class-time-row">
+                  <Button size="compact-xs" variant="subtle" onClick={() => toggleLecture.mutate({ meetingId: Number(e.key.split('-')[1]), classId: e.classId!, day })}>
+                    {e.detail === 'cancelled' ? 'Put it back' : 'Cancel this lecture'}
+                  </Button>
+                </WithInfo>
+              )}
+              {!colourOnly && (
+                <Badge variant="outline" color={kindColor(eventKind(e))} size="lg" visibleFrom="xs">
+                  {t(PILL[e.detail === 'final' ? 'final' : e.kind] ?? e.kind)}
+                </Badge>
+              )}
+              {!colourOnly && <ReqInfo id="cal-event-kind" />}
             </Group>
           );
         })
@@ -746,6 +1004,9 @@ function DayList({ day, today }: { day: string; today: string }) {
 function AllDeadlines({ onEdit }: { onEdit: (d: Deadline) => void }) {
   const deadlines = useQuery({ queryKey: ['calendar', 'deadlines'], queryFn: () => rpc.calendar.deadlines() });
   const remove = useAction((id: number) => rpc.calendar.removeDeadline({ id }), { success: 'Deadline removed' });
+  const approve = useAction((id: number) => rpc.calendar.approveDeadline({ id }));
+  const anyoneFixes = useVariant('anyone-fixes-deadlines');
+  const showCounts = useVariant('professor-sees-checkoffs');
   if (deadlines.isPending) return <Loading />;
   if (!deadlines.data?.length) return <Empty>{t('No deadlines added yet.')}</Empty>;
   return (
@@ -758,7 +1019,23 @@ function AllDeadlines({ onEdit }: { onEdit: (d: Deadline) => void }) {
           {deadlines.data.map((d) => (
             <Table.Tr key={d.id} opacity={d.done || d.dueAt < new Date() ? 0.5 : 1}>
               <Table.Td fw={600} td={d.done ? 'line-through' : undefined}>
-                {d.title}
+                {/^https?:\/\//.test(d.notes) ? (
+                  <a href={d.notes} target="_blank" rel="noopener noreferrer">
+                    {d.title}
+                  </a>
+                ) : (
+                  d.title
+                )}
+                {d.pending && (
+                  <Text size="xs" c="orange">
+                    Waiting for a classmate's approval
+                  </Text>
+                )}
+                {showCounts && d.doneCount > 0 && (
+                  <Text size="xs" c="dimmed">
+                    {d.doneCount} checked off <ReqInfo id="deadline-done" />
+                  </Text>
+                )}
               </Table.Td>
               <Table.Td>
                 {d.classLabel ?? '—'}
@@ -773,6 +1050,16 @@ function AllDeadlines({ onEdit }: { onEdit: (d: Deadline) => void }) {
               </Table.Td>
               <Table.Td>{fmtDateTime(d.dueAt)}</Table.Td>
               <Table.Td>
+                {d.pending && !d.mine && (
+                  <Button size="compact-xs" onClick={() => approve.mutate(d.id)}>
+                    Approve
+                  </Button>
+                )}
+                {!d.mine && anyoneFixes && d.classId != null && (
+                  <ActionIcon variant="subtle" onClick={() => onEdit(d)} aria-label={t('Edit')}>
+                    <IconPencil size={16} />
+                  </ActionIcon>
+                )}
                 {d.mine && (
                   <Group gap={4} justify="flex-end" wrap="nowrap">
                     <ActionIcon variant="subtle" onClick={() => onEdit(d)} aria-label={t('Edit')}>
@@ -820,13 +1107,16 @@ export function SyllabusImport({ onDone, initialClassId = null }: { onDone: () =
       ? (scheme.data ?? []).some((a) => same(a.name, i.title))
       : (deadlines.data ?? []).some((d) => d.classId === classId && same(d.title, i.title) && ymd(d.dueAt) === ymd(i.dueAt));
   const picked = found.filter((item, n) => !unchecked.has(n) && !already(item));
+  const straightAway = useVariant('add-found-dates-right-away');
+  const undo = useUndo();
 
   const add = useAction(
     async () => {
       const failed: string[] = [];
+      const added: number[] = [];
       for (const item of picked) {
         try {
-          const deadline = () => rpc.calendar.addDeadline({ classId, kind: item.kind, title: item.title, dueAt: item.dueAt, notes: '' });
+          const deadline = () => rpc.calendar.addDeadline({ classId, kind: item.kind, title: item.title, dueAt: item.dueAt, notes: '' }).then((row) => void added.push(row.id));
           if (item.weight == null) await deadline();
           else {
             // Where a professor runs the scheme, the date still goes in as a class deadline.
@@ -838,6 +1128,11 @@ export function SyllabusImport({ onDone, initialClassId = null }: { onDone: () =
         } catch {
           failed.push(item.title);
         }
+      }
+      if (straightAway && added.length) {
+        undo(`Added ${added.length} dates.`, async () => {
+          for (const id of added) await rpc.calendar.removeDeadline({ id });
+        });
       }
       return { added: picked.length - failed.length, failed };
     },
@@ -890,6 +1185,7 @@ export function SyllabusImport({ onDone, initialClassId = null }: { onDone: () =
               <Group key={n} gap="sm" wrap="nowrap" align="flex-start">
                 <Checkbox
                   mt={2}
+                  display={straightAway ? 'none' : undefined}
                   checked={!there && !unchecked.has(n)}
                   disabled={there}
                   onChange={(e) =>
@@ -953,7 +1249,16 @@ export function ClassSelect({ value, onChange, label = t('Class'), info }: { val
   );
 }
 
-function DeadlineForm({ existing, onDone }: { existing: Deadline | null; onDone: () => void }) {
+function DeadlineForm({ existing, onDone, onPickOther }: { existing: Deadline | null; onDone: (savedId?: number) => void; onPickOther?: (choice: 'plan' | 'syllabus') => void }) {
+  const labsAndReadings = useVariant('labs-and-readings');
+  const askToShare = useVariant('ask-to-share-deadline');
+  const dateOnly = useVariant('date-without-time');
+  const linkNotNotes = useVariant('no-deadline-notes');
+  const personal = useVariant('personal-deadlines');
+  const noSyllabus = useVariant('no-syllabus-import');
+  const professorDates = useVariant('professor-enters-dates');
+  const [shareIt, setShareIt] = useState(true);
+  const [noTime, setNoTime] = useState(existing?.noTime ?? false);
   const form = useForm({
     initialValues: {
       title: existing?.title ?? '',
@@ -969,11 +1274,15 @@ function DeadlineForm({ existing, onDone }: { existing: Deadline | null; onDone:
   });
   const save = useAction(
     async (v: typeof form.values) => {
-      const fields = { ...v, dueAt: toDate(v.dueAt)! };
-      if (existing) await rpc.calendar.updateDeadline({ id: existing.id, ...fields });
-      else await rpc.calendar.addDeadline(fields);
+      const due = toDate(v.dueAt)!;
+      const fields = { ...v, dueAt: noTime ? dayjs(due).hour(23).minute(59).second(0).toDate() : due, shared: shareIt, noTime };
+      if (existing) {
+        await rpc.calendar.updateDeadline({ id: existing.id, ...fields });
+        return undefined;
+      }
+      return (await rpc.calendar.addDeadline(fields)).id;
     },
-    { success: 'Deadline saved', onSuccess: onDone },
+    { success: 'Deadline saved', onSuccess: (id) => onDone(id) },
   );
 
   return (
@@ -981,16 +1290,40 @@ function DeadlineForm({ existing, onDone }: { existing: Deadline | null; onDone:
       <Stack>
         <TextInput label={<WithInfo id="deadline-add">{t('Title')}</WithInfo>} placeholder={t('Assignment 3')} data-autofocus {...form.getInputProps('title')} />
         <Group grow>
-          <Select label={<WithInfo id="deadline-kind">{t('Type')}</WithInfo>} data={KINDS.map((k) => ({ ...k, label: t(k.label) }))} allowDeselect={false} {...form.getInputProps('kind')} />
+          <Select
+            label={<WithInfo id="deadline-kind">{t('Type')}</WithInfo>}
+            data={[
+              ...KINDS.map((k) => ({ ...k, label: t(k.label) })),
+              ...(labsAndReadings ? [{ value: 'lab', label: 'Lab' }, { value: 'reading', label: 'Reading' }] : []),
+              ...(onPickOther ? [{ value: 'plan', label: t('Assignment to plan out') }, ...(!noSyllabus && !professorDates ? [{ value: 'syllabus', label: t('Dates from a syllabus') }] : [])] : []),
+            ]}
+            allowDeselect={false}
+            {...form.getInputProps('kind')}
+            onChange={(v) => {
+              if (v === 'plan' || v === 'syllabus') onPickOther?.(v);
+              else if (v) form.setFieldValue('kind', v as Deadline['kind']);
+            }}
+          />
           <DateTimePicker label={<WithInfo id="deadline-due">{t('Due')}</WithInfo>} valueFormat="ddd D MMM YYYY, HH:mm" {...form.getInputProps('dueAt')} />
         </Group>
         <ClassSelect info="deadline-class" value={form.values.classId} onChange={(v) => form.setFieldValue('classId', v)} />
         <Text size="xs" c="dimmed" mt={-8}>
-          {form.values.classId
-            ? t('Everyone in this section will see it on their calendar.')
-            : t('With no class, only you see it.')} <ReqInfo id="deadline-shared" />
+          {personal
+            ? 'Only you see it.'
+            : askToShare
+              ? 'You choose who sees it below.'
+              : form.values.classId
+                ? t('Everyone in this section will see it on their calendar.')
+                : t('With no class, only you see it.')}{' '}
+          <ReqInfo id="deadline-shared" />
         </Text>
-        <Textarea label={<WithInfo id="deadline-notes">{t('Notes')}</WithInfo>} autosize minRows={2} {...form.getInputProps('notes')} />
+        {askToShare && <Checkbox label="Share it with the section" description="With no class, only you see it either way." disabled={!form.values.classId} checked={shareIt && !!form.values.classId} onChange={(e) => setShareIt(e.currentTarget.checked)} />}
+        {dateOnly && <Checkbox label={<WithInfo id="deadline-due">No specific time</WithInfo>} checked={noTime} onChange={(e) => setNoTime(e.currentTarget.checked)} />}
+        {linkNotNotes ? (
+          <TextInput label={<WithInfo id="deadline-notes">Link to the assignment</WithInfo>} placeholder="https://mycourses2.mcgill.ca/…" {...form.getInputProps('notes')} />
+        ) : (
+          <Textarea label={<WithInfo id="deadline-notes">{t('Notes')}</WithInfo>} autosize minRows={2} {...form.getInputProps('notes')} />
+        )}
         <Group justify="flex-end">
           <Button type="submit" loading={save.isPending}>
             {t('Save')}

@@ -1,10 +1,11 @@
-import type { CSSProperties, ReactNode } from 'react';
-import { Anchor, Badge, Breadcrumbs, Card, Center, Group, Loader, Stack, Text, ThemeIcon, Title } from '@mantine/core';
+import { type CSSProperties, type MouseEvent, type ReactNode, useState } from 'react';
+import { Anchor, Badge, Breadcrumbs, Card, Center, Group, Loader, Stack, Text, ThemeIcon, Title, UnstyledButton } from '@mantine/core';
 import { IconAlertTriangle, IconMoodEmpty } from '@tabler/icons-react';
 import { Link } from 'react-router';
 import { t, tx } from '../lib/i18n';
 import { KIND_COLORS } from '../theme';
 import type { ReqTopicId } from '../lib/reqTopics';
+import { useVariant } from '../lib/variants';
 import { ReqInfo } from './ReqInfo';
 
 export function PageHeader({
@@ -140,7 +141,8 @@ export function KindBadge({ kind }: { kind: string }) {
 
 // S1: a section whose shared class times overlap classes the student is already in.
 export function ClashNote({ codes }: { codes: string[] }) {
-  if (!codes.length) return null;
+  const hidden = useVariant('no-clash-notes');
+  if (hidden || !codes.length) return null;
   return (
     <Group gap={4} wrap="nowrap" c="orange">
       <IconAlertTriangle size={12} style={{ flexShrink: 0 }} />
@@ -149,5 +151,20 @@ export function ClashNote({ codes }: { codes: string[] }) {
       </Text>
       <ReqInfo id="clash-note" />
     </Group>
+  );
+}
+
+// 'gpa-hidden': a number stays covered until it's clicked.
+export function Covered({ children }: { children: ReactNode }) {
+  const hides = useVariant('gpa-hidden');
+  const [shown, setShown] = useState(false);
+  if (!hides || shown) return <>{children}</>;
+  return (
+    <UnstyledButton component="span" fw={700} aria-label="Show this" onClick={(e: MouseEvent) => {
+      e.stopPropagation();
+      setShown(true);
+    }}>
+      ••••
+    </UnstyledButton>
   );
 }

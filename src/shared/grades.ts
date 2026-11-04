@@ -13,8 +13,27 @@ export const MCGILL_SCALE = [
 
 export type Letter = (typeof MCGILL_SCALE)[number]['letter'];
 
-export function letterFor(percent: number) {
-  return MCGILL_SCALE.find((g) => percent >= g.min) ?? MCGILL_SCALE[MCGILL_SCALE.length - 1];
+export type GradeScale = readonly { letter: string; min: number; gpa: number }[];
+
+export function letterFor(percent: number, scale: GradeScale = MCGILL_SCALE) {
+  return scale.find((g) => percent >= g.min) ?? scale[scale.length - 1];
+}
+
+// 'course-cutoffs': McGill's scale, with a course's own minimum for any letter it sets.
+export function scaleWith(cutoffs: Record<string, number> | null | undefined): GradeScale {
+  if (!cutoffs) return MCGILL_SCALE;
+  return MCGILL_SCALE.map((g) => ({ ...g, min: cutoffs[g.letter] ?? g.min })).sort((a, b) => b.min - a.min);
+}
+
+// 'drop-lowest': the lowest mark so far doesn't count, and the others share its weight.
+export function dropLowest<T extends GradedItem>(items: T[]): T[] {
+  const graded = items.filter((i) => i.score != null);
+  if (graded.length < 2) return items;
+  const lowest = graded.reduce((low, i) => (i.score! < low.score! ? i : low));
+  const total = items.reduce((sum, i) => sum + i.weight, 0);
+  const rest = total - lowest.weight;
+  if (rest <= 0) return items;
+  return items.map((i) => (i === lowest ? { ...i, weight: 0 } : { ...i, weight: (i.weight * total) / rest }));
 }
 
 export function minimumFor(letter: string): number {
@@ -85,10 +104,10 @@ export function finalIfRemainingAverages(items: GradedItem[], average: number): 
     .reduce((best, s) => (s.final > best.final ? s : best));
 }
 
-function summarizeScheme(items: GradedItem[], scheme: number): GradeSummary {
+function summarizeScheme(items: GradedItem[], scheme: number, scale: GradeScale): GradeSummary {
   const { totalWeight, gradedWeight, earned, remainingWeight } = totals(items);
 
-  const requirements = MCGILL_SCALE.filter((g) => g.min > 0).map((g): Requirement => {
+  const requirements = scale.filter((g) => g.min > 0).map((g): Requirement => {
     const pointsNeeded = g.min - earned;
     if (pointsNeeded <= 0) return { letter: g.letter, needed: 0, status: 'secured', scheme };
     if (remainingWeight <= 0) return { letter: g.letter, needed: null, status: 'out-of-reach', scheme };
@@ -113,8 +132,8 @@ const RANK = { secured: 0, possible: 1, 'out-of-reach': 2 } as const;
 
 // With two schemes the grade is whichever is higher, so each target takes the scheme that
 // needs the least; the weights shown are the main scheme's.
-export function summarize(items: GradedItem[]): GradeSummary {
-  const schemes = schemesOf(items).map(summarizeScheme);
+export function summarize(items: GradedItem[], scale: GradeScale = MCGILL_SCALE): GradeSummary {
+  const schemes = schemesOf(items).map((scheme, index) => summarizeScheme(scheme, index, scale));
   if (schemes.length === 1) return schemes[0];
   const [main, alt] = schemes;
   const higher = (a: number | null, b: number | null) => (a == null ? b : b == null ? a : Math.max(a, b));
@@ -133,6 +152,13 @@ export function summarize(items: GradedItem[]): GradeSummary {
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+// 'scale-to-listed-total': weights that don't reach 100% are scaled up until they do.
+export function scaleWeights<T extends GradedItem>(items: T[]): T[] {
+  const total = items.reduce((sum, i) => sum + i.weight, 0);
+  if (!total || total >= 100) return items;
+  return items.map((i) => ({ ...i, weight: (i.weight * 100) / total }));
+}
 
 // A term's grade point average on McGill's scale, weighted by credits, over the classes that
 // have a percentage to go on. null when none does.

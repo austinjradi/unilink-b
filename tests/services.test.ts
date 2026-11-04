@@ -2,12 +2,20 @@ import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase, type DB } from '../src/main/db/client';
 import { type Context, dispatch, type RpcClient } from '../src/main/rpc/core';
 import { type AppRouter, appRouter } from '../src/main/rpc/router';
-import { appState } from '../src/main/db/schema';
-import { LAST_BACKUP_KEY, sweepReminders } from '../src/main/services/notifications';
+import { appState, chatLinks, deadlines, posts, replies, studySessions } from '../src/main/db/schema';
+import { isSealed, openSealed, sealBackup, writeBackup } from '@shared/backup';
+import { dropLowest, letterFor, MCGILL_SCALE, scaleWith, summarize } from '@shared/grades';
+import { buildCalendar } from '@shared/ics';
+import { classFromJoinCode, joinCodeFor } from '@shared/joinCode';
+import { totpCode } from '@shared/totp';
+import { parseOfficeHours } from '@shared/meetings';
+import { parseTypedSearch } from '@shared/postText';
+import { clearVariants, isOn, setVariant } from '@shared/variants';
+import { LAST_BACKUP_KEY, notify, raw, sweepReminders } from '../src/main/services/notifications';
 import { backgroundTick, initialTickState } from '../src/main/services/studyMode';
 
 const PASSWORD = 'correct horse battery';
@@ -2132,3 +2140,1974 @@ describe('ST1 study mode', () => {
     expect((await api.studyMode.status()).active).toBe(false);
   });
 });
+
+describe('Requirement switches: S1', () => {
+  afterEach(clearVariants);
+
+  async function professor(name: string) {
+    const api = clientFor(newContext());
+    await api.auth.signUp({ name, email: `${name.toLowerCase()}@mcgill.ca`, password: PASSWORD, pronouns: '', faculty: 'Science', gradYear: null, role: 'professor' });
+    return { api };
+  }
+
+  const ask = (classId: number, fields: { anonymous?: boolean; title?: string } = {}) => ({
+    classId,
+    kind: 'question' as const,
+    topic: 'Exams',
+    title: 'Final format?',
+    body: 'Anyone know?',
+    visibility: 'class' as const,
+    audienceEmails: [],
+    images: [],
+    ...fields,
+  });
+
+  it('searches without wildcards in version A', async () => {
+    const { api } = await student('Maya');
+    const codes = async (query: string) => (await api.catalogue.search({ query, term: 'Fall 2026', level: null })).map((c) => c.code);
+    expect(await codes('COMP 3XX')).toContain('COMP 302-001');
+    setVariant('search-version-a', true);
+    expect(await codes('COMP 3XX')).toEqual([]);
+    expect(await codes('comp 251')).toEqual(['COMP 251-001', 'COMP 251-002']);
+    expect(await codes('algorithm')).toEqual(['COMP 251-001', 'COMP 251-002', 'COMP 360-001']);
+  });
+
+  it("finds a section by its professor's name, only when switched on", async () => {
+    const { api } = await student('Maya');
+    const prof = await professor('Ouellet');
+    await prof.api.classes.join({ classId: await comp251(api, '002') });
+    const search = () => api.catalogue.search({ query: 'ouellet', term: 'Fall 2026', level: null });
+    expect(await search()).toEqual([]);
+    setVariant('search-professors', true);
+    expect((await search()).map((c) => c.code)).toEqual(['COMP 251-002']);
+  });
+
+  it('searches every term, or by subject, faculty and credits', async () => {
+    const { api } = await student('Maya');
+    const all = await api.catalogue.search({ query: 'COMP 251', term: null, level: null });
+    expect(all.map((c) => c.term)).toEqual(['Fall 2026', 'Fall 2026', 'Winter 2027', 'Winter 2027']);
+    const filter = (fields: { subject?: string; faculty?: string; credits?: number }) => api.catalogue.search({ query: '', term: 'Fall 2026', level: null, ...fields });
+    expect((await filter({ subject: 'ECON' })).map((c) => c.subject)).toEqual(['ECON', 'ECON', 'ECON', 'ECON']);
+    expect((await filter({ faculty: 'Engineering' })).every((c) => c.subject === 'ECSE')).toBe(true);
+    expect((await filter({ credits: 4 })).every((c) => c.credits === 4)).toBe(true);
+    expect(await api.catalogue.subjects()).toContain('COMP');
+  });
+
+  it('lets a student be in several sections of a course', async () => {
+    const { api } = await student('Maya');
+    const first = await comp251(api, '001');
+    const second = await comp251(api, '002');
+    await api.classes.join({ classId: first });
+    setVariant('several-sections', true);
+    expect((await api.classes.get({ classId: second })).otherSection).toBeNull();
+    expect((await api.catalogue.search({ query: 'COMP 251', term: 'Fall 2026', level: null })).map((c) => c.otherSectionId)).toEqual([null, null]);
+    await api.classes.join({ classId: second });
+    expect((await api.classes.mine()).map((c) => c.code)).toEqual(['COMP 251-001', 'COMP 251-002']);
+    // Switched back, both stay and nothing breaks.
+    clearVariants();
+    expect((await api.classes.mine()).length).toBe(2);
+    expect((await api.classes.get({ classId: second })).joined).toBe(true);
+  });
+
+  it("counts a course's other section as a clash when you can keep both", async () => {
+    const { classId, people } = await classmates('Maya');
+    const [maya] = people;
+    const other = await comp251(maya.api, '002');
+    const lecture = { weekday: 1, startTime: '10:00', endTime: '11:00', location: '' };
+    await maya.api.courses.saveMeetings({ classId, meetings: [lecture] });
+    await maya.api.classes.switchSection({ classId: other });
+    await maya.api.courses.saveMeetings({ classId: other, meetings: [lecture] });
+    await maya.api.classes.switchSection({ classId });
+    expect((await maya.api.classes.get({ classId: other })).clashesWith).toEqual([]);
+    setVariant('several-sections', true);
+    expect((await maya.api.classes.get({ classId: other })).clashesWith).toEqual(['COMP 251-001']);
+  });
+
+  it('blocks joining or switching to a section that clashes', async () => {
+    const { classId: comp, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const math = (await maya.api.catalogue.search({ query: 'MATH 240', term: 'Fall 2026', level: null }))[0].id;
+    await leo.api.classes.join({ classId: math });
+    await leo.api.courses.saveMeetings({ classId: math, meetings: [{ weekday: 1, startTime: '10:00', endTime: '11:00', location: '' }] });
+    await maya.api.courses.saveMeetings({ classId: comp, meetings: [{ weekday: 1, startTime: '10:30', endTime: '11:30', location: '' }] });
+    setVariant('block-clashes', true);
+    await expectCode(maya.api.classes.join({ classId: math }), 'CONFLICT');
+    clearVariants();
+    await maya.api.classes.join({ classId: math });
+    expect((await maya.api.classes.mine()).length).toBe(2);
+  });
+
+  it('turns off the switches a new one conflicts with', () => {
+    setVariant('block-clashes', true);
+    setVariant('no-clash-notes', true);
+    expect(isOn('block-clashes')).toBe(false);
+    expect(isOn('no-clash-notes')).toBe(true);
+  });
+
+  it('version A: study sessions reveal you, with just your name and email', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    await maya.api.studySessions.create({ ...session(), classId });
+    expect(await leo.api.classes.classmates({ classId })).toEqual([]);
+    setVariant('classmates-version-a', true);
+    const seen = await leo.api.classes.classmates({ classId });
+    expect(seen.map((c) => [c.name, c.email, c.faculty])).toEqual([['Maya', 'maya@mail.mcgill.ca', '']]);
+    const { id: postId } = await maya.api.board.create(ask(classId));
+    expect((await leo.api.board.get({ postId })).authorFaculty).toBe('');
+  });
+
+  it('keeps an anonymous post anonymous, except to its author and the professor', async () => {
+    setVariant('anonymous-posts', true);
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const prof = await professor('Ouellet');
+    await prof.api.classes.join({ classId });
+    const { id: postId } = await maya.api.board.create(ask(classId, { anonymous: true }));
+
+    const toLeo = await leo.api.board.get({ postId });
+    expect([toLeo.anonymous, toLeo.authorName, toLeo.authorEmail, toLeo.authorId]).toEqual([true, '', '', 0]);
+    const feed = await leo.api.board.feed({ classIds: null, topics: [], since: null, search: '' });
+    expect(feed.find((p) => p.id === postId)).toMatchObject({ anonymous: true, authorName: '' });
+    expect((await leo.api.classes.classmates({ classId })).map((c) => c.name)).toEqual(['Ouellet']);
+
+    expect(await maya.api.board.get({ postId })).toMatchObject({ anonymous: false, postedAnonymously: true, authorName: 'Maya', mine: true });
+    expect(await prof.api.board.get({ postId })).toMatchObject({ anonymous: false, postedAnonymously: true, authorName: 'Maya' });
+
+    // An ordinary post in the same class still shows who wrote it.
+    const { id: open } = await leo.api.board.create(ask(classId, { title: 'Signed' }));
+    expect(await maya.api.board.get({ postId: open })).toMatchObject({ anonymous: false, authorName: 'Leo' });
+  });
+
+  it('ignores the anonymous checkbox when the switch is off', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const { id: postId } = await people[0].api.board.create(ask(classId, { anonymous: true }));
+    setVariant('anonymous-posts', true);
+    expect(await people[1].api.board.get({ postId })).toMatchObject({ anonymous: false, authorName: 'Maya' });
+  });
+
+  it('lists members, except anyone who opts out', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo', 'Ana');
+    const [maya, leo] = people;
+    setVariant('list-members', true);
+    expect((await leo.api.classes.classmates({ classId })).map((c) => c.name)).toEqual(['Ana', 'Maya']);
+    await maya.api.profile.setHiddenFromClassLists({ hidden: true });
+    expect((await maya.api.profile.sharing()).hiddenFromClassLists).toBe(true);
+    expect((await leo.api.classes.classmates({ classId })).map((c) => c.name)).toEqual(['Ana']);
+    await maya.api.profile.setHiddenFromClassLists({ hidden: false });
+    expect((await leo.api.classes.classmates({ classId })).map((c) => c.name)).toEqual(['Ana', 'Maya']);
+  });
+
+  it('shows professors the full class list', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const prof = await professor('Ouellet');
+    await prof.api.classes.join({ classId });
+    expect(await prof.api.classes.classmates({ classId })).toEqual([]);
+    setVariant('full-class-list', true);
+    expect((await prof.api.classes.classmates({ classId })).map((c) => c.name)).toEqual(['Leo', 'Maya']);
+    expect((await people[0].api.classes.classmates({ classId })).map((c) => c.name)).toEqual(['Ouellet']);
+  });
+
+  it('lets students choose what classmates see', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const { id: postId } = await maya.api.board.create(ask(classId));
+    await maya.api.profile.setVisibleFields({ fields: ['faculty'] });
+    expect((await leo.api.board.get({ postId })).authorEmail).toBe('maya@mail.mcgill.ca');
+    setVariant('choose-visible-fields', true);
+    expect(await leo.api.board.get({ postId })).toMatchObject({ authorEmail: '', authorFaculty: 'Science', authorName: 'Maya' });
+    expect((await leo.api.classes.classmates({ classId }))[0]).toMatchObject({ name: 'Maya', email: '', faculty: 'Science' });
+    expect((await maya.api.board.get({ postId })).authorEmail).toBe('maya@mail.mcgill.ca');
+  });
+
+  it('deletes what you added to a section when you leave', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const { id: alone } = await maya.api.board.create(ask(classId, { title: 'Nobody replied' }));
+    const { id: answered } = await maya.api.board.create(ask(classId, { title: 'Leo replied' }));
+    await leo.api.board.reply({ postId: answered, body: 'Mine stays', images: [] });
+    const { id: leos } = await leo.api.board.create(ask(classId, { title: "Leo's" }));
+    await maya.api.board.reply({ postId: leos, body: 'Mine goes', images: [] });
+    await maya.api.links.add({ classId, url: 'https://discord.gg/abc', label: '', purpose: 'course' });
+    await maya.api.studySessions.create({ ...session(), classId });
+    await maya.api.calendar.addDeadline({ classId, kind: 'quiz', title: 'Quiz', dueAt: new Date(2026, 9, 9), notes: '' });
+
+    setVariant('delete-on-leave', true);
+    await maya.api.classes.leave({ classId });
+
+    const left = db.select().from(posts).all();
+    expect(left.find((p) => p.id === alone)).toBeUndefined();
+    expect(left.find((p) => p.id === answered)).toMatchObject({ title: '', body: '' });
+    expect(left.find((p) => p.id === leos)).toMatchObject({ title: "Leo's" });
+    expect(db.select().from(replies).all().map((r) => r.body)).toEqual(['Mine stays']);
+    expect(db.select().from(chatLinks).all()).toEqual([]);
+    expect(db.select().from(deadlines).all()).toEqual([]);
+    expect(db.select().from(studySessions).all().every((row) => row.cancelledAt != null)).toBe(true);
+  });
+
+  it('keeps what you added when you leave, with the switch off', async () => {
+    const { classId, people } = await classmates('Maya');
+    await people[0].api.board.create(ask(classId));
+    await people[0].api.classes.leave({ classId });
+    expect(db.select().from(posts).all().length).toBe(1);
+  });
+
+  it('leaves classes once the term is over, only when switched on', async () => {
+    const { people } = await classmates('Maya');
+    const [maya] = people;
+    setVariant('leave-at-term-end', true);
+    expect((await maya.api.classes.mine()).length).toBe(1);
+    clock = new Date(2027, 0, 5);
+    clearVariants();
+    expect((await maya.api.classes.mine()).length).toBe(1);
+    setVariant('leave-at-term-end', true);
+    expect(await maya.api.classes.mine()).toEqual([]);
+  });
+});
+
+describe('Requirement switches: S2', () => {
+  afterEach(clearVariants);
+
+  const WA = 'https://chat.whatsapp.com/abc';
+  const add = (api: RpcClient<AppRouter>, classId: number, url = WA) => api.links.add({ classId, url, label: 'Study', purpose: 'course' });
+
+  async function professor(name: string) {
+    const api = clientFor(newContext());
+    await api.auth.signUp({ name, email: `${name.toLowerCase()}@mcgill.ca`, password: PASSWORD, pronouns: '', faculty: 'Science', gradYear: null, role: 'professor' });
+    return { api };
+  }
+
+  it('keeps a link private until its owner shares it', async () => {
+    setVariant('private-links', true);
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const { id } = await add(maya.api, classId);
+    expect((await maya.api.links.list({ classId })).map((l) => l.isPublic)).toEqual([false]);
+    expect(await leo.api.links.list({ classId })).toEqual([]);
+    await maya.api.links.share({ linkId: id });
+    expect((await leo.api.links.list({ classId })).length).toBe(1);
+  });
+
+  it('holds a link back until someone else approves it', async () => {
+    setVariant('approve-links', true);
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const { id } = await add(maya.api, classId);
+    expect((await leo.api.links.list({ classId }))[0].pending).toBe(true);
+    await expectCode(maya.api.links.approve({ linkId: id }), 'FORBIDDEN');
+    await leo.api.links.approve({ linkId: id });
+    expect((await maya.api.links.list({ classId }))[0].pending).toBe(false);
+  });
+
+  it('only treats the same URL in the same class as a duplicate in version A', async () => {
+    const { classId, people } = await classmates('Maya');
+    const [maya] = people;
+    await add(maya.api, classId, 'https://discord.gg/abc');
+    await expectCode(add(maya.api, classId, 'https://discord.com/invite/abc'), 'CONFLICT');
+    setVariant('link-same-url-only', true);
+    await add(maya.api, classId, 'https://discord.com/invite/abc');
+    await expectCode(add(maya.api, classId, 'https://discord.gg/abc'), 'CONFLICT');
+  });
+
+  it('can allow only WhatsApp and Discord, or take the platform from the person adding it', async () => {
+    const { classId, people } = await classmates('Maya');
+    const [maya] = people;
+    setVariant('whatsapp-discord-only', true);
+    await expect(add(maya.api, classId, 'https://t.me/abc')).rejects.toThrow('Only WhatsApp and Discord');
+    await add(maya.api, classId);
+    clearVariants();
+    setVariant('pick-link-platform', true);
+    await maya.api.links.add({ classId, url: 'https://example.com/group', label: '', purpose: 'course', platform: 'Slack' });
+    expect((await maya.api.links.list({ classId })).find((l) => l.url.includes('example'))?.platform).toBe('Slack');
+  });
+
+  async function reported(reports: number) {
+    const names = ['Maya', 'Leo', 'Ana', 'Sam', 'Kim'].slice(0, reports + 1);
+    const { classId, people } = await classmates(...names);
+    const { id } = await add(people[0].api, classId);
+    for (const p of people.slice(1)) await p.api.links.vote({ linkId: id, vote: 'report', reason: 'Broken' });
+    return { classId, people, id };
+  }
+
+  it('marks a link likely broken at 3 reports instead of hiding it', async () => {
+    const { classId, people } = await reported(3);
+    expect((await people[0].api.links.list({ classId }))[0]).toMatchObject({ hidden: true, likelyBroken: false });
+    setVariant('links-likely-broken', true);
+    expect((await people[0].api.links.list({ classId }))[0]).toMatchObject({ hidden: false, likelyBroken: true });
+    setVariant('never-hide-links', true);
+    expect((await people[0].api.links.list({ classId }))[0]).toMatchObject({ hidden: false, likelyBroken: false, reports: 3 });
+    expect(isOn('links-likely-broken')).toBe(false);
+  });
+
+  it('sends reported links to the professor to decide', async () => {
+    setVariant('moderate-reported-links', true);
+    const { classId, people } = await classmates('Maya', 'Leo', 'Ana');
+    const prof = await professor('Ouellet');
+    await prof.api.classes.join({ classId });
+    const { id } = await add(people[0].api, classId);
+    await people[1].api.links.vote({ linkId: id, vote: 'report', reason: 'Broken' });
+    await people[2].api.links.vote({ linkId: id, vote: 'report', reason: 'Broken' });
+    expect((await people[0].api.links.list({ classId }))[0]).toMatchObject({ hidden: false, canDecide: false });
+    expect((await prof.api.links.list({ classId }))[0].canDecide).toBe(true);
+    expect((await prof.api.notifications.list()).items.some((n) => n.title.includes('was reported'))).toBe(true);
+    await expectCode(people[1].api.links.decide({ linkId: id, keep: false }), 'FORBIDDEN');
+    await prof.api.links.decide({ linkId: id, keep: true });
+    expect((await prof.api.links.list({ classId }))[0].reports).toBe(0);
+    await prof.api.links.decide({ linkId: id, keep: false });
+    expect(await prof.api.links.list({ classId })).toEqual([]);
+  });
+
+  it('hides who added a link from everyone else', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    await add(people[0].api, classId);
+    setVariant('hide-link-owner', true);
+    expect((await people[1].api.links.list({ classId }))[0].ownerName).toBe('');
+    expect((await people[0].api.links.list({ classId }))[0].ownerName).toBe('Maya');
+  });
+
+  it('lets anyone in the section fix a link', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const { id } = await add(people[0].api, classId);
+    const fix = () => people[1].api.links.update({ linkId: id, url: 'https://chat.whatsapp.com/new', label: 'Fixed', purpose: 'course' });
+    await expectCode(fix(), 'FORBIDDEN');
+    setVariant('anyone-fixes-links', true);
+    await fix();
+    expect((await people[0].api.links.list({ classId }))[0].label).toBe('Fixed');
+  });
+
+  it('takes reports only in version A, ignoring old "works" votes', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo', 'Ana', 'Sam', 'Kim');
+    const { id } = await add(people[0].api, classId);
+    await people[1].api.links.vote({ linkId: id, vote: 'works', reason: null });
+    await people[2].api.links.vote({ linkId: id, vote: 'works', reason: null });
+    await people[3].api.links.vote({ linkId: id, vote: 'report', reason: 'Broken' });
+    await people[4].api.links.vote({ linkId: id, vote: 'report', reason: 'Broken' });
+    expect((await people[0].api.links.list({ classId }))[0].hidden).toBe(false);
+    setVariant('no-works-votes', true);
+    expect((await people[0].api.links.list({ classId }))[0].hidden).toBe(true);
+    await expect(people[1].api.links.vote({ linkId: id, vote: 'works', reason: null })).rejects.toThrow('only be reported');
+  });
+});
+
+describe('Requirement switches: S4', () => {
+  afterEach(clearVariants);
+
+  async function professor(name: string) {
+    const api = clientFor(newContext());
+    await api.auth.signUp({ name, email: `${name.toLowerCase()}@mcgill.ca`, password: PASSWORD, pronouns: '', faculty: 'Science', gradYear: null, role: 'professor' });
+    return { api };
+  }
+
+  const ask = (classId: number, fields: Record<string, unknown> = {}) => ({
+    classId,
+    kind: 'question' as const,
+    topic: 'Exams',
+    title: 'Final format?',
+    body: 'Anyone know?',
+    visibility: 'class' as const,
+    audienceEmails: [],
+    images: [],
+    ...fields,
+  });
+  const feed = (api: RpcClient<AppRouter>, classId: number, fields: Record<string, unknown> = {}) => api.board.feed({ classIds: [classId], topics: [], since: null, search: '', ...fields });
+  const titles = async (api: RpcClient<AppRouter>, classId: number, fields: Record<string, unknown> = {}) => (await feed(api, classId, fields)).map((p) => p.title);
+  const reply = (api: RpcClient<AppRouter>, postId: number, body = 'Answer') => api.board.reply({ postId, body, images: [] });
+
+  it('shares one board across the sections of a course in version A', async () => {
+    const { classId, people } = await classmates('Maya');
+    const leo = await student('Leo');
+    const other = await comp251(leo.api, '002');
+    await leo.api.classes.join({ classId: other });
+    const { id: postId } = await people[0].api.board.create(ask(classId));
+    expect(await titles(leo.api, other)).toEqual([]);
+    setVariant('shared-course-board', true);
+    expect(await titles(leo.api, other)).toEqual(['Final format?']);
+    await reply(leo.api, postId);
+    expect((await people[0].api.board.get({ postId })).replies.length).toBe(1);
+    clearVariants();
+    await expectCode(leo.api.board.get({ postId }), 'FORBIDDEN');
+  });
+
+  it('can search replies too, or titles only', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const { id } = await people[0].api.board.create(ask(classId, { title: 'Dynamic programming', body: 'Hint for Q3' }));
+    await reply(people[1].api, id, 'Try memoization');
+    expect(await titles(people[0].api, classId, { search: 'memoization' })).toEqual([]);
+    setVariant('search-replies', true);
+    expect((await titles(people[0].api, classId, { search: 'memoization' })).length).toBe(1);
+    setVariant('search-titles-only', true);
+    expect(await titles(people[0].api, classId, { search: 'Hint' })).toEqual([]);
+    expect((await titles(people[0].api, classId, { search: 'Dynamic' })).length).toBe(1);
+  });
+
+  it('reads typed filters out of the search box', () => {
+    expect(parseTypedSearch('topic:exams is:unanswered since:week class:comp251 big O')).toEqual({ words: 'big O', topic: 'exams', classCode: 'comp251', unanswered: true, following: false, since: 'week' });
+    expect(parseTypedSearch('is:following what:else').following).toBe(true);
+    expect(parseTypedSearch('is:following what:else').words).toBe('what:else');
+  });
+
+  it('takes free-form types, or several topics, only when switched on', async () => {
+    const { classId, people } = await classmates('Maya');
+    const [maya] = people;
+    await expect(maya.api.board.create(ask(classId, { topic: 'Just yapping' }))).rejects.toThrow('Pick a topic');
+    setVariant('free-form-post-type', true);
+    await maya.api.board.create(ask(classId, { topic: 'Just yapping' }));
+    expect(await maya.api.board.topics({ classId })).toContain('Just yapping');
+    setVariant('several-post-topics', true);
+    await maya.api.board.create(ask(classId, { topic: 'Exams, Study tips', title: 'Both' }));
+    expect(await titles(maya.api, classId, { topics: ['Study tips'] })).toEqual(['Both']);
+    expect(await titles(maya.api, classId, { topics: ['Exams'] })).toEqual(['Both']);
+  });
+
+  it('counts any reply as answering a question', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const { id } = await people[0].api.board.create(ask(classId));
+    await reply(people[1].api, id);
+    expect(await titles(people[0].api, classId, { unresolved: true })).toEqual(['Final format?']);
+    setVariant('any-reply-answers', true);
+    expect(await titles(people[0].api, classId, { unresolved: true })).toEqual([]);
+    expect((await feed(people[0].api, classId))[0].professorAnswered).toBe(true);
+  });
+
+  it('tells only the author, or the whole class, about replies', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo', 'Ana', 'Sam');
+    const [maya, leo, ana, sam] = people;
+    const { id } = await maya.api.board.create(ask(classId));
+    await ana.api.board.follow({ postId: id, following: true });
+    const replied = async (who: typeof maya) => (await who.api.notifications.list()).items.filter((n) => n.title.includes('replied')).length;
+    setVariant('author-only-reply-alerts', true);
+    await reply(leo.api, id);
+    expect([await replied(maya), await replied(ana), await replied(sam)]).toEqual([1, 0, 0]);
+    setVariant('notify-class-of-replies', true);
+    await reply(leo.api, id, 'Again');
+    expect([await replied(maya), await replied(ana), await replied(sam)]).toEqual([2, 1, 1]);
+  });
+
+  it('filters by a date range', async () => {
+    const { classId, people } = await classmates('Maya');
+    await people[0].api.board.create(ask(classId));
+    expect((await titles(people[0].api, classId, { fromDate: new Date(2026, 9, 1), untilDate: new Date(2026, 9, 6) })).length).toBe(1);
+    expect(await titles(people[0].api, classId, { fromDate: new Date(2026, 9, 6) })).toEqual([]);
+  });
+
+  it('lets students read and post without joining, only when switched on', async () => {
+    const { classId, people } = await classmates('Maya');
+    const leo = await student('Leo');
+    await people[0].api.board.create(ask(classId));
+    await expectCode(feed(leo.api, classId), 'FORBIDDEN');
+    await expectCode(leo.api.board.create(ask(classId)), 'FORBIDDEN');
+    setVariant('post-without-joining', true);
+    expect((await titles(leo.api, classId)).length).toBe(1);
+    await leo.api.board.create(ask(classId, { title: 'From outside' }));
+    expect((await titles(people[0].api, classId))).toContain('From outside');
+  });
+
+  it("keeps a post's earlier versions", async () => {
+    setVariant('post-version-history', true);
+    const { classId, people } = await classmates('Maya');
+    const { id: postId } = await people[0].api.board.create(ask(classId));
+    await people[0].api.board.update({ postId, kind: 'question', topic: 'Exams', title: 'New title', body: 'New body' });
+    expect((await people[0].api.board.get({ postId })).versions).toMatchObject([{ title: 'Final format?', body: 'Anyone know?' }]);
+  });
+
+  it('can stop edits and deletes once there are replies, or delete the replies too', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const { id: postId } = await maya.api.board.create(ask(classId));
+    await reply(leo.api, postId);
+    setVariant('no-edit-after-reply', true);
+    await expectCode(maya.api.board.update({ postId, kind: 'question', topic: 'Exams', title: 'x', body: 'y' }), 'FORBIDDEN');
+    setVariant('no-delete-after-reply', true);
+    await expectCode(maya.api.board.remove({ postId }), 'FORBIDDEN');
+    setVariant('delete-post-with-replies', true);
+    expect(isOn('no-delete-after-reply')).toBe(false);
+    expect(await maya.api.board.remove({ postId })).toEqual({ kept: false });
+    expect(db.select().from(replies).all()).toEqual([]);
+  });
+
+  it('marks posts read one at a time', async () => {
+    setVariant('read-per-post', true);
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const { id: first } = await maya.api.board.create(ask(classId, { title: 'One' }));
+    await maya.api.board.create(ask(classId, { title: 'Two' }));
+    await leo.api.board.seen({ classId });
+    const unread = async () => (await feed(leo.api, classId)).filter((p) => p.isNew).map((p) => p.title);
+    expect((await unread()).sort()).toEqual(['One', 'Two']);
+    await leo.api.board.get({ postId: first, peek: true });
+    expect((await unread()).length).toBe(2);
+    await leo.api.board.get({ postId: first });
+    expect(await unread()).toEqual(['Two']);
+    expect((await leo.api.board.newCounts())[0].count).toBe(1);
+  });
+
+  it('runs polls', async () => {
+    setVariant('poll-posts', true);
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    await expect(maya.api.board.create(ask(classId, { kind: 'note', pollOptions: ['Only one'] }))).rejects.toThrow('at least two');
+    const { id: postId } = await maya.api.board.create(ask(classId, { kind: 'note', title: 'Review when?', pollOptions: ['Monday', 'Tuesday'] }));
+    await leo.api.board.votePoll({ postId, option: 1 });
+    await maya.api.board.votePoll({ postId, option: 1 });
+    await leo.api.board.votePoll({ postId, option: 0 });
+    expect((await leo.api.board.get({ postId })).poll).toEqual({ options: [{ text: 'Monday', votes: 1 }, { text: 'Tuesday', votes: 1 }], myVote: 0 });
+    await expect(leo.api.board.votePoll({ postId, option: 5 })).rejects.toThrow('no longer exists');
+    clearVariants();
+    expect((await leo.api.board.get({ postId })).poll).toBeNull();
+  });
+
+  it('threads replies one level deep', async () => {
+    setVariant('threaded-replies', true);
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const { id: postId } = await maya.api.board.create(ask(classId));
+    await reply(leo.api, postId, 'Top');
+    const top = (await maya.api.board.get({ postId })).replies[0].id;
+    await maya.api.board.reply({ postId, body: 'Child', images: [], parentId: top });
+    const child = (await maya.api.board.get({ postId })).replies.find((r) => r.body === 'Child')!;
+    expect(child.parentId).toBe(top);
+    await leo.api.board.reply({ postId, body: 'Grandchild', images: [], parentId: child.id });
+    expect((await maya.api.board.get({ postId })).replies.find((r) => r.body === 'Grandchild')?.parentId).toBe(top);
+  });
+
+  it('can refuse attachments, or take any file', async () => {
+    const { classId, people } = await classmates('Maya');
+    const [maya] = people;
+    const pdf = join(tmpdir(), 'unilink-switch-test.pdf');
+    await writeFile(pdf, 'pdf');
+    await expect(maya.api.board.create(ask(classId, { images: [pdf] }))).rejects.toThrow('PNG, JPEG');
+    setVariant('text-only-posts', true);
+    await expect(maya.api.board.create(ask(classId, { images: [pdf] }))).rejects.toThrow('text only');
+    setVariant('any-file-attachments', true);
+    const { id: postId } = await maya.api.board.create(ask(classId, { images: [pdf] }));
+    expect((await maya.api.board.get({ postId })).images[0].name).toContain('pdf');
+  });
+
+  it('lets a professor merge duplicate threads', async () => {
+    setVariant('merge-threads', true);
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const prof = await professor('Ouellet');
+    await prof.api.classes.join({ classId });
+    const { id: postId } = await maya.api.board.create(ask(classId, { title: 'Duplicate', body: 'Same question' }));
+    const { id: intoId } = await leo.api.board.create(ask(classId, { title: 'Original' }));
+    await reply(leo.api, postId, 'An answer');
+    await expectCode(maya.api.board.merge({ postId, intoId }), 'FORBIDDEN');
+    await prof.api.board.merge({ postId, intoId });
+    expect(await titles(maya.api, classId)).toEqual(['Original']);
+    const bodies = (await maya.api.board.get({ postId: intoId })).replies.map((r) => r.body);
+    expect(bodies).toContain('An answer');
+    expect(bodies.some((b) => b.includes('Merged from "Duplicate"') && b.includes('Same question'))).toBe(true);
+  });
+
+  it('can pick anyone in the class as an audience, and change it later', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo', 'Ana');
+    const [maya, leo, ana] = people;
+    const selected = { visibility: 'selected' as const, audienceEmails: [leo.email] };
+    await expect(maya.api.board.create(ask(classId, selected))).rejects.toThrow();
+    setVariant('any-classmate-audience', true);
+    const { id: postId } = await maya.api.board.create(ask(classId, selected));
+    await expectCode(ana.api.board.get({ postId }), 'NOT_FOUND');
+    await maya.api.board.setAudience({ postId, visibility: 'selected', audienceEmails: [ana.email] });
+    await expectCode(leo.api.board.get({ postId }), 'NOT_FOUND');
+    expect((await ana.api.board.get({ postId })).id).toBe(postId);
+    await maya.api.board.setAudience({ postId, visibility: 'class', audienceEmails: [] });
+    expect((await leo.api.board.get({ postId })).visibility).toBe('class');
+  });
+
+  it('can put the most liked reply first, and freeze an accepted one', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo', 'Ana');
+    const [maya, leo, ana] = people;
+    const { id: postId } = await maya.api.board.create(ask(classId));
+    await reply(leo.api, postId, 'Accepted');
+    await reply(ana.api, postId, 'Popular');
+    const replyId = async (body: string) => (await maya.api.board.get({ postId })).replies.find((r) => r.body === body)!.id;
+    const accepted = await replyId('Accepted');
+    await maya.api.board.accept({ postId, replyId: accepted });
+    await maya.api.board.reactReply({ replyId: await replyId('Popular') });
+    expect((await maya.api.board.get({ postId })).replies[0].body).toBe('Accepted');
+    setVariant('most-goats-on-top', true);
+    expect((await maya.api.board.get({ postId })).replies[0].body).toBe('Popular');
+    setVariant('no-edit-accepted-reply', true);
+    await expectCode(leo.api.board.editReply({ replyId: accepted, body: 'Changed' }), 'FORBIDDEN');
+    await ana.api.board.editReply({ replyId: await replyId('Popular'), body: 'Still fine' });
+  });
+});
+
+describe('Requirement switches: S3', () => {
+  afterEach(clearVariants);
+
+  const inClass = (classId: number, fields: Record<string, unknown> = {}) => ({ ...session(), classId, ...fields });
+  const invited = { visibility: 'invite' as const };
+
+  it('can show every session in the class, with no invite-only ones', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    await people[0].api.studySessions.create(inClass(classId, invited));
+    expect(await people[1].api.studySessions.list({ classId })).toEqual([]);
+    setVariant('all-sessions-visible', true);
+    expect((await people[1].api.studySessions.list({ classId })).length).toBe(1);
+  });
+
+  it('can show sessions from every class, and let anyone join', async () => {
+    const { classId, people } = await classmates('Maya');
+    const leo = await student('Leo');
+    const { id: sessionId } = await people[0].api.studySessions.create(inClass(classId));
+    expect(await leo.api.studySessions.browse({ search: '' })).toEqual([]);
+    setVariant('campus-wide-sessions', true);
+    const seen = await leo.api.studySessions.browse({ search: '' });
+    expect(seen.map((row) => row.canJoin)).toEqual([false]);
+    await expectCode(leo.api.studySessions.join({ sessionId }), 'FORBIDDEN');
+    setVariant('open-to-all-mcgill', true);
+    expect((await leo.api.studySessions.browse({ search: '' }))[0].canJoin).toBe(true);
+    expect(await leo.api.studySessions.join({ sessionId })).toEqual({ status: 'going' });
+  });
+
+  it('can bring the sections of a course together', async () => {
+    const { classId, people } = await classmates('Maya');
+    const leo = await student('Leo');
+    const other = await comp251(leo.api, '002');
+    await leo.api.classes.join({ classId: other });
+    const { id: sessionId } = await people[0].api.studySessions.create(inClass(classId));
+    expect(await leo.api.studySessions.list({ classId: other })).toEqual([]);
+    setVariant('session-several-sections', true);
+    expect((await leo.api.studySessions.list({ classId: other })).length).toBe(1);
+    await leo.api.studySessions.join({ sessionId });
+  });
+
+  it('can hide what is over or clashes, and search by host', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    await maya.api.studySessions.create(inClass(classId));
+    expect((await leo.api.studySessions.browse({ search: 'maya' })).length).toBe(0);
+    setVariant('search-session-host', true);
+    expect((await leo.api.studySessions.browse({ search: 'maya' })).length).toBe(1);
+    await leo.api.courses.saveMeetings({ classId, meetings: [{ weekday: 3, startTime: '17:00', endTime: '21:00', location: '' }] });
+    expect((await leo.api.studySessions.browse({ search: '' }))[0].clash).toBeTruthy();
+    setVariant('hide-clashing-sessions', true);
+    expect(await leo.api.studySessions.browse({ search: '' })).toEqual([]);
+    clearVariants();
+    setVariant('hide-past-sessions', true);
+    clock = new Date(2026, 9, 10);
+    expect(await maya.api.studySessions.past({ classId })).toEqual([]);
+    clearVariants();
+    expect((await maya.api.studySessions.past({ classId })).length).toBe(1);
+  });
+
+  it('can make sessions one at a time, or each week separate', async () => {
+    const { classId, people } = await classmates('Maya');
+    const [maya] = people;
+    setVariant('one-off-sessions', true);
+    await maya.api.studySessions.create(inClass(classId, { weeks: 3, title: 'Once' }));
+    expect((await maya.api.studySessions.list({ classId })).filter((row) => row.title === 'Once').length).toBe(1);
+    setVariant('separate-weekly-sessions', true);
+    await maya.api.studySessions.create(inClass(classId, { weeks: 3, title: 'Each week' }));
+    const weeks = (await maya.api.studySessions.list({ classId })).filter((row) => row.title === 'Each week');
+    expect(weeks.length).toBe(3);
+    expect(weeks.every((row) => row.seriesId == null)).toBe(true);
+    expect(new Set(weeks.map((row) => row.inviteCode)).size).toBe(3);
+  });
+
+  it('shows the meeting link and who is going to everyone, when switched on', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const online = { format: 'online' as const, location: '', meetingUrl: 'https://mcgill.zoom.us/j/1' };
+    await people[0].api.studySessions.create(inClass(classId, online));
+    expect((await people[1].api.studySessions.list({ classId }))[0]).toMatchObject({ meetingUrl: '', going: [] });
+    setVariant('meeting-link-for-all', true);
+    setVariant('everyone-sees-going', true);
+    const row = (await people[1].api.studySessions.list({ classId }))[0];
+    expect(row.meetingUrl).toContain('zoom');
+    expect(row.going.map((g) => g.name)).toEqual(['Maya']);
+  });
+
+  it('refuses people when full if the limit replaces the waitlist, and allows no limit', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo', 'Ana');
+    const [maya, leo, ana] = people;
+    await expect(maya.api.studySessions.create(inClass(classId, { capacity: null }))).rejects.toThrow('At least 2');
+    setVariant('optional-session-limit', true);
+    const { id: open } = await maya.api.studySessions.create(inClass(classId, { capacity: null, title: 'No limit' }));
+    expect((await leo.api.studySessions.join({ sessionId: open })).status).toBe('going');
+    const { id: small } = await maya.api.studySessions.create(inClass(classId, { capacity: 2, title: 'Small' }));
+    await leo.api.studySessions.join({ sessionId: small });
+    await expectCode(ana.api.studySessions.join({ sessionId: small }), 'CONFLICT');
+  });
+
+  it("asks the waitlist's next person before giving them the spot", async () => {
+    setVariant('confirm-waitlist-spot', true);
+    const { classId, people } = await classmates('Maya', 'Leo', 'Ana', 'Sam');
+    const [maya, leo, ana, sam] = people;
+    const { id: sessionId } = await maya.api.studySessions.create(inClass(classId, { capacity: 2 }));
+    await leo.api.studySessions.join({ sessionId });
+    await ana.api.studySessions.join({ sessionId });
+    await leo.api.studySessions.leave({ sessionId });
+    const row = async (who: typeof maya) => (await who.api.studySessions.list({ classId }))[0];
+    expect(await row(ana)).toMatchObject({ myStatus: 'waitlisted', spotOffered: true });
+    // The offered spot isn't free for anyone else.
+    expect((await row(sam)).isFull).toBe(true);
+    await expect(sam.api.studySessions.confirmSpot({ sessionId })).rejects.toThrow('no spot');
+    await ana.api.studySessions.confirmSpot({ sessionId });
+    expect(await row(ana)).toMatchObject({ myStatus: 'going', spotOffered: false });
+  });
+
+  it('has the host approve each person who asks to join', async () => {
+    setVariant('host-approves-joins', true);
+    const { classId, people } = await classmates('Maya', 'Leo', 'Ana');
+    const [maya, leo, ana] = people;
+    const { id: sessionId } = await maya.api.studySessions.create(inClass(classId));
+    expect(await leo.api.studySessions.join({ sessionId })).toEqual({ status: 'invited' });
+    await expectCode(leo.api.studySessions.join({ sessionId }), 'CONFLICT');
+    await ana.api.studySessions.join({ sessionId });
+    const host = (await maya.api.studySessions.list({ classId }))[0];
+    expect(host.requests.map((r) => r.name)).toEqual(['Leo', 'Ana']);
+    expect(host.goingCount).toBe(1);
+    await expectCode(leo.api.studySessions.decideJoin({ sessionId, userId: ana.user.id, approve: true }), 'FORBIDDEN');
+    await maya.api.studySessions.decideJoin({ sessionId, userId: leo.user.id, approve: true });
+    await maya.api.studySessions.decideJoin({ sessionId, userId: ana.user.id, approve: false });
+    expect((await leo.api.studySessions.list({ classId }))[0].myStatus).toBe('going');
+    expect((await ana.api.studySessions.list({ classId }))[0].myStatus).toBeNull();
+  });
+
+  it('has a chat, suggestions and goals for the people going', async () => {
+    setVariant('session-chat', true);
+    setVariant('suggest-session-change', true);
+    setVariant('session-goal-checklist', true);
+    const { classId, people } = await classmates('Maya', 'Leo', 'Ana');
+    const [maya, leo, ana] = people;
+    const { id: sessionId } = await maya.api.studySessions.create(inClass(classId, { description: '- Read\n- Practise' }));
+    await leo.api.studySessions.join({ sessionId });
+    await leo.api.studySessions.chat({ sessionId, body: 'Room is booked' });
+    await expectCode(ana.api.studySessions.chat({ sessionId, body: 'Hi' }), 'FORBIDDEN');
+    expect((await maya.api.studySessions.list({ classId }))[0].chat.map((c) => [c.name, c.body])).toEqual([['Leo', 'Room is booked']]);
+    expect((await ana.api.studySessions.list({ classId }))[0].chat).toEqual([]);
+    await leo.api.studySessions.suggest({ sessionId, text: 'Start at 7' });
+    const [suggestion] = (await maya.api.studySessions.list({ classId }))[0].suggestions;
+    expect(suggestion.text).toBe('Start at 7');
+    expect((await leo.api.studySessions.list({ classId }))[0].suggestions).toEqual([]);
+    await maya.api.studySessions.answerSuggestion({ sessionId, id: suggestion.id, accept: true });
+    expect((await maya.api.studySessions.list({ classId }))[0].suggestions).toEqual([]);
+    expect((await leo.api.notifications.list()).items.some((n) => n.title.includes('accepted a change'))).toBe(true);
+    await leo.api.studySessions.toggleGoal({ sessionId, index: 1 });
+    expect((await maya.api.studySessions.list({ classId }))[0].goalsDone).toEqual([1]);
+  });
+
+  it('invites classmates by email, who then see an invite-only session', async () => {
+    setVariant('session-invite-by-email', true);
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const outsider = await student('Ana');
+    const { id: sessionId } = await maya.api.studySessions.create(inClass(classId, invited));
+    await expect(maya.api.studySessions.invite({ sessionId, email: outsider.email })).rejects.toThrow("isn't in this class");
+    await maya.api.studySessions.invite({ sessionId, email: leo.email });
+    expect((await leo.api.studySessions.list({ classId })).length).toBe(1);
+    expect((await leo.api.notifications.list()).items.some((n) => n.title.includes("You're invited"))).toBe(true);
+  });
+
+  it('can expire codes, and let people outside the class in with one', async () => {
+    const { classId, people } = await classmates('Maya');
+    const leo = await student('Leo');
+    // Rows are stamped with the real time, not the test's clock, so these dates are relative to it.
+    const later = Date.now() + 30 * 86_400_000;
+    const { id: sessionId, inviteCode: code } = await people[0].api.studySessions.create(inClass(classId, { startsAt: new Date(later), endsAt: new Date(later + 3_600_000) }));
+    await expectCode(leo.api.studySessions.joinByCode({ code }), 'FORBIDDEN');
+    setVariant('invite-outside-class', true);
+    setVariant('session-codes-expire', true);
+    clock = new Date(Date.now() + 8 * 86_400_000);
+    await expect(leo.api.studySessions.joinByCode({ code })).rejects.toThrow('expired');
+    const { inviteCode: fresh } = await people[0].api.studySessions.newCode({ sessionId });
+    expect(await leo.api.studySessions.joinByCode({ code: fresh })).toMatchObject({ status: 'going', inClass: false });
+  });
+
+  it('can keep hosts in, stop edits notifying, or let hosts choose who takes over', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo', 'Ana');
+    const [maya, leo, ana] = people;
+    const { id: sessionId } = await maya.api.studySessions.create(inClass(classId));
+    await leo.api.studySessions.join({ sessionId });
+    await ana.api.studySessions.join({ sessionId });
+    setVariant('hosts-cannot-leave', true);
+    await expectCode(maya.api.studySessions.leave({ sessionId }), 'FORBIDDEN');
+    await maya.api.studySessions.update({ sessionId, ...session(), location: 'Elsewhere' });
+    expect((await leo.api.notifications.list()).items.some((n) => n.title.includes('changed'))).toBe(false);
+    setVariant('choose-next-host', true);
+    await maya.api.studySessions.leave({ sessionId, nextHostId: ana.user.id });
+    expect((await ana.api.studySessions.list({ classId }))[0].isHost).toBe(true);
+  });
+
+  it('can delete cancelled sessions right away', async () => {
+    setVariant('delete-cancelled-sessions', true);
+    const { classId, people } = await classmates('Maya');
+    const { id: sessionId } = await people[0].api.studySessions.create(inClass(classId));
+    await people[0].api.studySessions.cancel({ sessionId });
+    expect(db.select().from(studySessions).all()).toEqual([]);
+  });
+
+  describe('time polls', () => {
+    const times = [new Date(2026, 9, 7, 18), new Date(2026, 9, 8, 18)];
+
+    it('can be switched off', async () => {
+      const { classId, people } = await classmates('Maya');
+      await people[0].api.timePolls.create({ classId, title: 'When?', minutes: 60, times });
+      setVariant('no-time-polls', true);
+      expect(await people[0].api.timePolls.list({ classId })).toEqual([]);
+    });
+
+    it('can offer a whole grid of times', async () => {
+      const { classId, people } = await classmates('Maya');
+      const grid = Array.from({ length: 8 }, (_, i) => new Date(2026, 9, 7, 9 + i));
+      await expect(people[0].api.timePolls.create({ classId, title: 'When?', minutes: 60, times: grid })).rejects.toThrow('at most five');
+      setVariant('availability-grid', true);
+      await people[0].api.timePolls.create({ classId, title: 'When?', minutes: 60, times: grid });
+      expect((await people[0].api.timePolls.list({ classId }))[0].options.length).toBe(8);
+    });
+
+    it('shows who picked what, signs them up, and closes on its own', async () => {
+      setVariant('show-who-voted', true);
+      setVariant('signup-poll-voters', true);
+      const { classId, people } = await classmates('Maya', 'Leo', 'Ana');
+      const [maya, leo, ana] = people;
+      await maya.api.timePolls.create({ classId, title: 'When?', minutes: 60, times });
+      const [first, second] = (await maya.api.timePolls.list({ classId }))[0].options;
+      await leo.api.timePolls.vote({ optionId: first.id, on: true });
+      await ana.api.timePolls.vote({ optionId: second.id, on: true });
+      expect((await maya.api.timePolls.list({ classId }))[0].options.map((o) => o.voters)).toEqual([['Leo'], ['Ana']]);
+      setVariant('polls-close-themselves', true);
+      clock = new Date(2026, 9, 6);
+      expect((await maya.api.timePolls.list({ classId })).length).toBe(1);
+      const { id: sessionId } = await maya.api.studySessions.create(inClass(classId, { startsAt: first.startsAt, endsAt: first.endsAt }));
+      await maya.api.timePolls.decide({ optionId: first.id, sessionId });
+      expect((await leo.api.studySessions.list({ classId }))[0].myStatus).toBe('going');
+      expect((await ana.api.studySessions.list({ classId }))[0].myStatus).toBeNull();
+    });
+
+    it('stops showing a poll after five days when it closes itself', async () => {
+      setVariant('polls-close-themselves', true);
+      const { classId, people } = await classmates('Maya');
+      const later = Date.now() + 30 * 86_400_000;
+      await people[0].api.timePolls.create({ classId, title: 'When?', minutes: 60, times: [new Date(later), new Date(later + 86_400_000)] });
+      clock = new Date(Date.now() + 6 * 86_400_000);
+      expect(await people[0].api.timePolls.list({ classId })).toEqual([]);
+    });
+  });
+});
+
+describe('Requirement switches: A3', () => {
+  afterEach(clearVariants);
+
+  const due = new Date(2026, 9, 20, 23, 59);
+  const deadline = (classId: number | null, fields: Record<string, unknown> = {}) => ({ classId, kind: 'quiz' as const, title: 'Quiz', dueAt: due, notes: '', ...fields });
+  const titlesOf = async (api: RpcClient<AppRouter>) => (await api.calendar.deadlines()).map((d) => d.title);
+  const lecture = { weekday: 1, startTime: '10:00', endTime: '11:00', location: '' };
+  const range = (api: RpcClient<AppRouter>, from: string, to: string) => api.calendar.range({ from, to });
+
+  it('keeps deadlines personal in version A', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    await people[0].api.calendar.addDeadline(deadline(classId));
+    expect(await titlesOf(people[1].api)).toEqual(['Quiz']);
+    setVariant('personal-deadlines', true);
+    expect(await titlesOf(people[1].api)).toEqual([]);
+    expect(await titlesOf(people[0].api)).toEqual(['Quiz']);
+  });
+
+  it('asks whether to share a deadline', async () => {
+    setVariant('ask-to-share-deadline', true);
+    const { classId, people } = await classmates('Maya', 'Leo');
+    await people[0].api.calendar.addDeadline(deadline(classId, { title: 'Mine', shared: false }));
+    await people[0].api.calendar.addDeadline(deadline(classId, { title: 'Ours', shared: true }));
+    expect(await titlesOf(people[1].api)).toEqual(['Ours']);
+    expect((await titlesOf(people[0].api)).sort()).toEqual(['Mine', 'Ours']);
+  });
+
+  it('holds class deadlines and class times until a classmate approves', async () => {
+    setVariant('approve-shared-changes', true);
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const { id } = await maya.api.calendar.addDeadline(deadline(classId));
+    expect((await leo.api.calendar.deadlines())[0].pending).toBe(true);
+    expect((await range(leo.api, '2026-10-20', '2026-10-20')).filter((e) => e.deadlineId === id)).toEqual([]);
+    await expectCode(maya.api.calendar.approveDeadline({ id }), 'FORBIDDEN');
+    await leo.api.calendar.approveDeadline({ id });
+    expect((await range(leo.api, '2026-10-20', '2026-10-20')).filter((e) => e.deadlineId === id).length).toBe(1);
+
+    await maya.api.courses.saveMeetings({ classId, meetings: [lecture] });
+    expect((await maya.api.courses.info({ classId })).meetings).toEqual([]);
+    expect((await leo.api.courses.info({ classId })).proposedTimes?.mine).toBe(false);
+    await expectCode(maya.api.courses.approveMeetings({ classId }), 'FORBIDDEN');
+    await leo.api.courses.approveMeetings({ classId });
+    expect((await maya.api.courses.info({ classId })).meetings.length).toBe(1);
+  });
+
+  it('keeps class times personal in version A', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    setVariant('personal-class-times', true);
+    await maya.api.courses.saveMeetings({ classId, meetings: [lecture] });
+    expect((await maya.api.courses.info({ classId })).meetings.length).toBe(1);
+    expect((await leo.api.courses.info({ classId })).meetings).toEqual([]);
+    expect((await range(maya.api, '2026-10-19', '2026-10-19')).filter((e) => e.kind === 'class').length).toBe(1);
+    expect((await range(leo.api, '2026-10-19', '2026-10-19')).filter((e) => e.kind === 'class').length).toBe(0);
+    clearVariants();
+    expect((await maya.api.courses.info({ classId })).meetings).toEqual([]);
+  });
+
+  it('can run classes through breaks, and cancel one lecture', async () => {
+    const { classId, people } = await classmates('Maya');
+    const [maya] = people;
+    await maya.api.courses.saveMeetings({ classId, meetings: [lecture] });
+    const classesOn = async (day: string) => (await range(maya.api, day, day)).filter((e) => e.kind === 'class');
+    expect((await classesOn('2026-10-12')).length).toBe(0);
+    setVariant('classes-through-breaks', true);
+    expect((await classesOn('2026-10-12')).length).toBe(1);
+    setVariant('cancel-one-lecture', true);
+    const [event] = await classesOn('2026-10-19');
+    await maya.api.calendar.toggleLecture({ meetingId: Number(event.key.split('-')[1]), classId, day: '2026-10-19' });
+    expect((await classesOn('2026-10-19'))[0]).toMatchObject({ detail: 'cancelled' });
+    await maya.api.calendar.toggleLecture({ meetingId: Number(event.key.split('-')[1]), classId, day: '2026-10-19' });
+    expect((await classesOn('2026-10-19'))[0]).toMatchObject({ detail: 'class' });
+  });
+
+  it('can leave out key dates and final exams', async () => {
+    const { people } = await classmates('Maya');
+    const all = await range(people[0].api, '2026-08-01', '2026-12-31');
+    expect(all.some((e) => e.kind === 'key')).toBe(true);
+    expect(all.some((e) => e.detail === 'final')).toBe(true);
+    setVariant('manual-final-exams', true);
+    const noFinals = await range(people[0].api, '2026-08-01', '2026-12-31');
+    expect(noFinals.some((e) => e.detail === 'final')).toBe(false);
+    expect(noFinals.some((e) => e.kind === 'key')).toBe(true);
+    setVariant('hide-key-dates', true);
+    const none = await range(people[0].api, '2026-08-01', '2026-12-31');
+    expect(none.some((e) => e.kind === 'key' && e.detail !== 'day-off')).toBe(false);
+  });
+
+  it('can check a deadline off for the whole section', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const { id } = await maya.api.calendar.addDeadline(deadline(classId));
+    setVariant('shared-deadline-check', true);
+    await maya.api.calendar.setDeadlineDone({ id, done: true });
+    expect((await leo.api.calendar.deadlines())[0].done).toBe(true);
+    await leo.api.calendar.setDeadlineDone({ id, done: false });
+    expect((await maya.api.calendar.deadlines())[0].done).toBe(false);
+  });
+
+  it('shows a professor how many checked it off', async () => {
+    setVariant('professor-sees-checkoffs', true);
+    const { classId, people } = await classmates('Maya');
+    const prof = clientFor(newContext());
+    await prof.auth.signUp({ name: 'Ouellet', email: 'ouellet@mcgill.ca', password: PASSWORD, pronouns: '', faculty: 'Science', gradYear: null, role: 'professor' });
+    await prof.classes.join({ classId });
+    const { id } = await people[0].api.calendar.addDeadline(deadline(classId));
+    await people[0].api.calendar.setDeadlineDone({ id, done: true });
+    expect((await prof.calendar.deadlines())[0].doneCount).toBe(1);
+    expect((await people[0].api.calendar.deadlines())[0].doneCount).toBe(0);
+  });
+
+  it('can leave plans off the calendar', async () => {
+    const { classId, people } = await classmates('Maya');
+    const [maya] = people;
+    await maya.api.planner.create({ classId, title: 'Essay', dueAt: new Date(2026, 9, 20), parts: [{ title: 'Draft', minutes: 60 }], attachmentPath: null, notes: '' } as never).catch(() => null);
+    setVariant('calendar-without-plans', true);
+    expect((await range(maya.api, '2026-10-05', '2026-10-25')).filter((e) => e.kind === 'task' || e.detail === 'planner')).toEqual([]);
+  });
+
+  it('warns about a busy week ahead', async () => {
+    const { classId, people } = await classmates('Maya');
+    const [maya] = people;
+    for (const title of ['A', 'B', 'C', 'D']) await maya.api.calendar.addDeadline(deadline(classId, { title, dueAt: new Date(2026, 9, 13, 12) }));
+    const warned = async () => (await maya.api.notifications.list()).items.some((n) => n.title.includes('Busy week'));
+    await maya.api.notifications.list();
+    expect(await warned()).toBe(false);
+    setVariant('busy-week-notification', true);
+    sweepReminders({ ...maya.ctx, userId: maya.user.id });
+    expect(await warned()).toBe(true);
+  });
+
+  it('lets anyone fix a shared deadline, and only professors add dates if asked', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const { id } = await maya.api.calendar.addDeadline(deadline(classId));
+    await expectCode(leo.api.calendar.updateDeadline({ id, ...deadline(classId, { title: 'Fixed' }) }), 'FORBIDDEN');
+    setVariant('anyone-fixes-deadlines', true);
+    await leo.api.calendar.updateDeadline({ id, ...deadline(classId, { title: 'Fixed' }) });
+    expect(await titlesOf(maya.api)).toEqual(['Fixed']);
+    setVariant('professor-enters-dates', true);
+    await maya.api.calendar.addDeadline(deadline(classId, { title: 'No professor here' }));
+    const prof = clientFor(newContext());
+    await prof.auth.signUp({ name: 'Ouellet', email: 'ouellet@mcgill.ca', password: PASSWORD, pronouns: '', faculty: 'Science', gradYear: null, role: 'professor' });
+    await prof.classes.join({ classId });
+    await expectCode(maya.api.calendar.addDeadline(deadline(classId, { title: 'Too late' })), 'FORBIDDEN');
+    await prof.calendar.addDeadline(deadline(classId, { title: 'From the professor' }));
+  });
+
+  it('adds lab and reading types, and dates with no time', async () => {
+    const { people } = await classmates('Maya');
+    const [maya] = people;
+    await expect(maya.api.calendar.addDeadline(deadline(null, { kind: 'lab' }))).rejects.toThrow('from the list');
+    setVariant('labs-and-readings', true);
+    await maya.api.calendar.addDeadline(deadline(null, { kind: 'lab', title: 'Lab 1' }));
+    setVariant('date-without-time', true);
+    await maya.api.calendar.addDeadline(deadline(null, { title: 'Any time', noTime: true }));
+    const events = await range(maya.api, '2026-10-20', '2026-10-20');
+    expect(events.find((e) => e.title === 'Any time')?.allDay).toBe(true);
+    expect(events.find((e) => e.title === 'Lab 1')).toMatchObject({ allDay: false, detail: 'lab' });
+  });
+
+  it('marks work done when it is submitted', async () => {
+    setVariant('submit-work', true);
+    const { classId, people } = await classmates('Maya');
+    const [maya] = people;
+    const { id } = await maya.api.calendar.addDeadline(deadline(classId));
+    expect(await maya.api.calendar.submit({ id })).toBeNull();
+    expect((await maya.api.calendar.deadlines())[0].done).toBe(false);
+  });
+});
+
+describe('Requirement switches: ST2', () => {
+  afterEach(clearVariants);
+
+  const plan = (fields: Record<string, unknown> = {}) => ({
+    title: 'Essay',
+    classId: null,
+    dueAt: new Date(2026, 9, 12, 23, 59),
+    notes: '',
+    bufferDays: 2,
+    tasks: [
+      { title: 'One', minutes: 60 },
+      { title: 'Two', minutes: 60 },
+      { title: 'Three', minutes: 60 },
+    ],
+    attachmentPath: null,
+    ...fields,
+  });
+  const daysOf = async (api: RpcClient<AppRouter>) => (await api.planner.list())[0].tasks.map((task) => task.scheduledFor);
+
+  it('can spread work evenly, or one task a day, or not schedule at all', async () => {
+    const { api } = await student('Maya');
+    await api.planner.create(plan());
+    const { id } = (await api.planner.list())[0];
+    setVariant('spread-work-evenly', true);
+    await api.planner.replan({ assignmentId: id });
+    expect(await daysOf(api)).toEqual(['2026-10-05', '2026-10-07', '2026-10-09']);
+    setVariant('one-task-a-day', true);
+    await api.planner.replan({ assignmentId: id });
+    expect(await daysOf(api)).toEqual(['2026-10-05', '2026-10-06', '2026-10-07']);
+    setVariant('place-tasks-yourself', true);
+    await api.planner.create(plan({ title: 'Placed by hand' }));
+    const placed = (await api.planner.list()).find((row) => row.title === 'Placed by hand')!;
+    expect(placed.tasks.map((task) => task.scheduledFor)).toEqual(['2026-10-05', '2026-10-05', '2026-10-05']);
+  });
+
+  it('can use one daily budget, holidays as days off, and other commitments', async () => {
+    const { api } = await student('Maya');
+    setVariant('one-daily-budget', true);
+    await api.planner.setAvailability({ minutes: [60, 60, 60, 60, 60, 60, 60] });
+    await api.planner.create(plan());
+    expect(await daysOf(api)).toEqual(['2026-10-05', '2026-10-06', '2026-10-07']);
+    clearVariants();
+    setVariant('other-commitments', true);
+    await api.planner.setAvailability({ minutes: [120, 120, 120, 120, 120, 120, 120] });
+    await api.planner.setCommitments({ minutes: [0, 120, 0, 0, 0, 0, 0] });
+    expect((await daysOf(api))[0]).toBe('2026-10-06');
+    clearVariants();
+    setVariant('holidays-as-days-off', true);
+    clock = new Date(2026, 9, 12, 9);
+    await api.planner.create(plan({ title: 'Over Thanksgiving', dueAt: new Date(2026, 9, 20) }));
+    const row = (await api.planner.list()).find((p) => p.title === 'Over Thanksgiving')!;
+    expect(row.tasks.every((task) => task.scheduledFor !== '2026-10-12')).toBe(true);
+  });
+
+  it('can require a class, posted assignments only, and refuse plans that do not fit', async () => {
+    const { classId, people } = await classmates('Maya');
+    const [maya] = people;
+    setVariant('require-class-for-plan', true);
+    await expect(maya.api.planner.create(plan())).rejects.toThrow('Pick the class');
+    await maya.api.planner.create(plan({ classId }));
+    clearVariants();
+    setVariant('only-posted-assignments', true);
+    await expect(maya.api.planner.create(plan())).rejects.toThrow('professor has posted');
+    clearVariants();
+    setVariant('refuse-plans-that-dont-fit', true);
+    const tooMuch = plan({ title: 'Too much', dueAt: new Date(2026, 9, 6, 23, 59), bufferDays: 0, tasks: [{ title: 'Huge', minutes: 600 }] });
+    await expect(maya.api.planner.create(tooMuch)).rejects.toThrow("doesn't fit");
+    expect((await maya.api.planner.list()).map((p) => p.title)).not.toContain('Too much');
+  });
+
+  it('can stop following a deadline, or ask before moving', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const { id: deadlineId } = await leo.api.calendar.addDeadline({ classId, kind: 'quiz', title: 'Quiz', dueAt: new Date(2026, 9, 20), notes: '' });
+    await maya.api.planner.create(plan({ classId, title: 'Quiz', dueAt: new Date(2026, 9, 20), deadlineId }));
+    const moved = new Date(2026, 9, 25);
+    await leo.api.calendar.updateDeadline({ id: deadlineId, classId, kind: 'quiz', title: 'Quiz', dueAt: moved, notes: '' });
+    setVariant('plan-date-by-hand', true);
+    expect((await maya.api.planner.list())[0].dueAt).toEqual(new Date(2026, 9, 20));
+    setVariant('ask-before-moving-plan', true);
+    const asked = (await maya.api.planner.list())[0];
+    expect(asked.dueAt).toEqual(new Date(2026, 9, 20));
+    expect(asked.movedTo).toEqual(moved);
+    await maya.api.planner.answerMove({ assignmentId: asked.id, move: true });
+    expect((await maya.api.planner.list())[0]).toMatchObject({ dueAt: moved, movedTo: null });
+  });
+
+  it('can plan every deadline on its own, or only what a professor posts', async () => {
+    const { classId, people } = await classmates('Maya');
+    const [maya] = people;
+    await maya.api.calendar.addDeadline({ classId, kind: 'quiz', title: 'Quiz', dueAt: new Date(2026, 9, 20), notes: '' });
+    setVariant('auto-plan-on-post', true);
+    expect(await maya.api.planner.list()).toEqual([]);
+    setVariant('auto-plan-deadlines', true);
+    expect((await maya.api.planner.list()).map((p) => p.title)).toEqual(['Quiz']);
+    expect((await maya.api.planner.list()).length).toBe(1);
+  });
+
+  it('can leave missed tasks where they are, marked late', async () => {
+    const { api } = await student('Maya');
+    await api.planner.create(plan());
+    setVariant('missed-tasks-stay-late', true);
+    clock = new Date(2026, 9, 7, 9);
+    expect((await daysOf(api))[0]).toBe('2026-10-05');
+    clearVariants();
+    expect((await daysOf(api))[0]).toBe('2026-10-07');
+  });
+
+  it('can move hand-placed tasks, skip tasks and keep notes on them', async () => {
+    const { api } = await student('Maya');
+    await api.planner.create(plan());
+    const [row] = await api.planner.list();
+    const [first] = row.tasks;
+    await api.planner.moveTask({ taskId: first.id, day: '2026-10-08' });
+    await api.planner.replan({ assignmentId: row.id });
+    setVariant('replan-moves-all', true);
+    await api.planner.moveTask({ taskId: first.id, day: '2026-10-08' });
+    await api.planner.create(plan({ title: 'Another' }));
+    setVariant('skip-tasks', true);
+    setVariant('task-notes', true);
+    await api.planner.skipTask({ taskId: first.id });
+    await api.planner.setTaskNote({ taskId: first.id, note: 'Chapter 3' });
+    const task = (await api.planner.list())[0].tasks.find((t) => t.id === first.id)!;
+    expect(task).toMatchObject({ skipped: true, note: 'Chapter 3' });
+    expect(task.doneAt).not.toBeNull();
+  });
+
+  it('can archive plans and bring them back', async () => {
+    setVariant('archive-plans', true);
+    const { api } = await student('Maya');
+    await api.planner.create(plan());
+    const [{ id: assignmentId }] = await api.planner.list();
+    await api.planner.setArchived({ assignmentId, archived: true });
+    expect((await api.planner.list())[0].archived).toBe(true);
+    await api.planner.setArchived({ assignmentId, archived: false });
+    expect((await api.planner.list())[0].archived).toBe(false);
+  });
+
+  it('previews a plan without saving it, and shares task lists without names', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const preview = await maya.api.planner.preview({ dueAt: new Date(2026, 9, 12), bufferDays: 2, tasks: [{ title: 'One', minutes: 60 }] });
+    expect(preview).toEqual([{ title: 'One', day: '2026-10-05' }]);
+    expect(await maya.api.planner.list()).toEqual([]);
+    await leo.api.planner.create(plan({ classId }));
+    expect(await maya.api.planner.sharedLists({ classId, title: 'Essay' })).toEqual([plan().tasks]);
+    expect(await leo.api.planner.sharedLists({ classId, title: 'Essay' })).toEqual([]);
+  });
+
+  it('gives professors totals only', async () => {
+    const { classId, people } = await classmates('Maya');
+    const prof = clientFor(newContext());
+    await prof.auth.signUp({ name: 'Ouellet', email: 'ouellet@mcgill.ca', password: PASSWORD, pronouns: '', faculty: 'Science', gradYear: null, role: 'professor' });
+    await prof.classes.join({ classId });
+    await people[0].api.planner.create(plan({ classId }));
+    expect(await prof.planner.classTotals({ classId })).toEqual({ plans: 1, minutes: 180 });
+    await expectCode(people[0].api.planner.classTotals({ classId }), 'FORBIDDEN');
+  });
+});
+
+describe('Requirement switches: A4 and A5', () => {
+  afterEach(clearVariants);
+
+  const component = (classId: number, name: string, weight: number) => ({ classId, name, weight, altWeight: null, dueAt: null });
+
+  it('keeps the scheme personal in version A', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    await maya.api.courses.addAssessment(component(classId, 'Shared', 20));
+    setVariant('personal-grading-scheme', true);
+    await leo.api.courses.addAssessment(component(classId, 'Leo only', 30));
+    expect((await leo.api.courses.assessments({ classId })).map((a) => a.name)).toEqual(['Leo only']);
+    expect((await maya.api.courses.assessments({ classId })).map((a) => a.name)).toEqual(['Shared']);
+    clearVariants();
+    expect((await maya.api.courses.assessments({ classId })).length).toBe(2);
+  });
+
+  it('scales weights up to 100%, in the standing too', async () => {
+    const { classId, people } = await classmates('Maya');
+    const [maya] = people;
+    await maya.api.courses.addAssessment(component(classId, 'Midterm', 50));
+    const [{ id }] = await maya.api.courses.assessments({ classId });
+    await maya.api.courses.setScore({ id, score: 80 });
+    expect((await maya.api.courses.standing()).classes[0].bestFinal).toBe(90);
+    setVariant('scale-to-listed-total', true);
+    expect((await maya.api.courses.standing()).classes[0].bestFinal).toBe(80);
+  });
+
+  it('shows the section average only once three people have a mark', async () => {
+    setVariant('section-average', true);
+    const { classId, people } = await classmates('Maya', 'Leo', 'Ana');
+    const [maya, leo, ana] = people;
+    await maya.api.courses.addAssessment(component(classId, 'Midterm', 50));
+    const [{ id }] = await maya.api.courses.assessments({ classId });
+    await maya.api.courses.setScore({ id, score: 90 });
+    await leo.api.courses.setScore({ id, score: 70 });
+    expect((await maya.api.courses.assessments({ classId }))[0].sectionAverage).toBeNull();
+    await ana.api.courses.setScore({ id, score: 80 });
+    expect((await maya.api.courses.assessments({ classId }))[0].sectionAverage).toBe(80);
+  });
+
+  it('holds scheme and detail changes until a classmate approves', async () => {
+    setVariant('approve-shared-changes', true);
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    await maya.api.courses.addAssessment(component(classId, 'Midterm', 50));
+    expect(await maya.api.courses.assessments({ classId })).toEqual([]);
+    const [proposal] = await leo.api.courses.proposedComponents({ classId });
+    expect(proposal).toMatchObject({ name: 'Midterm', byName: 'Maya', mine: false });
+    await expectCode(maya.api.courses.approveComponent({ classId, key: proposal.key }), 'FORBIDDEN');
+    await leo.api.courses.approveComponent({ classId, key: proposal.key });
+    expect((await maya.api.courses.assessments({ classId })).map((a) => a.name)).toEqual(['Midterm']);
+
+    const details = { classId, professor: 'Prof. Doe', professorEmail: '', officeHours: '', location: '' };
+    await maya.api.courses.saveDetails(details);
+    expect((await maya.api.courses.info({ classId })).professor).toBe('');
+    expect((await leo.api.courses.info({ classId })).proposedDetails?.mine).toBe(false);
+    await leo.api.courses.approveDetails({ classId });
+    expect((await maya.api.courses.info({ classId })).professor).toBe('Prof. Doe');
+  });
+
+  it('keeps course details personal in version A', async () => {
+    setVariant('personal-class-times', true);
+    const { classId, people } = await classmates('Maya', 'Leo');
+    await people[0].api.courses.saveDetails({ classId, professor: 'Prof. Doe', professorEmail: '', officeHours: '', location: '' });
+    expect((await people[0].api.courses.info({ classId })).professor).toBe('Prof. Doe');
+    expect((await people[1].api.courses.info({ classId })).professor).toBe('');
+  });
+
+  it('puts office hours on the calendar', async () => {
+    const { classId, people } = await classmates('Maya');
+    const [maya] = people;
+    await maya.api.courses.saveDetails({ classId, professor: '', professorEmail: '', officeHours: 'Tue 14:00–15:30, McConnell 324', location: '' });
+    const onTuesday = async () => (await maya.api.calendar.range({ from: '2026-10-20', to: '2026-10-20' })).filter((e) => e.detail === 'office hours');
+    expect(await onTuesday()).toEqual([]);
+    setVariant('office-hours-on-calendar', true);
+    expect((await onTuesday()).length).toBe(1);
+    expect(parseOfficeHours('Thursdays 9:30-11:00')).toEqual({ weekday: 4, startTime: '09:30', endTime: '11:00' });
+    expect(parseOfficeHours('by appointment')).toBeNull();
+  });
+
+  it('shares notes with the section, and links the outline', async () => {
+    setVariant('share-my-notes', true);
+    setVariant('link-outline', true);
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    await maya.api.courses.saveNotes({ classId, notes: 'Chapter 3 matters' });
+    await maya.api.courses.shareNotes({ classId, share: true });
+    expect((await leo.api.courses.info({ classId })).sharedNotes).toEqual([{ name: 'Maya', notes: 'Chapter 3 matters' }]);
+    expect((await maya.api.courses.info({ classId })).sharingNotes).toBe(true);
+    await maya.api.courses.shareNotes({ classId, share: false });
+    expect((await leo.api.courses.info({ classId })).sharedNotes).toEqual([]);
+    await maya.api.courses.setOutlineLink({ classId, url: 'https://mycourses2.mcgill.ca/x' });
+    expect((await leo.api.courses.info({ classId })).outlineLink).toContain('mycourses2');
+  });
+
+  it('keeps a shared best-of rule per component', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    await maya.api.courses.addAssessment(component(classId, 'Quizzes', 20));
+    const [{ id }] = await maya.api.courses.assessments({ classId });
+    await maya.api.courses.setSharedBest({ id, best: 4 });
+    expect(await leo.api.courses.sharedBest({ classId })).toEqual({ [id]: 4 });
+    await maya.api.courses.setSharedBest({ id, best: null });
+    expect(await leo.api.courses.sharedBest({ classId })).toEqual({});
+  });
+});
+
+describe('Requirement switches: A1 and A2', () => {
+  afterEach(clearVariants);
+
+  it('keeps the record in sync with joined classes', async () => {
+    const { people } = await classmates('Maya');
+    const [maya] = people;
+    expect(await maya.api.record.list()).toEqual([]);
+    setVariant('record-sync-classes', true);
+    const [row] = await maya.api.record.list();
+    expect(row).toMatchObject({ code: 'COMP 251', status: 'in-progress', term: 'Fall 2026' });
+    expect((await maya.api.record.list()).length).toBe(1);
+  });
+});
+
+describe('Requirement switches: ST1', () => {
+  afterEach(clearVariants);
+
+  it('can be manual only, or follow only your own class times', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    clock = new Date(2026, 9, 5, 10, 30);
+    await maya.api.courses.saveMeetings({ classId, meetings: [{ weekday: 1, startTime: '10:00', endTime: '11:00', location: '' }] });
+    expect((await leo.api.studyMode.status()).active).toBe(true);
+    setVariant('study-own-class-times', true);
+    expect((await leo.api.studyMode.status()).active).toBe(false);
+    expect((await maya.api.studyMode.status()).active).toBe(true);
+    setVariant('manual-study-mode', true);
+    expect((await maya.api.studyMode.status()).active).toBe(false);
+  });
+
+  it("won't stop a focus session early when asked not to", async () => {
+    setVariant('no-stopping-early', true);
+    const { api } = await student('Maya');
+    await api.studyMode.start({ minutes: 25 });
+    await expectCode(api.studyMode.stop(), 'FORBIDDEN');
+    clock = new Date(clock.getTime() + 26 * 60_000);
+    await api.studyMode.stop();
+  });
+
+  it('ranks focus time for people who share a class', async () => {
+    const { people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const outsider = await student('Ana');
+    await maya.api.studyMode.start({ minutes: 25 });
+    clock = new Date(clock.getTime() + 26 * 60_000);
+    await outsider.api.studyMode.start({ minutes: 25 });
+    const board = await leo.api.studyMode.leaderboard();
+    expect(board.map((row) => row.name)).toEqual(['Maya', 'Leo']);
+    expect(board[0].thisWeek).toBeGreaterThan(0);
+  });
+
+  it('can let a cancelled session through while notifications are held', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    const { id: sessionId } = await maya.api.studySessions.create({ ...session(), classId });
+    await leo.api.studySessions.join({ sessionId });
+    await leo.api.studyMode.start({ minutes: 25 });
+    await maya.api.studySessions.cancel({ sessionId });
+    const tick = () => backgroundTick(leo.ctx, initialTickState());
+    await tick();
+    expect(shown.some((title) => title.includes('cancelled'))).toBe(false);
+    setVariant('urgent-notifications-through', true);
+    await tick();
+    expect(shown.some((title) => title.includes('cancelled'))).toBe(true);
+  });
+});
+
+describe('Requirement switches: G4', () => {
+  afterEach(clearVariants);
+
+  const signUp = (api: RpcClient<AppRouter>, email: string, password = PASSWORD) => api.auth.signUp({ name: 'Ana', email, password, pronouns: '', faculty: '', gradYear: null });
+
+  it('can take other universities, and simpler passwords', async () => {
+    const api = clientFor(newContext());
+    await expect(signUp(api, 'ana@utoronto.ca')).rejects.toThrow('McGill email');
+    await expect(signUp(api, 'ana@mail.mcgill.ca', 'short1')).rejects.toThrow();
+    setVariant('other-universities', true);
+    setVariant('simple-password-rule', true);
+    await expect(signUp(api, 'ana@utoronto.ca', 'nodigitsatall')).rejects.toThrow();
+    await signUp(api, 'ana@utoronto.ca', 'abcdefg1');
+    expect((await api.auth.me())?.email).toBe('ana@utoronto.ca');
+  });
+
+  it('tells which form an email belongs on', async () => {
+    const maya = await student('Maya');
+    expect(await maya.api.auth.emailExists({ email: maya.email })).toBe(true);
+    expect(await maya.api.auth.emailExists({ email: 'nobody@mail.mcgill.ca' })).toBe(false);
+  });
+
+  it('never pauses sign-in in version A', async () => {
+    const maya = await student('Maya');
+    await maya.api.auth.signOut();
+    setVariant('no-sign-in-pause', true);
+    for (let i = 0; i < 7; i++) await expect(maya.api.auth.signIn({ email: maya.email, password: 'wrong' })).rejects.toThrow('incorrect');
+    expect((await maya.api.auth.signIn({ email: maya.email, password: PASSWORD })).email).toBe(maya.email);
+  });
+
+  it('waits 30 days before deleting, and signing in keeps the account', async () => {
+    setVariant('delete-after-30-days', true);
+    const maya = await student('Maya');
+    await maya.api.profile.deleteAccount({ password: PASSWORD, keepPosts: true });
+    expect(await maya.api.auth.me()).toBeNull();
+    expect((await maya.api.auth.signIn({ email: maya.email, password: PASSWORD })).email).toBe(maya.email);
+    await maya.api.profile.deleteAccount({ password: PASSWORD, keepPosts: true });
+    clock = new Date(clock.getTime() + 31 * 86_400_000);
+    await expect(maya.api.auth.signIn({ email: maya.email, password: PASSWORD })).rejects.toThrow('incorrect');
+    expect(await maya.api.auth.emailExists({ email: maya.email })).toBe(false);
+  });
+
+  it('can delete what someone added along with the account', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    await maya.api.calendar.addDeadline({ classId, kind: 'quiz', title: 'Quiz', dueAt: new Date(2026, 9, 20), notes: '' });
+    await leo.api.calendar.addDeadline({ classId, kind: 'quiz', title: 'Leo quiz', dueAt: new Date(2026, 9, 20), notes: '' });
+    await maya.api.board.create({ classId, kind: 'question', topic: 'Exams', title: 'Mine', body: 'x', visibility: 'class', audienceEmails: [], images: [] });
+    setVariant('delete-everything', true);
+    await maya.api.profile.deleteAccount({ password: PASSWORD, keepPosts: true });
+    expect((await leo.api.calendar.deadlines()).map((d) => d.title)).toEqual(['Leo quiz']);
+    expect(db.select().from(posts).all()).toEqual([]);
+  });
+
+  it('counts activity for unlocking goat parts', async () => {
+    const { classId, people } = await classmates('Maya');
+    const [maya] = people;
+    expect((await maya.api.profile.activity()).count).toBe(0);
+    await maya.api.board.create({ classId, kind: 'question', topic: 'Exams', title: 'Mine', body: 'x', visibility: 'class', audienceEmails: [], images: [] });
+    expect((await maya.api.profile.activity()).count).toBe(1);
+  });
+});
+
+
+describe('Requirement switches: G3, ST3 and G2', () => {
+  afterEach(clearVariants);
+
+  const titles = async (api: RpcClient<AppRouter>) => (await api.notifications.list()).items.map((n) => n.title);
+
+  it('can keep a class quiet, or every notification', async () => {
+    const { classId, people } = await classmates('Maya');
+    const [maya] = people;
+    const link = `/classes/${classId}`;
+    const send = () => notify(db, maya.user.id, { type: 'announcement', title: raw('Hello'), link });
+
+    setVariant('mute-whole-class', true);
+    await maya.api.courses.setMuteReplies({ classId, muted: true });
+    expect(send()).toBe(false);
+    setVariant('mute-whole-class', false);
+    expect(send()).toBe(true);
+    expect(await titles(maya.api)).toEqual(['Hello']);
+
+    setVariant('notify-per-class', true);
+    await maya.api.notifications.setClassMuted({ classId, muted: true });
+    expect(send()).toBe(false);
+    setVariant('notify-per-class', false);
+
+    setVariant('one-notification-switch', true);
+    await maya.api.notifications.setAllOff({ off: true });
+    expect(send()).toBe(false);
+  });
+
+  it('can email everything and leave out waitlist news', async () => {
+    const { people } = await classmates('Maya');
+    const [maya] = people;
+    setVariant('notify-version-a', true);
+    expect(notify(db, maya.user.id, { type: 'session-spot', title: raw('Spot') })).toBe(false);
+    setVariant('notify-version-a', false);
+
+    await maya.api.notifications.setPref({ type: 'announcement', desktop: true, email: false });
+    setVariant('email-all-no-list', true);
+    notify(db, maya.user.id, { type: 'announcement', title: raw('Emailed') });
+    expect((await maya.api.notifications.outbox()).map((m) => m.subject).join()).toContain('Emailed');
+  });
+
+  it('lets a student add a course the catalogue is missing', async () => {
+    const maya = await student('Maya');
+    const { id } = await maya.api.catalogue.addCourse({ subject: 'zzzz', number: '101', title: 'New course', credits: 3, term: 'Fall 2026' });
+    const again = await maya.api.catalogue.addCourse({ subject: 'ZZZZ', number: '101', title: 'New course', credits: 3, term: 'Fall 2026' });
+    expect(again.id).toBe(id);
+    expect(await maya.api.catalogue.addCourse({ subject: 'ZZZZ', number: '101', title: 'New course', credits: 3, term: 'Winter 2027' })).not.toEqual({ id });
+    await expect(maya.api.catalogue.addCourse({ subject: 'ZZ', number: '101', title: 'x', credits: 3, term: 'Fall 2026' })).rejects.toThrow('course code');
+  });
+});
+
+describe('Requirement switches: WEB, WIRE and EXTRA', () => {
+  afterEach(clearVariants);
+
+  const post = (api: RpcClient<AppRouter>, classId: number, title: string) =>
+    api.board.create({ classId, kind: 'question', topic: 'Exams', title, body: 'x', visibility: 'class', audienceEmails: [], images: [] });
+
+  it('can sort the feed by latest activity', async () => {
+    const { classId, people } = await classmates('Maya');
+    const [maya] = people;
+    const older = await post(maya.api, classId, 'Older');
+    await new Promise((r) => setTimeout(r, 1100));
+    await post(maya.api, classId, 'Newer');
+    await new Promise((r) => setTimeout(r, 1100));
+    await maya.api.board.reply({ postId: older.id, body: 'Bump' });
+    const titles = async () => (await maya.api.board.feed({ classIds: [classId], topics: [], since: null, search: '' })).map((p) => p.title);
+    expect(await titles()).toEqual(['Newer', 'Older']);
+    setVariant('sort-activity', true);
+    expect(await titles()).toEqual(['Older', 'Newer']);
+  });
+
+  it('can also search the catalogue and classmates', async () => {
+    const { people } = await classmates('Maya', 'Leo');
+    const [maya] = people;
+    const kinds = async (query: string) => (await maya.api.search.everything({ query })).map((r) => r.kind);
+    expect(await kinds('math')).not.toContain('catalogue');
+    expect(await kinds('Leo')).not.toContain('person');
+    setVariant('search-catalogue', true);
+    setVariant('search-classmates', true);
+    expect(await kinds('math')).toContain('catalogue');
+    expect(await kinds('Leo')).toContain('person');
+    expect(await kinds('Maya')).not.toContain('person');
+  });
+
+  it('resets one account and leaves the rest alone', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people;
+    await maya.api.todos.add({ title: 'Mine', dueDate: null, classId: null, weekly: false });
+    await leo.api.todos.add({ title: 'Leo', dueDate: null, classId: null, weekly: false });
+    await post(maya.api, classId, 'Stays up');
+    await maya.api.profile.resetMine();
+    expect((await maya.api.auth.me())?.email).toBe(maya.email);
+    expect(await maya.api.classes.mine()).toEqual([]);
+    expect((await maya.api.todos.today()).today).toEqual([]);
+    expect((await leo.api.todos.today()).today.map((i) => i.title)).toEqual(['Leo']);
+    expect((await leo.api.classes.mine()).length).toBe(1);
+    expect((await leo.api.board.feed({ classIds: [classId], topics: [], since: null, search: '' })).map((p) => p.title)).toEqual(['Stays up']);
+    expect((await maya.api.auth.signIn({ email: maya.email, password: PASSWORD })).email).toBe(maya.email);
+  });
+
+  it('seals a backup so that only the passphrase opens it', async () => {
+    const text = writeBackup({ db: new TextEncoder().encode('SQLite format 3\0rest'), files: [] }, new Date());
+    const sealed = await sealBackup(text, 'correct horse');
+    expect(isSealed(sealed)).toBe(true);
+    expect(isSealed(text)).toBe(false);
+    expect(sealed).not.toContain('rest');
+    expect(await openSealed(sealed, 'wrong horse')).toBeNull();
+    expect(await openSealed(sealed, 'correct horse')).toBe(text);
+  });
+});
+
+describe('Requirement switches: PROF', () => {
+  afterEach(clearVariants);
+
+  async function professor(name: string) {
+    const ctx = newContext();
+    const api = clientFor(ctx);
+    const email = `${name.toLowerCase()}@mcgill.ca`;
+    const { user } = await api.auth.signUp({ name, email, password: PASSWORD, pronouns: '', faculty: 'Science', gradYear: null, role: 'professor' });
+    return { api, user, email, ctx };
+  }
+
+  async function taught() {
+    const { classId, people } = await classmates('Maya', 'Leo', 'Ana', 'Sam');
+    const prof = await professor('Ouellet');
+    await prof.api.classes.join({ classId });
+    return { classId, prof, maya: people[0], leo: people[1], ana: people[2], sam: people[3], people };
+  }
+
+  // Both sections of COMP 251, taught by one professor.
+  async function twoSections() {
+    const maya = await student('Maya');
+    const prof = await professor('Ouellet');
+    const first = await comp251(maya.api, '001');
+    const second = await comp251(maya.api, '002');
+    await maya.api.classes.join({ classId: second });
+    await prof.api.classes.join({ classId: first });
+    await prof.api.classes.join({ classId: second });
+    return { first, second, prof, maya };
+  }
+
+  const askQuestion = (api: RpcClient<AppRouter>, classId: number, title: string) =>
+    api.board.create({ classId, kind: 'question', topic: 'Exams', title, body: 'x', visibility: 'class', audienceEmails: [], images: [] });
+  const titles = async (api: RpcClient<AppRouter>, classId: number) => (await api.board.feed({ classIds: [classId], topics: [], since: null, search: '' })).map((p) => p.title);
+  const later = () => new Date(Date.now() + 14 * 86_400_000);
+  const assignment = (classId: number, title = 'Assignment 1') => ({ classId, title, dueAt: later(), notes: '', weight: null, attachmentPath: null });
+
+  it('can turn off sign-ups and everything professors do', async () => {
+    const { classId, prof, maya } = await taught();
+    expect((await maya.api.classes.mine()).length).toBe(1);
+    setVariant('students-only', true);
+    await expect(professor('Blocked')).rejects.toThrow('for students');
+    setVariant('no-professor-features', true);
+    await expect(prof.api.assignments.post(assignment(classId))).rejects.toThrow('professor');
+    const { id } = await askQuestion(maya.api, classId, 'Mine');
+    await expect(prof.api.board.pin({ postId: id, pinned: true })).rejects.toThrow('professor');
+    expect((await maya.api.board.get({ postId: id })).canReport).toBe(false);
+  });
+
+  it('lets a teaching assistant moderate once the professor picks them', async () => {
+    const { classId, prof, maya, leo } = await taught();
+    setVariant('ta-moderate', true);
+    const { id } = await askQuestion(maya.api, classId, 'Mine');
+    await expect(leo.api.board.pin({ postId: id, pinned: true })).rejects.toThrow('professor');
+    await expect(leo.api.board.setTas({ classId, userIds: [leo.user.id] })).rejects.toThrow('professor');
+    await prof.api.board.setTas({ classId, userIds: [leo.user.id] });
+    await leo.api.board.pin({ postId: id, pinned: true });
+    expect((await leo.api.board.get({ postId: id })).canModerate).toBe(true);
+    setVariant('ta-moderate', false);
+    await expect(leo.api.board.pin({ postId: id, pinned: false })).rejects.toThrow('professor');
+  });
+
+  it('can hide a post after enough reports, or have no reports at all', async () => {
+    const { classId, maya, leo, ana, sam, prof } = await taught();
+    const { id } = await askQuestion(maya.api, classId, 'Reported');
+    setVariant('community-moderation', true);
+    await leo.api.board.report({ postId: id, replyId: null, reason: '' });
+    await ana.api.board.report({ postId: id, replyId: null, reason: '' });
+    expect(await titles(sam.api, classId)).toEqual(['Reported']);
+    await sam.api.board.report({ postId: id, replyId: null, reason: '' });
+    expect(await titles(sam.api, classId)).toEqual([]);
+    await expect(sam.api.board.get({ postId: id })).rejects.toThrow();
+    expect(await titles(maya.api, classId)).toEqual(['Reported']);
+    expect(await titles(prof.api, classId)).toEqual(['Reported']);
+
+    setVariant('no-reporting', true);
+    const other = await askQuestion(maya.api, classId, 'Another');
+    expect((await leo.api.board.get({ postId: other.id })).canReport).toBe(false);
+    await expect(leo.api.board.report({ postId: other.id, replyId: null, reason: '' })).rejects.toThrow('off');
+  });
+
+  it('can rank by votes rather than pins, and lock what has an accepted answer', async () => {
+    const { classId, prof, maya, leo } = await taught();
+    const voted = await askQuestion(maya.api, classId, 'Voted');
+    const pinned = await askQuestion(maya.api, classId, 'Pinned');
+    await prof.api.board.pin({ postId: pinned.id, pinned: true });
+    await leo.api.board.react({ postId: voted.id });
+    expect((await titles(maya.api, classId))[0]).toBe('Pinned');
+    setVariant('vote-not-pin', true);
+    expect((await titles(maya.api, classId))[0]).toBe('Voted');
+
+    setVariant('lock-on-accept', true);
+    await leo.api.board.reply({ postId: voted.id, body: 'An answer' });
+    const reply = (await maya.api.board.get({ postId: voted.id })).replies[0];
+    await maya.api.board.accept({ postId: voted.id, replyId: reply.id });
+    await expect(leo.api.board.reply({ postId: voted.id, body: 'Too late' })).rejects.toThrow('locked');
+    await maya.api.board.accept({ postId: voted.id, replyId: null });
+    await leo.api.board.reply({ postId: voted.id, body: 'Open again' });
+  });
+
+  it('shares a board across the sections a professor teaches', async () => {
+    const { first, second, prof, maya } = await twoSections();
+    await askQuestion(prof.api, first, 'To both');
+    expect(await titles(maya.api, second)).toEqual([]);
+    setVariant('shared-prof-thread', true);
+    expect(await titles(maya.api, second)).toEqual(['To both']);
+  });
+
+  it('turns a section into a short code and back', () => {
+    expect(classFromJoinCode(joinCodeFor(29))).toBe(29);
+    expect(classFromJoinCode(` ${joinCodeFor(1234).toLowerCase()} `)).toBe(1234);
+    expect(joinCodeFor(29).length).toBeLessThan(7);
+    expect(classFromJoinCode('nope!')).toBeNull();
+    expect(classFromJoinCode('')).toBeNull();
+  });
+
+  it('lets a professor change any link in their section', async () => {
+    const { classId, prof, maya } = await taught();
+    const { id } = await maya.api.links.add({ classId, url: 'https://discord.gg/abc123', label: 'Chat', purpose: 'course' });
+    await expect(prof.api.links.remove({ linkId: id })).rejects.toThrow();
+    setVariant('prof-edit-links', true);
+    await prof.api.links.remove({ linkId: id });
+  });
+
+  it('lets a student post and manage an assignment of their own', async () => {
+    const { classId, prof, maya, leo } = await taught();
+    await expect(maya.api.assignments.post(assignment(classId))).rejects.toThrow('professor');
+    setVariant('students-post-assignments', true);
+    const { id } = await maya.api.assignments.post({ ...assignment(classId), weight: 20 });
+    expect((await leo.api.assignments.list({ classId })).map((a) => a.title)).toEqual(['Assignment 1']);
+    expect(await maya.api.courses.assessments({ classId })).toEqual([]);
+    await expect(leo.api.assignments.remove({ id })).rejects.toThrow('professor');
+    await maya.api.assignments.remove({ id });
+    const again = await maya.api.assignments.post(assignment(classId));
+    await prof.api.assignments.remove({ id: again.id });
+  });
+
+  it('can give one student a later due date', async () => {
+    const { classId, prof, maya, leo } = await taught();
+    setVariant('extensions', true);
+    const { id } = await prof.api.assignments.post(assignment(classId));
+    const until = new Date(Date.now() + 30 * 86_400_000);
+    await expect(leo.api.assignments.setExtension({ id, userId: leo.user.id, until })).rejects.toThrow('professor');
+    await prof.api.assignments.setExtension({ id, userId: maya.user.id, until });
+    const [mine] = await maya.api.assignments.list({ classId });
+    expect(mine.dueAt.getTime()).toBe(until.getTime());
+    expect(mine.extended).toBe(true);
+    expect((await leo.api.assignments.list({ classId }))[0].extended).toBe(false);
+    expect((await prof.api.assignments.extensions({ id })).find((p) => p.id === maya.user.id)?.until).toBe(until.toISOString());
+    await prof.api.assignments.setExtension({ id, userId: maya.user.id, until: null });
+    expect((await maya.api.assignments.list({ classId }))[0].extended).toBe(false);
+  });
+
+  it('can leave weights to the scheme, and show a draft to students', async () => {
+    const { classId, prof, maya } = await taught();
+    setVariant('no-assignment-weight', true);
+    await prof.api.assignments.post({ ...assignment(classId), weight: 20 });
+    expect(await prof.api.courses.assessments({ classId })).toEqual([]);
+
+    const releaseAt = new Date(Date.now() + 86_400_000);
+    await prof.api.assignments.post({ ...assignment(classId, 'Draft one'), releaseAt });
+    expect((await maya.api.assignments.list({ classId })).map((a) => a.title)).toEqual(['Assignment 1']);
+    setVariant('draft-visible', true);
+    const list = await maya.api.assignments.list({ classId });
+    expect(list.map((a) => a.title)).toContain('Draft one');
+    expect(list.find((a) => a.title === 'Draft one')?.releaseAt).toEqual(releaseAt);
+  });
+
+  it('keeps one assignment across a professor’s sections', async () => {
+    const { first, second, prof, maya } = await twoSections();
+    setVariant('shared-assignment', true);
+    const { id } = await prof.api.assignments.post(assignment(first));
+    const inSecond = () => maya.api.assignments.list({ classId: second });
+    expect((await inSecond()).map((a) => a.title)).toEqual(['Assignment 1']);
+    const dueAt = new Date(Date.now() + 20 * 86_400_000);
+    await prof.api.assignments.update({ id, title: 'Renamed', dueAt, notes: '', releaseAt: null, attachmentPath: null });
+    expect((await inSecond())[0].title).toBe('Renamed');
+    expect((await inSecond())[0].dueAt.getTime()).toBe(dueAt.getTime());
+    await prof.api.assignments.remove({ id });
+    expect(await inSecond()).toEqual([]);
+  });
+
+  it('can link to a handout, and tell students when something is removed', async () => {
+    const { classId, prof, maya } = await taught();
+    setVariant('handout-link', true);
+    const { id } = await prof.api.assignments.post({ ...assignment(classId), handoutLink: 'https://mycourses2.mcgill.ca/a1' });
+    expect((await maya.api.assignments.list({ classId }))[0].handoutLink).toBe('https://mycourses2.mcgill.ca/a1');
+    await expect(prof.api.assignments.post({ ...assignment(classId), handoutLink: 'not a link' })).rejects.toThrow();
+
+    setVariant('notify-assignment-removed', true);
+    await prof.api.assignments.remove({ id });
+    expect((await maya.api.notifications.list()).items.map((n) => n.title).join()).toContain('was removed');
+  });
+
+  it('can hide the check-off count, or show names', async () => {
+    const { classId, prof, maya, leo, people } = await taught();
+    const extras = await Promise.all(['Noor', 'Kim'].map((name) => student(name)));
+    for (const s of extras) await s.api.classes.join({ classId });
+    expect(people.length + extras.length).toBeGreaterThanOrEqual(5);
+    const { id } = await prof.api.assignments.post(assignment(classId));
+    await maya.api.calendar.setDeadlineDone({ id, done: true });
+    const seen = async () => (await prof.api.assignments.list({ classId }))[0];
+    expect((await seen()).progress?.done).toBe(1);
+    setVariant('progress-private', true);
+    expect((await seen()).progress).toBeNull();
+    setVariant('progress-names', true);
+    expect((await seen()).who?.done).toEqual([maya.user.name]);
+    expect((await seen()).who?.waiting).toContain(leo.user.name);
+    expect((await maya.api.assignments.list({ classId }))[0].who).toBeNull();
+  });
+
+  it('keeps office hours out of sessions', async () => {
+    const { classId, prof, maya } = await taught();
+    const startsAt = later();
+    await prof.api.studySessions.create({ classId, ...session({ title: 'Office hours', startsAt, endsAt: new Date(startsAt.getTime() + 3_600_000) }) });
+    expect((await maya.api.studySessions.list({ classId })).length).toBe(1);
+    setVariant('office-hours-details-only', true);
+    expect(await maya.api.studySessions.list({ classId })).toEqual([]);
+    await expect(prof.api.studySessions.create({ classId, ...session({ startsAt, endsAt: new Date(startsAt.getTime() + 3_600_000) }) })).rejects.toThrow('course details');
+  });
+
+  it('keeps one scheme across a professor’s sections, marks and all', async () => {
+    const { first, second, prof, maya } = await twoSections();
+    await prof.api.courses.addAssessment({ classId: second, name: 'Midterm', weight: 40, altWeight: null, dueAt: null });
+    setVariant('shared-scheme', true);
+    await prof.api.courses.addAssessment({ classId: first, name: 'Midterm', weight: 30, altWeight: null, dueAt: null });
+    await prof.api.courses.addAssessment({ classId: first, name: 'Final', weight: 70, altWeight: null, dueAt: null });
+    const parts = async () => (await maya.api.courses.assessments({ classId: second })).map((a) => [a.name, a.weight]);
+    expect(await parts()).toEqual([['Midterm', 30], ['Final', 70]]);
+    const final = (await prof.api.courses.assessments({ classId: first })).find((a) => a.name === 'Final')!;
+    await prof.api.courses.removeAssessment({ id: final.id });
+    expect(await parts()).toEqual([['Midterm', 30]]);
+  });
+});
+
+describe('Requirement switches: simulated mail, second factor and one class', () => {
+  afterEach(clearVariants);
+
+  const NEW_PASSWORD = 'a-brand-new-long-password';
+
+  it('resets a password with an emailed code that runs out', async () => {
+    const maya = await student('Maya');
+    setVariant('reset-by-email-code', true);
+    const { secret } = await maya.api.auth.requestReset({ email: maya.email });
+    expect(secret).toMatch(/^\d{6}$/);
+    expect((await maya.api.notifications.outbox()).map((m) => m.subject)).toContain('Reset your UniLink password');
+    await expect(maya.api.auth.resetWithEmail({ email: maya.email, secret: 'x', password: NEW_PASSWORD })).rejects.toThrow('code');
+    clock = new Date(clock.getTime() + 16 * 60_000);
+    await expect(maya.api.auth.resetWithEmail({ email: maya.email, secret: secret!, password: NEW_PASSWORD })).rejects.toThrow('code');
+    const again = await maya.api.auth.requestReset({ email: maya.email });
+    await maya.api.auth.resetWithEmail({ email: maya.email, secret: again.secret!, password: NEW_PASSWORD });
+    expect((await maya.api.auth.signIn({ email: maya.email, password: NEW_PASSWORD })).email).toBe(maya.email);
+    expect((await maya.api.auth.requestReset({ email: 'nobody@mail.mcgill.ca' })).secret).toBeNull();
+  });
+
+  it('holds an account until its email is confirmed', async () => {
+    setVariant('confirm-email', true);
+    const ctx = newContext();
+    const api = clientFor(ctx);
+    const email = 'noor@mail.mcgill.ca';
+    const { needsConfirming, confirmCode } = await api.auth.signUp({ name: 'Noor', email, password: PASSWORD, pronouns: '', faculty: 'Science', gradYear: 2028 });
+    expect(needsConfirming).toBe(true);
+    expect(await api.auth.me()).toBeNull();
+    await expect(api.auth.signIn({ email, password: PASSWORD })).rejects.toThrow('Confirm');
+    await expect(api.auth.confirmEmail({ email, code: '000000x' })).rejects.toThrow('code');
+    await api.auth.confirmEmail({ email, code: confirmCode! });
+    expect((await api.auth.me())?.email).toBe(email);
+    await api.auth.signOut();
+    expect((await api.auth.signIn({ email, password: PASSWORD })).email).toBe(email);
+  });
+
+  it('asks for an authenticator code once one is set up', async () => {
+    const maya = await student('Maya');
+    setVariant('second-factor', true);
+    const { secret } = await maya.api.profile.startTotp();
+    await expect(maya.api.profile.confirmTotp({ code: '000000x' })).rejects.toThrow();
+    await maya.api.profile.confirmTotp({ code: await totpCode(secret, clock) });
+    expect((await maya.api.profile.totpStatus()).on).toBe(true);
+    await maya.api.auth.signOut();
+    await expect(maya.api.auth.signIn({ email: maya.email, password: PASSWORD })).rejects.toThrow('authenticator');
+    expect((await maya.api.auth.signIn({ email: maya.email, password: PASSWORD, totp: await totpCode(secret, clock) })).email).toBe(maya.email);
+  });
+
+  it('follows the published test vector for authenticator codes', async () => {
+    // RFC 6238's SHA-1 key, "12345678901234567890", in base32.
+    expect(await totpCode('GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ', new Date(59_000))).toBe('287082');
+  });
+
+  it('asks a question instead of pausing after wrong tries', async () => {
+    const maya = await student('Maya');
+    setVariant('sign-in-question', true);
+    await maya.api.auth.signOut();
+    for (let i = 0; i < 3; i++) await expect(maya.api.auth.signIn({ email: maya.email, password: 'wrong' })).rejects.toThrow('incorrect');
+    const question = await maya.api.auth.signInQuestion({ email: maya.email });
+    const [a, b] = question!.text.match(/\d+/g)!.map(Number);
+    await expect(maya.api.auth.signIn({ email: maya.email, password: PASSWORD, answer: '0' })).rejects.toThrow('question');
+    expect((await maya.api.auth.signIn({ email: maya.email, password: PASSWORD, answer: String(a + b) })).email).toBe(maya.email);
+  });
+
+  it('treats every section of a course as one class', async () => {
+    const maya = await student('Maya');
+    const leo = await student('Leo');
+    const first = await comp251(maya.api, '001');
+    const second = await comp251(maya.api, '002');
+    await maya.api.classes.join({ classId: first });
+    await leo.api.classes.join({ classId: second });
+    setVariant('one-class-per-course', true);
+    expect((await leo.api.classes.mine()).map((c) => [c.id, c.code])).toEqual([[first, 'COMP 251']]);
+    await maya.api.board.create({ classId: first, kind: 'question', topic: 'Exams', title: 'Shared', body: 'x', visibility: 'class', audienceEmails: [], images: [] });
+    expect((await leo.api.board.feed({ classIds: [first], topics: [], since: null, search: '' })).map((p) => p.title)).toEqual(['Shared']);
+    const found = await maya.api.catalogue.search({ query: 'comp251', term: 'Fall 2026', level: null });
+    expect(found.map((c) => c.id)).toEqual([first]);
+    await expect(leo.api.classes.join({ classId: first })).rejects.toThrow('already');
+    // A professor teaching both sections is still one person.
+    setVariant('one-class-per-course', false);
+    const prof = clientFor(newContext());
+    await prof.auth.signUp({ name: 'Ouellet', email: 'ouellet@mcgill.ca', password: PASSWORD, pronouns: '', faculty: 'Science', gradYear: null, role: 'professor' });
+    await prof.classes.join({ classId: first });
+    await prof.classes.join({ classId: second });
+    setVariant('one-class-per-course', true);
+    expect((await maya.api.classes.get({ classId: first })).professors.map((p) => p.name)).toEqual(['Ouellet']);
+  });
+
+  it('can drop the lowest mark and use a course’s own cutoffs', () => {
+    const items = [{ weight: 50, score: 50 }, { weight: 50, score: 90 }];
+    expect(dropLowest(items).map((i) => i.weight)).toEqual([0, 100]);
+    expect(summarize(dropLowest(items)).currentAverage).toBe(90);
+    expect(dropLowest([{ weight: 100, score: 40 }])[0].weight).toBe(100);
+    const scale = scaleWith({ A: 90 });
+    expect(letterFor(87, scale).letter).toBe('A-');
+    expect(letterFor(87).letter).toBe('A');
+    expect(scaleWith(null)).toBe(MCGILL_SCALE);
+  });
+});
+
+describe('checking a plan', () => {
+  const add = (api: Awaited<ReturnType<typeof student>>['api'], code: string, term: string, status: 'planned' | 'completed' = 'planned') =>
+    api.record.add({ code, title: '', credits: 3, term, status, grade: status === 'completed' ? 'A' : null });
+
+  it('stops a planned course without its prerequisites or in the wrong term', async () => {
+    const { api } = await student('Maya');
+    await add(api, 'COMP 251', 'Winter 2027');
+    await api.record.remove({ id: (await api.record.list())[0].id });
+    setVariant('check-prereqs', true);
+    await expect(add(api, 'COMP 251', 'Winter 2027')).rejects.toThrow('COMP 251 needs COMP 250 and MATH 240 first.');
+    await add(api, 'COMP 250', 'Fall 2025', 'completed');
+    await add(api, 'MATH 240', 'Winter 2026', 'completed');
+    await add(api, 'COMP 251', 'Winter 2027');
+    await expect(add(api, 'COMP 360', 'Fall 2027')).rejects.toThrow('only offered in Winter');
+    // Something already done isn't a plan, so nothing checks it.
+    await add(api, 'COMP 330', 'Winter 2026', 'completed');
+  });
+});
+
+describe('new differences', () => {
+  const later = (minutes: number) => new Date(clock.getTime() + minutes * 60_000);
+
+  it('stops edits 15 minutes after posting', async () => {
+    const { classId, people } = await classmates('Maya');
+    const maya = people[0].api;
+    setVariant('edit-window', true);
+    const { id: postId } = await maya.board.create({ classId, kind: 'question', topic: 'Exams', title: 'Old post', body: 'x', visibility: 'class', audienceEmails: [] });
+    await maya.board.reply({ postId, body: 'first' });
+    const replyId = (await maya.board.get({ postId })).replies[0].id;
+    await maya.board.editReply({ replyId, body: 'still fine' });
+    clock = later(60 * 24 * 365);
+    await expect(maya.board.editReply({ replyId, body: 'too late' })).rejects.toThrow('15 minutes');
+    await expect(maya.board.update({ postId, kind: 'question', topic: 'Exams', title: 'Too late', body: 'x' })).rejects.toThrow('15 minutes');
+  });
+
+  it('puts unanswered questions first', async () => {
+    const { classId, people } = await classmates('Maya');
+    const maya = people[0].api;
+    const ask = (title: string, kind: 'question' | 'note' = 'question') => maya.board.create({ classId, kind, topic: 'Exams', title, body: 'x', visibility: 'class', audienceEmails: [] });
+    const { id: answered } = await ask('Answered');
+    await ask('Waiting');
+    await ask('A note', 'note');
+    await maya.board.reply({ postId: answered, body: 'yes' });
+    await ask('Newest answered');
+    const titles = async () => (await maya.board.feed({ classIds: [classId], topics: [], since: null, search: '' })).map((p) => p.title);
+    setVariant('sort-unanswered', true);
+    const sorted = await titles();
+    expect(sorted.slice(0, 2).sort()).toEqual(['Newest answered', 'Waiting']);
+    expect(sorted.slice(2)).toContain('Answered');
+    expect(sorted.slice(2)).toContain('A note');
+  });
+
+  it('wants an hour of notice for a session', async () => {
+    const { classId, people } = await classmates('Maya');
+    setVariant('session-notice', true);
+    await expect(people[0].api.studySessions.create({ ...session({ startsAt: later(30), endsAt: later(90) }), classId })).rejects.toThrow('an hour');
+    await people[0].api.studySessions.create({ ...session({ startsAt: later(90), endsAt: later(150) }), classId });
+  });
+
+  it('allows ten times in a poll', async () => {
+    const { classId, people } = await classmates('Maya');
+    const times = (n: number) => Array.from({ length: n }, (_, i) => later(60 * (i + 1)));
+    const ask = (n: number) => people[0].api.timePolls.create({ classId, title: 'When?', minutes: 60, times: times(n) });
+    await expect(ask(6)).rejects.toThrow('five');
+    setVariant('poll-ten-times', true);
+    await ask(10);
+    await expect(ask(11)).rejects.toThrow('ten');
+  });
+
+  it('locks a completed course', async () => {
+    const { api } = await student('Maya');
+    await api.record.add({ code: 'COMP 202', title: '', credits: 3, term: 'Fall 2025', status: 'completed', grade: 'A' });
+    const [record] = await api.record.list();
+    setVariant('lock-completed', true);
+    await expect(api.record.remove({ id: record.id })).rejects.toThrow('locked');
+    await expect(api.record.update({ id: record.id, code: 'COMP 202', title: '', credits: 3, term: 'Fall 2025', status: 'completed', grade: 'A+' as 'A' })).rejects.toThrow();
+  });
+
+  it('allows one name change a term', async () => {
+    const { api, user } = await student('Maya');
+    const fields = { pronouns: '', faculty: 'Science' as const, gradYear: null };
+    setVariant('name-change-limit', true);
+    await api.profile.update({ name: user.name, ...fields });
+    await api.profile.update({ name: 'Maya Two', ...fields });
+    await api.profile.update({ name: 'Maya Two', ...fields });
+    await expect(api.profile.update({ name: 'Maya Three', ...fields })).rejects.toThrow('once a term');
+  });
+
+  it('tells the host when someone leaves', async () => {
+    const { classId, people } = await classmates('Maya', 'Leo');
+    const [maya, leo] = people.map((p) => p.api);
+    setVariant('leave-tells-host', true);
+    const made = await maya.studySessions.create({ ...session(), classId });
+    const sessionId = Array.isArray(made) ? made[0].id : made.id;
+    await leo.studySessions.join({ sessionId });
+    await leo.studySessions.leave({ sessionId });
+    expect((await maya.notifications.list()).items.map((n) => n.title)).toContain('Leo left "Midterm review"');
+  });
+
+  it('adds a reminder to exported events', () => {
+    const event = { uid: 'a', title: 'Review', start: new Date(2026, 9, 5, 9), end: new Date(2026, 9, 5, 10) };
+    expect(buildCalendar([event], 'America/Toronto')).not.toContain('VALARM');
+    setVariant('ics-alarm', true);
+    expect(buildCalendar([event], 'America/Toronto')).toContain('TRIGGER:-PT1H');
+    expect(buildCalendar([{ ...event, allDay: true }], 'America/Toronto')).not.toContain('VALARM');
+  });
+});
+

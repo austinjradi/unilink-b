@@ -55,6 +55,19 @@ export interface PlanResult {
   overloaded: boolean;
 }
 
+// 'spread-work-evenly': the same number of tasks on each day up to the buffer, whatever the free time.
+export function spreadTasks({ tasks, today, dueDate, bufferDays }: PlanInput): Map<number, string> {
+  const last = addDays(dueDate, -bufferDays);
+  const days = eachDay(today, last < today ? (dueDate < today ? today : dueDate) : last);
+  const open = tasks.filter((t) => !t.done);
+  return new Map(open.map((t, i) => [t.id, days[Math.floor((i * days.length) / open.length)]]));
+}
+
+// 'one-task-a-day': the next task on each day from today, as in the board's example.
+export function oneTaskADay({ tasks, today }: PlanInput): Map<number, string> {
+  return new Map(tasks.filter((t) => !t.done).map((t, i) => [t.id, addDays(today, i)]));
+}
+
 export function planTasks({ tasks, today, dueDate, bufferDays, capacity }: PlanInput): PlanResult {
   let lastWorkDay = addDays(dueDate, -bufferDays);
   let tight = false;

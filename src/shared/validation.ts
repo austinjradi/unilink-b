@@ -1,5 +1,10 @@
 // G4: account rules shared by the sign-up form and the main process.
 
+import { isOn } from './variants';
+
+const SIMPLE_PASSWORD_RULE = 'At least 8 characters, with a letter and a number';
+const METER_MINIMUM = 'At least 8 characters';
+
 export const MCGILL_EMAIL = /^[a-z0-9._%+-]+@(mail\.)?mcgill\.ca$/i;
 // Students have @mail.mcgill.ca addresses; professors and staff have @mcgill.ca ones.
 export const STAFF_EMAIL = /^[a-z0-9._%+-]+@mcgill\.ca$/i;
@@ -45,6 +50,9 @@ export const PASSWORD_RULES: [label: string, test: (pw: string, email: string) =
 ];
 
 export function passwordProblems(password: string, email = ''): string[] {
+  // Switches stay in English, so this isn't written where the French check would ask for a translation.
+  if (isOn('simple-password-rule')) return password.length >= 8 && /[a-z]/i.test(password) && /\d/.test(password) ? [] : [SIMPLE_PASSWORD_RULE];
+  if (isOn('password-strength-meter')) return password.length >= 8 ? [] : [METER_MINIMUM];
   return PASSWORD_RULES.filter(([, test]) => !test(password, email)).map(([label]) => label);
 }
 

@@ -22,6 +22,19 @@ export function parseCourseQuery(input: string): CourseQuery {
 
 export const LEVELS = [100, 200, 300, 400, 500] as const;
 
+// The faculty each subject in the sample catalogue belongs to.
+export const SUBJECT_FACULTY: Record<string, string> = {
+  BIOL: 'Science',
+  CHEM: 'Science',
+  COMP: 'Science',
+  ECON: 'Arts',
+  ECSE: 'Engineering',
+  MATH: 'Science',
+  MGCR: 'Management',
+  PHYS: 'Science',
+  PSYC: 'Science',
+};
+
 export interface ScheduleEntry {
   subject: string;
   number: string;
