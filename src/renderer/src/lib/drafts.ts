@@ -4,6 +4,8 @@
 const PREFIX = 'unilink-draft-';
 const keyFor = (userId: number, name: string) => `${PREFIX}${userId}-${name}`;
 
+// JSON.parse throws on damaged text, and localStorage itself
+// throws when storage is disabled, so both sit inside try.
 export function loadDraft<T>(userId: number, name: string): T | null {
   try {
     const saved = localStorage.getItem(keyFor(userId, name));

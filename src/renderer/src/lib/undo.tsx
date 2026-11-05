@@ -5,9 +5,13 @@ import { changesWithWrites } from './preload';
 import { t } from './i18n';
 
 // For things deleted without asking first: a moment to take it back.
+// A hook because it needs useQueryClient. It returns a
+// plain function to call right after deleting something.
 export function useUndo() {
   const queryClient = useQueryClient();
   return (message: string, undo: () => Promise<unknown>) => {
+    // notifications.show returns the toast's id, used to close it when
+    // Undo is clicked. A toast's message can be JSX, not just text.
     const id = notifications.show({
       autoClose: 8000,
       message: (

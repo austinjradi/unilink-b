@@ -23,6 +23,7 @@ function save(key: string, on: boolean) {
   }
 }
 
+// Module-level state, which React reads through useSyncExternalStore at the bottom of this file.
 let infoHidden = saved(INFO_KEY);
 let listOpen = saved(LIST_KEY);
 const listeners = new Set<() => void>();
@@ -35,6 +36,7 @@ const subscribe = (listener: () => void) => {
 };
 
 // The icons are all hidden by one rule in the stylesheet, set before anything paints.
+// Also called once right away, at import time, so the attribute is set before React paints anything.
 const showInfoState = () => document.documentElement.toggleAttribute('data-info-hidden', infoHidden);
 showInfoState();
 
@@ -48,6 +50,8 @@ export function setInfoHidden(next: boolean) {
 // Each view comes back where it was scrolled to.
 const scrolled = { site: 0, list: 0 };
 
+// requestAnimationFrame waits for the next frame, after React has
+// drawn the other view, before restoring that view's scroll position.
 export function setListOpen(next: boolean) {
   if (next === listOpen) return;
   scrolled[listOpen ? 'list' : 'site'] = window.scrollY;

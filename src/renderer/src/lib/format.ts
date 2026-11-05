@@ -3,9 +3,12 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 import { groupMeetings, type MeetingTime } from '@shared/meetings';
 import { t } from './i18n';
 
+// dayjs plugins add methods. This one adds fromNow(), which gives text like "3 hours ago".
 dayjs.extend(relativeTime);
 
 // Date patterns are translated too, since French puts the day before the month.
+// Format tokens: ddd is the short weekday, MMM the short month,
+// D the day of the month, HH:mm the time on a 24-hour clock.
 export const fmtDateTime = (d: Date) => dayjs(d).format(t('ddd, MMM D, HH:mm'));
 export const fmtDate = (d: Date | string) => dayjs(d).format(t('ddd, MMM D'));
 export const fmtTime = (d: Date) => dayjs(d).format('HH:mm');
@@ -23,6 +26,8 @@ export function dayLabel(day: string, today: string) {
 }
 
 // Weekly class times: "Mon, Wed 10:05–11:25 · Fri 13:35–14:25".
+// dayjs().day(d) moves today's date to weekday d (0 is Sunday),
+// just to get that weekday's name in the current language.
 export const fmtMeetings = (meetings: MeetingTime[]) =>
   groupMeetings(meetings)
     .map((g) => `${g.weekdays.map((d) => dayjs().day(d).format('ddd')).join(', ')} ${g.startTime}–${g.endTime}`)

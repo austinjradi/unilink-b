@@ -21,6 +21,7 @@ function PassphraseForm({ onDone }: { onDone: (passphrase: string) => void }) {
   );
 }
 
+// modals.open returns an id, which the modal's own content uses to close it. children can be any JSX.
 function askPassphrase(title: string, then: (passphrase: string) => void) {
   const id = modals.open({
     title,
@@ -41,6 +42,8 @@ export function downloadBackup() {
 }
 
 // Restoring replaces everything in this browser, so it asks first.
+// Not a hook or a component: a plain function, called from a
+// click, that opens a file picker and then modals imperatively.
 export function restoreBackup() {
   const input = Object.assign(document.createElement('input'), { type: 'file', accept: '.unilink,application/json' });
   input.addEventListener('change', () => {

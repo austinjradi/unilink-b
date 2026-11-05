@@ -16,6 +16,8 @@ function initialLocale(): Locale {
   return navigator.language.toLowerCase().startsWith('fr') ? 'fr' : 'en';
 }
 
+// A module-level variable: the language t() uses. Reading it during
+// render is safe because a language change re-mounts the whole app.
 let current: Locale = initialLocale();
 dayjs.locale(current);
 document.documentElement.lang = current;
@@ -32,12 +34,16 @@ export function applyLocale(locale: Locale) {
 }
 
 // Translate English UI text (the English is the key; see src/shared/i18n).
+// params fills the {{name}} placeholders in the key. A numeric
+// `count` param also picks the singular or plural form.
 export const t = (key: string, params?: Params) => translate(current, key, params);
 // Mark text for translation where it's defined (module constants); call t() on it when rendering.
 export const tx = (key: string) => key;
 export const tm = (message: Message) => render(current, message);
 export const term = (name: string) => termLabel(current, name);
 
+// The default value is only used outside the Provider, which
+// never happens in the app; it's there to satisfy the type.
 export const LocaleContext = createContext<{ locale: Locale; setLocale: (l: Locale) => void }>({
   locale: current,
   setLocale: () => {},
