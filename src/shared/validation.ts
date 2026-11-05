@@ -5,6 +5,8 @@ import { isOn } from './variants';
 const SIMPLE_PASSWORD_RULE = 'At least 8 characters, with a letter and a number';
 const METER_MINIMUM = 'At least 8 characters';
 
+// The (mail.)? group makes that part optional, so both kinds
+// of address match. The i flag ignores upper and lower case.
 export const MCGILL_EMAIL = /^[a-z0-9._%+-]+@(mail\.)?mcgill\.ca$/i;
 // Students have @mail.mcgill.ca addresses; professors and staff have @mcgill.ca ones.
 export const STAFF_EMAIL = /^[a-z0-9._%+-]+@mcgill\.ca$/i;
@@ -13,6 +15,7 @@ export const STAFF_EMAIL = /^[a-z0-9._%+-]+@mcgill\.ca$/i;
 // and well-known or personal passwords are refused.
 export const MIN_PASSWORD_LENGTH = 12;
 
+// A Set, so checking a password is a single has() call.
 const COMMON = new Set([
   'password1234',
   'passwordpassword',
@@ -36,6 +39,8 @@ const COMMON = new Set([
   'sunshine1234',
 ]);
 
+// Splits the part before @ at dots, underscores, plus and
+// minus signs, and keeps words of three letters or more.
 const emailWords = (email: string) =>
   email
     .toLowerCase()
@@ -43,6 +48,8 @@ const emailWords = (email: string) =>
     .split(/[._+-]/)
     .filter((w) => w.length >= 3);
 
+// Each rule is a [label, test] pair. The sign-up form shows the labels as a
+// checklist, and the service runs the same tests, so the two can't disagree.
 export const PASSWORD_RULES: [label: string, test: (pw: string, email: string) => boolean][] = [
   ['At least 12 characters (a few words work well)', (pw) => pw.length >= MIN_PASSWORD_LENGTH],
   ['Not a common password', (pw) => !COMMON.has(pw.toLowerCase().replace(/\s+/g, '')) && new Set(pw).size > 3],
@@ -57,6 +64,8 @@ export function passwordProblems(password: string, email = ''): string[] {
 }
 
 // Sign-up profile (G4.1, G4.5).
+// `as const` at the end makes this a readonly tuple, so `(typeof
+// FACULTIES)[number]` is the union of these exact names.
 export const FACULTIES = [
   'Agricultural and Environmental Sciences',
   'Arts',

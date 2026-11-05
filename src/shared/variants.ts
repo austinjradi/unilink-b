@@ -11,6 +11,9 @@ interface Variant {
   groups?: string[];
 }
 
+// An object literal whose keys are the switch ids. TypeScript infers its
+// type from the literal, so `keyof typeof VARIANTS` further down is the
+// exact list of valid ids, and a misspelled id is a type error everywhere.
 export const VARIANTS = {
   // S1: My courses and navigation.
   'academics-tab': { alternative: 'Put the course record and degree plan under their own Academics tab.' },
@@ -442,9 +445,12 @@ export const VARIANTS = {
   'record-newest-first': { alternative: 'Show the newest term first.' },
 } as const satisfies Record<string, Variant>;
 
+// `typeof` turns the object into its type, and `keyof` takes that type's keys as a union of strings.
 export type VariantId = keyof typeof VARIANTS;
 
 // Alternatives that can't be a switch, and why.
+// Record<string, string> is an object type with string keys and string values. Each
+// key must match an alternative's wording exactly, which tests/reqInfo.test.ts checks.
 export const NOT_SWITCHABLE: Record<string, string> = {
   'Fill the list from Minerva automatically instead of having students join by hand.': 'This needs access to Minerva, which the site doesn’t have.',
   'Connect to Minerva directly, so classes appear without pasting.': 'This needs access to Minerva, which the site doesn’t have.',
@@ -477,7 +483,10 @@ export const NOT_SWITCHABLE: Record<string, string> = {
   "Use McGill's own requirement data instead of working out rules from the catalogue's text.": "McGill doesn't publish its requirements as data the site could read.",
 };
 
+// Object.keys always returns string[], so the cast restores the narrower type.
 const IDS = Object.keys(VARIANTS) as VariantId[];
+// Maps every wording (the alternative and any sameAs) to its switch
+// id, so a popup can find its button from the text it shows.
 const BY_ALTERNATIVE = new Map(IDS.flatMap((id) => [VARIANTS[id].alternative as string, ...((VARIANTS[id] as Variant).sameAs ?? [])].map((text) => [text, id] as const)));
 
 export const variantFor = (alternative: string) => BY_ALTERNATIVE.get(alternative);
@@ -486,6 +495,8 @@ const groupsOf = (id: VariantId): string[] => (VARIANTS[id] as Variant).groups ?
 
 const STORAGE_KEY = 'unilink-variants';
 
+// Reads the saved list, keeping only ids that still exist,
+// so a deleted switch can't linger in someone's browser.
 function load(): VariantId[] {
   try {
     const saved: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]');
@@ -495,9 +506,12 @@ function load(): VariantId[] {
   }
 }
 
+// The switch state lives here, outside React, because services and shared code check
+// it too. React reads it through useSyncExternalStore (renderer/src/lib/variants.ts).
 let on = load();
 const listeners = new Set<() => void>();
 
+// Saves, then tells every subscriber. The listeners are what make React re-render.
 function changed() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(on));
@@ -507,6 +521,7 @@ function changed() {
   listeners.forEach((listener) => listener());
 }
 
+// The one check used everywhere: in services directly, and in components through useVariant.
 export const isOn = (id: VariantId) => on.includes(id);
 export const variantsOn = () => on;
 
@@ -517,6 +532,8 @@ export function subscribeVariants(listener: () => void) {
   };
 }
 
+// Switching one on turns off any switch that shares a group with it. It builds a new array instead of
+// changing the old one, because useSyncExternalStore spots changes by comparing snapshots with ===.
 export function setVariant(id: VariantId, value: boolean) {
   const others = on.filter((other) => other !== id && !(value && groupsOf(other).some((group) => groupsOf(id).includes(group))));
   on = value ? [...others, id] : others;

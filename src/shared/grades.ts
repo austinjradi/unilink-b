@@ -1,4 +1,6 @@
 // McGill's standard letter-grade scale (A4).
+// Ordered from the highest minimum down, so find() returns the first letter whose
+// minimum a percentage reaches. `as const` keeps the exact letters and numbers as types.
 export const MCGILL_SCALE = [
   { letter: 'A', min: 85, gpa: 4.0 },
   { letter: 'A-', min: 80, gpa: 3.7 },
@@ -11,10 +13,14 @@ export const MCGILL_SCALE = [
   { letter: 'F', min: 0, gpa: 0.0 },
 ] as const;
 
+// Indexed access types: [number] is any element of the array,
+// and ['letter'] its letter, giving 'A' | 'A-' | … | 'F'.
 export type Letter = (typeof MCGILL_SCALE)[number]['letter'];
 
 export type GradeScale = readonly { letter: string; min: number; gpa: number }[];
 
+// If nothing matches, the last entry (F). The scale
+// parameter defaults to McGill's when it isn't passed.
 export function letterFor(percent: number, scale: GradeScale = MCGILL_SCALE) {
   return scale.find((g) => percent >= g.min) ?? scale[scale.length - 1];
 }
@@ -26,6 +32,8 @@ export function scaleWith(cutoffs: Record<string, number> | null | undefined): G
 }
 
 // 'drop-lowest': the lowest mark so far doesn't count, and the others share its weight.
+// `T extends GradedItem`: any item type with at least a weight and a
+// score works, and the same type comes back, extra fields included.
 export function dropLowest<T extends GradedItem>(items: T[]): T[] {
   const graded = items.filter((i) => i.score != null);
   if (graded.length < 2) return items;
@@ -132,6 +140,8 @@ const RANK = { secured: 0, possible: 1, 'out-of-reach': 2 } as const;
 
 // With two schemes the grade is whichever is higher, so each target takes the scheme that
 // needs the least; the weights shown are the main scheme's.
+// The calculator's core: current average, best and worst possible final, and what's needed
+// for each letter. With two schemes, each figure comes from whichever scheme does better.
 export function summarize(items: GradedItem[], scale: GradeScale = MCGILL_SCALE): GradeSummary {
   const schemes = schemesOf(items).map((scheme, index) => summarizeScheme(scheme, index, scale));
   if (schemes.length === 1) return schemes[0];

@@ -6,9 +6,12 @@ import { addDays, eachDay, parseYmd } from './dates';
 // weekday (e.g. 90 minutes on weekdays, 3 hours on weekends) rather than one daily number.
 
 // Sunday first, like Date.getDay().
+// Index 0 is Sunday, matching Date.getDay().
 export const DEFAULT_WEEKLY_MINUTES = [180, 90, 90, 90, 90, 60, 180];
 export const DEFAULT_BUFFER_DAYS = 2;
 
+// `saved?.length === 7` is false for null, undefined or a
+// list of the wrong size, and then the defaults are used.
 export function weeklyMinutes(saved: number[] | null | undefined): number[] {
   return saved?.length === 7 ? saved : DEFAULT_WEEKLY_MINUTES;
 }
@@ -22,6 +25,8 @@ export function minutesAroundClasses(meetings: { weekday: number; startTime: str
     const [hours, minutes] = time.split(':').map(Number);
     return hours * 60 + minutes;
   };
+  // Array.from({ length: 7 }, fn) builds a 7-item array by calling fn with each
+  // index (here the weekday). `_` names the first argument, which isn't needed.
   return Array.from({ length: 7 }, (_, weekday) => {
     const inClass = meetings.filter((m) => m.weekday === weekday).reduce((sum, m) => sum + clock(m.endTime) - clock(m.startTime), 0);
     return Math.max(60, Math.round((240 - inClass) / 15) * 15);
@@ -68,6 +73,8 @@ export function oneTaskADay({ tasks, today }: PlanInput): Map<number, string> {
   return new Map(tasks.filter((t) => !t.done).map((t, i) => [t.id, addDays(today, i)]));
 }
 
+// Destructuring in the parameter list: the function takes one object and unpacks the fields it needs.
+// It's pure, with no database and no clock, so tests/shared.test.ts can call it with any inputs.
 export function planTasks({ tasks, today, dueDate, bufferDays, capacity }: PlanInput): PlanResult {
   let lastWorkDay = addDays(dueDate, -bufferDays);
   let tight = false;
@@ -77,11 +84,14 @@ export function planTasks({ tasks, today, dueDate, bufferDays, capacity }: PlanI
   }
 
   const days = eachDay(today, lastWorkDay);
+  // A Map from day to free minutes, built from [key, value]
+  // pairs. Each task placed subtracts its minutes from its day.
   const remaining = new Map(days.map((d) => [d, capacity(d)]));
   const dates = new Map<number, string>();
 
   // Tasks the student placed by hand stay put (unless that day has passed).
   const open = tasks.filter((t) => !t.done);
+  // A task moved by hand stays where it is, unless that day has already passed.
   const isKept = (t: PlannableTask) => t.pinned && t.scheduledFor >= today;
   for (const task of open.filter(isKept)) {
     dates.set(task.id, task.scheduledFor);
@@ -90,12 +100,14 @@ export function planTasks({ tasks, today, dueDate, bufferDays, capacity }: PlanI
   }
 
   let overloaded = false;
+  // Tasks are done in order, so a task never goes on a day before the previous task's day.
   let earliest = 0;
   for (const task of open.filter((t) => !isKept(t))) {
     // First day with room, never before the previous task.
     let index = earliest;
     while (index < days.length && remaining.get(days[index])! < task.minutes) index++;
 
+    // The search ran off the end: no day has room, so the plan is overloaded.
     if (index === days.length) {
       // Nowhere has room: use the roomiest remaining day.
       overloaded = true;

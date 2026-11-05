@@ -1,5 +1,7 @@
 // S2: group chat link validation, normalization and platform detection.
 
+// Labelled tuple types: each item is [name, matches].
+// The labels only document what each position holds.
 const PLATFORMS: [name: string, matches: (host: string) => boolean][] = [
   ['WhatsApp', (h) => h === 'chat.whatsapp.com' || h.endsWith('.whatsapp.com') || h === 'wa.me'],
   ['Discord', (h) => h === 'discord.gg' || h === 'discord.com' || h.endsWith('.discord.com') || h === 'discordapp.com'],
@@ -35,9 +37,12 @@ function inviteCode(host: string, path: string): string | null {
   return null;
 }
 
+// Returns null for anything that isn't a usable web link, so callers check
+// for null instead of catching errors. The form and the service both call it.
 export function parseChatLink(input: string): ChatLink | null {
   let url: URL;
   try {
+    // The URL constructor throws on text that isn't a URL, hence the try.
     url = new URL(input.trim());
   } catch {
     return null;
@@ -48,10 +53,14 @@ export function parseChatLink(input: string): ChatLink | null {
   url.protocol = 'https:';
   url.hash = '';
   const host = url.hostname.replace(/^www\./, '');
+  // `([, matches])` destructures each tuple, skipping its first item. find() gives the
+  // matching tuple or undefined; `?.[0]` takes its name, and `??` falls back to 'Other'.
   const platform = PLATFORMS.find(([, matches]) => matches(host))?.[0] ?? 'Other';
   const code = inviteCode(host, url.pathname);
   // Invite links don't need their query string (it's tracking), so it's dropped.
   if (code) url.search = '';
+  // Removes trailing slashes, and a slash just before
+  // the query string, so equivalent links compare equal.
   const normalized = url.toString().replace(/\/+$/, '').replace(/\/+\?/, '?');
   const chatKey = code ? `${platform.toLowerCase()}:${code}` : `url:${normalized.replace(/^https:\/\/(www\.)?/, '')}`;
   return { url: normalized, platform, chatKey };
@@ -66,6 +75,8 @@ export const LINK_PURPOSES = {
   other: 'Other',
 } as const;
 
+// 'course' | 'section' | 'project' | 'study-group' | 'other',
+// derived from the object above, so the two never disagree.
 export type LinkPurpose = keyof typeof LINK_PURPOSES;
 
 // A link is hidden once at least this many classmates report it and reports outnumber

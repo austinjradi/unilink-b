@@ -2,6 +2,8 @@
 // In-app notifications are always on; desktop and email can be toggled per type.
 // `group` is where it's listed in Settings, and `only` hides it from whoever would never get it.
 
+// Each key is a type. Its fields say where Settings lists it, who can get it, its label, and whether
+// desktop and email are on by default. scripts/i18n-keys.mjs collects the labels for translation.
 export const NOTIFICATION_TYPES = {
   'session-spot': { group: 'sessions', label: 'A spot opened up in a study session', desktop: true, email: true },
   'session-changed': { group: 'sessions', label: 'Study sessions moved to a new time or place', desktop: true, email: true },
@@ -30,8 +32,11 @@ export const NOTIFICATION_TYPES = {
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;
 
 export type ChannelPrefs = { desktop: boolean; email: boolean };
+// Record<K, V> is an object with every K as a key. Partial makes each key
+// optional, so a user's saved prefs hold only the types they changed.
 export type NotificationPrefs = Partial<Record<NotificationType, ChannelPrefs>>;
 
+// A saved choice wins; otherwise the type's defaults apply.
 export function channelsFor(prefs: NotificationPrefs | null | undefined, type: NotificationType): ChannelPrefs {
   const defaults = NOTIFICATION_TYPES[type];
   return prefs?.[type] ?? { desktop: defaults.desktop, email: defaults.email };

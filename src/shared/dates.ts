@@ -3,27 +3,37 @@ import { teachingPeriod } from './keyDates';
 // Calendar days are handled as local "YYYY-MM-DD" strings so they compare and
 // sort lexically and never drift across time zones.
 
+// Always two digits: 5 becomes "05".
 const pad = (n: number) => String(n).padStart(2, '0');
 
+// getMonth() counts from 0, hence the + 1. These getters use the
+// device's time zone, which is what a calendar day means to the student.
 export function ymd(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+// `.map(Number)` turns each piece into a number. new Date(y, m - 1, d) is local midnight;
+// new Date('2026-10-05') would be read as UTC instead, and can land on the previous day.
 export function parseYmd(day: string): Date {
   const [y, m, d] = day.split('-').map(Number);
   return new Date(y, m - 1, d);
 }
 
+// Letting Date do the arithmetic handles month ends and
+// daylight-saving changes. Adding 24 hours of milliseconds would not.
 export function addDays(day: string, n: number): string {
   const date = parseYmd(day);
   date.setDate(date.getDate() + n);
   return ymd(date);
 }
 
+// Math.round absorbs the hour gained or lost when daylight saving changes between the two days.
 export function daysBetween(from: string, to: string): number {
   return Math.round((parseYmd(to).getTime() - parseYmd(from).getTime()) / 86_400_000);
 }
 
+// Comparing YYYY-MM-DD strings with <= works because they
+// sort in date order. The 1000-day cap stops a runaway loop.
 export function eachDay(from: string, to: string): string[] {
   const days: string[] = [];
   for (let d = from; d <= to && days.length < 1000; d = addDays(d, 1)) days.push(d);
@@ -48,6 +58,7 @@ export function fmtWhen(date: Date): string {
 
 export const WEEKDAYS =['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+// `as const` makes this a readonly tuple of these exact strings.
 export const TERMS = ['Fall 2026', 'Winter 2027'] as const;
 export const CURRENT_TERM = TERMS[0];
 
