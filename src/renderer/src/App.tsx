@@ -14,6 +14,7 @@ import { useForcedLocale, useVariant } from './lib/variants';
 import type { Locale } from '@shared/i18n';
 import { MeContext } from './lib/hooks';
 import { applyLocale, getLocale, LocaleContext, t, useLocale } from './lib/i18n';
+import { preloadCatalogue } from './lib/preload';
 import { rpc, RpcError } from './lib/rpc';
 import { ResetPassword, SignIn, SignUp } from './pages/Auth';
 import { Home } from './pages/Home';
@@ -98,6 +99,7 @@ const queryClient: QueryClient = new QueryClient({
 });
 
 function Root() {
+  useEffect(() => preloadCatalogue(queryClient), []);
   const { pathname } = useLocation();
   const me = useQuery({ queryKey: ['me'], queryFn: () => rpc.auth.me() });
   const { locale, setLocale } = useLocale();

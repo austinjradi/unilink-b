@@ -115,7 +115,8 @@ window.unilink = {
       return { ok: false, error: { ...failed, key: failed.message } };
     }
     const result = await dispatch(appRouter, path, input, ctx);
-    persist();
+    // A search only adds catalogue rows it can add again, so those wait for the next save.
+    if (path !== 'catalogue.search') persist();
     return result;
   },
   onNavigate,

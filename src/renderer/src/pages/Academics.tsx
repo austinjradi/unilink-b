@@ -37,6 +37,7 @@ import { whyCantPlan } from '@shared/prereqs';
 import { type RuleResult, graduationPace } from '@shared/degree';
 import { letterFor } from '@shared/grades';
 import { parseTranscript } from '@shared/transcript';
+import { LoadOnScroll } from '../components/LoadOnScroll';
 import { PlanHint, usePrereqs } from '../components/CourseFacts';
 import { GpaTrend } from '../components/GpaTrend';
 import type { ReqTopicId } from '../lib/reqTopics';
@@ -724,6 +725,8 @@ function DegreeTab({ onPlan }: { onPlan: (draft: Partial<RecordDraft>) => void }
   );
 }
 
+const CARD_PAGE_SIZE = 30;
+
 // A rule from the program's text and where the plan stands on it.
 function RuleLine({ rule }: { rule: RuleResult }) {
   const unit = { credits: t('credits'), courses: '', subjects: t('subjects') }[rule.unit];
@@ -747,6 +750,7 @@ function RuleLine({ rule }: { rule: RuleResult }) {
 }
 
 function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.degree.evaluate>>; onPlan: (d: Partial<RecordDraft>) => void }) {
+  const [shownCards, setShownCards] = useState(CARD_PAGE_SIZE);
   const checksPlans = useVariant('check-prereqs');
   const onlyLeft = useVariant('degree-only-left');
   const over15 = useVariant('warn-over-15');
@@ -829,8 +833,11 @@ function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.d
       </SectionCard>
 
       {suggest && <SuggestedSchedule result={result} onPlan={onPlan} />}
-      {e.groups.map((g) => {
+      {e.groups.map((g, groupIndex) => {
         const counted = g.credits.completed + g.credits['in-progress'] + g.credits.planned;
+        const before = e.groups.slice(0, groupIndex).reduce((n, other) => n + other.courses.length, 0);
+        // Only as many cards as have been scrolled to; a big program has hundreds.
+        if (before >= shownCards) return null;
         return (
           <SectionCard
             key={g.id}
@@ -863,7 +870,7 @@ function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.d
               </Stack>
             )}
             <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="xs">
-              {g.courses.filter((c) => !onlyLeft || c.state === 'missing' || c.state === 'below-minimum').map((c) => {
+              {g.courses.slice(0, shownCards - before).filter((c) => !onlyLeft || c.state === 'missing' || c.state === 'below-minimum').map((c) => {
                 const open = c.state === 'missing' || c.state === 'below-minimum';
                 return (
                   <Paper key={c.code} withBorder p="xs">
@@ -918,6 +925,10 @@ function DegreeResult({ result, onPlan }: { result: NonNullable<Out<typeof rpc.d
           </SectionCard>
         );
       })}
+
+      {e.groups.reduce((n, g) => n + g.courses.length, 0) > shownCards && (
+        <LoadOnScroll label={t('Show more courses')} shown={shownCards} onMore={() => setShownCards(shownCards + CARD_PAGE_SIZE)} />
+      )}
 
       <SectionCard info="degree-electives" title={t('Electives')}>
         <Text size="sm">

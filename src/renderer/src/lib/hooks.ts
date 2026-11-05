@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
 import { notifications } from '@mantine/notifications';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { changesWithWrites } from './preload';
 import { isOn } from '@shared/variants';
 import { t } from './i18n';
 import { type Out, rpc } from './rpc';
@@ -42,7 +43,7 @@ export function useAction<I = void, O = unknown>(fn: (input: I) => Promise<O>, o
       return fn(input);
     },
     onSuccess: async (data, input) => {
-      await queryClient.invalidateQueries();
+      await queryClient.invalidateQueries({ predicate: changesWithWrites });
       // Plain-string messages are English keys; functions return already-translated text.
       const message = typeof options.success === 'function' ? options.success(data, input) : options.success && t(options.success);
       if (message) notifications.show({ color: 'teal', message });

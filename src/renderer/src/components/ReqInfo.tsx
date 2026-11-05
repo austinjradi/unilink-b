@@ -44,18 +44,24 @@ window.addEventListener(
 const SCREEN = '[role="dialog"], .mantine-Popover-dropdown';
 
 function showFirstIcons() {
-  const seen = new Map<Element, Set<string>>();
-  const repeats = new Map<HTMLElement, boolean>();
+  const groups = new Map<Element, Map<string, HTMLElement[]>>();
   for (const icon of document.querySelectorAll<HTMLElement>('.req-info')) {
-    if (!icon.parentElement?.getClientRects().length) {
-      repeats.set(icon, false);
-      continue;
-    }
     const screen = icon.closest(SCREEN) ?? document.body;
-    const topics = seen.get(screen) ?? new Set<string>();
-    seen.set(screen, topics);
-    repeats.set(icon, topics.has(icon.dataset.topic!));
-    topics.add(icon.dataset.topic!);
+    const topics = groups.get(screen) ?? new Map<string, HTMLElement[]>();
+    groups.set(screen, topics);
+    topics.set(icon.dataset.topic!, [...(topics.get(icon.dataset.topic!) ?? []), icon]);
+  }
+  const repeats = new Map<HTMLElement, boolean>();
+  // Checking what's on display makes the browser lay out the page, so it's only for topics that repeat.
+  for (const topics of groups.values()) {
+    for (const icons of topics.values()) {
+      let found = false;
+      for (const icon of icons) {
+        const onDisplay = icons.length > 1 && !!icon.parentElement?.getClientRects().length;
+        repeats.set(icon, found && onDisplay);
+        found ||= onDisplay;
+      }
+    }
   }
   repeats.forEach((repeat, icon) => {
     icon.hidden = repeat;

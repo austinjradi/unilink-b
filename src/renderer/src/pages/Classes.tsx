@@ -419,7 +419,7 @@ function FindCourses() {
   const [credits, setCredits] = useState<string | null>(null);
   const [day, setDay] = useState<string | null>(null);
   const [slot, setSlot] = useState<string | null>(null);
-  const [debounced] = useDebouncedValue(query, 200);
+  const [debounced] = useDebouncedValue(query, 120);
   const [pasting, setPasting] = useState(false);
   // Your own section stays listed, so you can always see where you are.
   const [fits, setFits] = useState(false);
@@ -441,6 +441,8 @@ function FindCourses() {
     initialPageParam: 0,
     getNextPageParam: (page, _pages, offset) => (page.length ? offset + COURSE_PAGE_SIZE : undefined),
     placeholderData: keepPreviousData,
+    // Writes refresh it, so coming back to the list doesn't need to.
+    staleTime: 5 * 60_000,
   });
   const sections = useMemo(() => results.data?.pages.flat(), [results.data]);
   const join = useAction((classId: number) => rpc.classes.join({ classId }), {

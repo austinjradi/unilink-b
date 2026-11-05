@@ -28,11 +28,19 @@ function formatDate(locale: Locale, ms: number, style: 'when' | 'time' = 'when')
   return `${day}, ${time}`;
 }
 
+// Slow to create, and every plural on a screen needs one.
+const pluralRules = new Map<string, Intl.PluralRules>();
+function pluralOf(locale: string, count: number) {
+  const rules = pluralRules.get(locale) ?? new Intl.PluralRules(locale);
+  pluralRules.set(locale, rules);
+  return rules.select(count);
+}
+
 export function translate(locale: Locale, key: string, params?: Params): string {
   const dict = DICTS[locale] ?? EN;
   let entry = key;
   if (typeof params?.count === 'number') {
-    const form = new Intl.PluralRules(locale).select(params.count) === 'one' ? 'one' : 'other';
+    const form = pluralOf(locale, params.count) === 'one' ? 'one' : 'other';
     if (`${key}_${form}` in dict || `${key}_${form}` in EN) entry = `${key}_${form}`;
   }
   const template = dict[entry] ?? EN[entry] ?? key;
