@@ -31,6 +31,8 @@ import { gradedItems } from './courses';
 // Email can't actually be delivered without a mail server, so messages are kept in
 // the `outbox` table, ready for a sender to pick up (see README).
 
+// What a service passes to notify(). title and body are Messages ({ key,
+// params }), not finished text, so they can be shown in the reader's language.
 export interface NotifyInput {
   type: NotificationType;
   title: Message;
@@ -40,13 +42,17 @@ export interface NotifyInput {
   dedupeKey?: string;
 }
 
+// A type guard: `t in NOTIFICATION_TYPES` checks that the object has that key.
 const isType = (t: string): t is NotificationType => t in NOTIFICATION_TYPES;
 
 // Messages are translated when shown, so they follow the reader's language.
 export const m = (key: string, params?: Params): Message => ({ key, params });
 // User-written text (titles, places) that must never be looked up in the dictionary.
+// The key {{text}} has no translation, so it renders as the text itself, unchanged in every language.
 export const raw = (text: string): Message => ({ key: '{{text}}', params: { text } });
 
+// What notify() needs to know about the person: where
+// to email, their channel choices, and their language.
 function recipient(db: DB, userId: number) {
   return db
     .select({ email: users.email, prefs: users.notificationPrefs, locale: users.locale })
@@ -56,6 +62,7 @@ function recipient(db: DB, userId: number) {
 }
 
 // Which classes someone's muted or switched off, under the switches that add that.
+// Pulls the class id out of a link like /classes/12/chats. `|| null` turns NaN (no match) into null.
 const classOfLink = (link?: string) => Number(link?.match(/^\/classes\/(\d+)/)?.[1]) || null;
 
 function isSwitchedOff(db: DB, userId: number, n: NotifyInput) {
@@ -69,6 +76,8 @@ function isSwitchedOff(db: DB, userId: number, n: NotifyInput) {
   return false;
 }
 
+// Stores one notification, plus an email if that type's email channel is on. Returns
+// false when nothing was stored: no such user, switched off, or a duplicate.
 export function notify(db: DB, userId: number, n: NotifyInput): boolean {
   const user = recipient(db, userId);
   if (!user || isSwitchedOff(db, userId, n)) return false;
@@ -77,12 +86,16 @@ export function notify(db: DB, userId: number, n: NotifyInput): boolean {
     .values({
       userId,
       type: n.type,
+      // The English text goes in the plain columns, and
+      // i18n keeps the parts needed to translate it later.
       title: render('en', n.title),
       body: n.body ? render('en', n.body) : '',
       i18n: { title: n.title, body: n.body ?? null },
       link: n.link ?? null,
       dedupeKey: n.dedupeKey ?? null,
     })
+    // With a dedupeKey, a repeat of the same reminder hits the unique index and
+    // is skipped. returning() then gives no row, so `inserted` is undefined.
     .onConflictDoNothing()
     .returning({ id: notifications.id })
     .get();
@@ -99,6 +112,7 @@ export function notify(db: DB, userId: number, n: NotifyInput): boolean {
   return true;
 }
 
+// There's no mail server, so an email is a row in outbox, which Settings can show.
 export function sendEmail(
   db: DB,
   { userId, to, locale, subject, body }: { userId: number | null; to: string; locale: Locale; subject: string; body: string },
@@ -109,6 +123,8 @@ export function sendEmail(
 }
 
 // "… is due today at 23:59" / "… tomorrow at 10:00" / "… Tue 3 Nov, 23:59".
+// Picks the today, tomorrow or dated wording. The time and date params
+// are { date } objects, formatted later in the reader's language.
 function soon(kind: 'due' | 'starts', title: string, date: Date, now: Date): Message {
   const day = ymd(date);
   const params: Params = { title, time: { date: date.getTime(), style: 'time' }, when: { date: date.getTime() } };
@@ -120,12 +136,18 @@ function soon(kind: 'due' | 'starts', title: string, date: Date, now: Date): Mes
 
 // G3: one summary a week, the first time they open the app after Sunday 16:00, when people plan
 // theirs. It covers the next seven days, and stays quiet when there's nothing due.
+// Eight hours in milliseconds. Moving the clock forward by this
+// much makes Sunday 16:00 count as the start of the next week.
 const WEEK_STARTS_EARLY_BY = 8 * 3_600_000;
 
+// The dedupeKey names the week's Monday, so the summary
+// goes out at most once a week, whenever the app is opened.
 function weekAhead(ctx: AuthedContext, locale: Locale) {
   const { db, userId } = ctx;
   const now = ctx.now();
   const shifted = new Date(now.getTime() + WEEK_STARTS_EARLY_BY);
+  // getDay() counts from Sunday as 0, so (getDay() + 6) % 7 is the
+  // number of days since Monday. Subtracting it lands on that Monday.
   const dedupeKey = `week-ahead:${addDays(ymd(shifted), -((shifted.getDay() + 6) % 7))}`;
   if (db.select({ id: notifications.id }).from(notifications).where(and(eq(notifications.userId, userId), eq(notifications.dedupeKey, dedupeKey))).get()) return;
 
@@ -134,6 +156,8 @@ function weekAhead(ctx: AuthedContext, locale: Locale) {
     .filter((d) => !d.done)
     .map((d) => ({ title: d.title, classId: d.classId, at: d.dueAt }));
   // A class's midterm is often both a deadline and a graded item; it only counts once.
+  // A midterm is often both a deadline and a graded item. Class
+  // plus lowercased title identifies it, so it's listed once.
   const seen = new Set(due.map((d) => `${d.classId}|${d.title.toLowerCase()}`));
   const classIds = db.select({ id: enrollments.classId }).from(enrollments).where(eq(enrollments.userId, userId)).all();
   for (const a of classIds.flatMap((c) => gradedItems(db, userId, c.id))) {
@@ -155,6 +179,8 @@ function weekAhead(ctx: AuthedContext, locale: Locale) {
   }
   if (!due.length) return;
 
+  // sort() with a compare function: a negative result puts a
+  // first. sort() reorders `due` itself, and also returns it.
   const soonest = due.sort((a, b) => a.at.getTime() - b.at.getTime());
   const listed = soonest.slice(0, 3).map((d) => render(locale, m('{{title}}, {{when}}', { title: d.title, when: { date: d.at.getTime() } })));
   if (soonest.length > 3) listed.push(render(locale, m('+{{count}} more', { count: soonest.length - 3 })));
@@ -191,6 +217,8 @@ function keyDateReminders(ctx: AuthedContext, locale: Locale) {
       title: days === 0 ? m('{{title}}: today', { title }) : days === 1 ? m('{{title}}: tomorrow', { title }) : m('{{title}} is in {{count}} days', { title, count: days }),
       body: k.approximate ? m('This date is approximate. Check it with McGill.') : raw(k.term),
       link: '/calendar',
+      // One key for the week-ahead reminder and one for the
+      // day before and the day itself, so each is sent once.
       dedupeKey: `key-date:${k.term}:${k.date}:${days <= 1 ? 'day' : 'week'}`,
     });
   }
@@ -207,6 +235,7 @@ function releaseAssignments(ctx: AuthedContext) {
   }
 }
 
+// One notification for each student in the section.
 export function tellOfNewAssignment(db: DB, classId: number, title: string, dueAt: Date) {
   for (const student of studentsOf(db, classId)) {
     notify(db, student.id, {
@@ -224,8 +253,11 @@ const FIRST_SEEN_KEY = 'first_seen';
 export const LAST_BACKUP_KEY = 'last_backup';
 const BACKUP_EVERY = 30 * 86_400_000;
 
+// The first run only records when the app was first seen. The dedupeKey
+// holds the year and month, so there's at most one reminder a month.
 function backupReminder(ctx: AuthedContext) {
   const { db, userId } = ctx;
+  // A tiny helper that reads one app_state value, or undefined.
   const state = (key: string) => db.select({ value: appState.value }).from(appState).where(eq(appState.key, key)).get()?.value;
   const now = ctx.now();
   const since = state(LAST_BACKUP_KEY) ?? state(FIRST_SEEN_KEY);
@@ -244,6 +276,8 @@ function backupReminder(ctx: AuthedContext) {
 }
 
 // Time-based reminders for the signed-in user; run every tick by the main process.
+// Every reminder has a dedupeKey that includes the due time. So running this every
+// 30 seconds sends each reminder once, and a deadline that moves gets a new one.
 export function sweepReminders(ctx: AuthedContext) {
   const { db, userId } = ctx;
   releaseAssignments(ctx);
@@ -258,6 +292,7 @@ export function sweepReminders(ctx: AuthedContext) {
   }
   const in24h = new Date(now.getTime() + 24 * 3_600_000);
   const in30m = new Date(now.getTime() + 30 * 60_000);
+  // Returns a Drizzle condition for any timestamp column, so the same window works on different tables.
   const within24h = (dueAt: AnyColumn) => and(gt(dueAt, now), lte(dueAt, in24h));
 
   // Deadlines and exam reminders are for the students writing them, not whoever teaches them.
@@ -287,6 +322,8 @@ export function sweepReminders(ctx: AuthedContext) {
 
   // A3: exams get a heads-up three days ahead as well, while there's still time to study.
   const in3Days = new Date(now.getTime() + 3 * 86_400_000);
+  // A local helper for the three-day warning. Anything within 24
+  // hours is skipped, because the regular reminder covers it.
   const headsUp = (title: Message, date: Date, body: Message, link: string, key: string) => {
     if (date <= in24h || date > in3Days) return;
     notify(db, userId, {
@@ -307,6 +344,8 @@ export function sweepReminders(ctx: AuthedContext) {
     headsUp(raw(d.title), d.dueAt, raw(classLabel(db, d.classId) ?? ''), d.classId ? `/classes/${d.classId}` : '/calendar', `deadline:${d.id}`);
   }
   for (const a of classIds.flatMap((c) => gradedItems(db, userId, c.id))) {
+    // Graded items have no kind, so exams are recognised by name. \b
+    // marks a word boundary, so "test" matches but "latest" doesn't.
     if (a.score != null || !a.dueAt || !/midterm|exam|\btest\b/i.test(a.name)) continue;
     headsUp(raw(a.name), a.dueAt, m('{{class}} · worth {{weight}}%', { class: classLabel(db, a.classId) ?? '', weight: a.weight }), `/classes/${a.classId}/grades`, `assessment:${a.id}`);
   }
@@ -379,6 +418,7 @@ export function sweepReminders(ctx: AuthedContext) {
 
   // A morning summary of today's planned work and to-dos, once a day.
   const today = ymd(now);
+  // Only from 8 in the morning. The dedupeKey holds today's date, so this is sent once a day.
   if (now.getHours() >= 8) {
     const tasks = db
       .select({ n: count() })
@@ -419,6 +459,8 @@ export function takeDesktopNotifications(ctx: AuthedContext, { silenced }: { sil
   if (!pending.length) return [];
 
   db.update(notifications)
+    // Marked as delivered before they're shown, so a notification
+    // is never shown twice, however soon the next tick comes.
     .set({ deliveredAt: ctx.now() })
     .where(inArray(notifications.id, pending.map((n) => n.id)))
     .run();
@@ -430,6 +472,7 @@ export function takeDesktopNotifications(ctx: AuthedContext, { silenced }: { sil
     body: n.i18n?.body ? render(locale, n.i18n.body) : n.body,
   });
   const shown = pending.filter((n) => isType(n.type) && channelsFor(user?.prefs, n.type).desktop);
+  // More than three at once become a single summary instead of a burst of pop-ups.
   if (shown.length > 3) {
     return [
       {
@@ -442,12 +485,14 @@ export function takeDesktopNotifications(ctx: AuthedContext, { silenced }: { sil
   return shown.map((n) => ({ ...text(n), link: n.link }));
 }
 
+// What the bell and Settings call. Notifications themselves are created elsewhere, through notify().
 export const notificationsRouter = {
   list: procedure(z.void(), (_input, ctx) => {
     const items = ctx.db
       .select()
       .from(notifications)
       .where(eq(notifications.userId, ctx.userId))
+      // The id breaks ties between notifications created in the same millisecond.
       .orderBy(desc(notifications.createdAt), desc(notifications.id))
       .limit(50)
       .all();
@@ -486,6 +531,8 @@ export const notificationsRouter = {
     write(ctx.db, `variant-muted-classes-${ctx.userId}`, muted ? [...others, classId] : others);
   }),
 
+  // Every type this person can get, with their current channels. The cast
+  // to { only?: string } is needed because only some types have `only`.
   prefs: procedure(z.void(), (_input, ctx) => {
     const prefs = ctx.db.select({ prefs: users.notificationPrefs }).from(users).where(eq(users.id, ctx.userId)).get()?.prefs;
     const role = isProfessor(ctx.db, ctx.userId) ? 'professor' : 'student';
@@ -512,6 +559,8 @@ export const notificationsRouter = {
       const current = ctx.db.select({ prefs: users.notificationPrefs }).from(users).where(eq(users.id, ctx.userId)).get()?.prefs;
       ctx.db
         .update(users)
+        // [type] is a computed key: the property's name is the value of
+        // `type`. Spreading `current` keeps every other type's choices.
         .set({ notificationPrefs: { ...current, [type]: { desktop, email } } })
         .where(eq(users.id, ctx.userId))
         .run();

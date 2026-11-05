@@ -46,14 +46,20 @@ import { hiddenFromClassLists, PROFILE_FIELDS, setHiddenFromClassLists, setVisib
 //   up without your name, so classmates keep the answers. What you added to a section's
 //   shared info (class times, deadlines, grading scheme) stays, credited to "a former student".
 
+// The app_state key that holds this browser's sign-in token.
 const SESSION_KEY = 'session_token';
+// No I, O, 0 or 1, which are easy to confuse when someone types the code back in.
 const RECOVERY_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
+// A fresh random salt for every password, stored with the hash as scrypt:salt:hash.
+// Because of the salt, two people with the same password get different hashes.
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomHex(16);
   return `scrypt:${salt}:${await scryptHex(password, salt, 64)}`;
 }
 
+// Splits the stored string, hashes the attempt with the same
+// salt and length, and compares the two in constant time.
 async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const [scheme, saltHex, keyHex] = stored.split(':');
   if (scheme !== 'scrypt' || !saltHex || !keyHex) return false;
@@ -63,11 +69,16 @@ async function verifyPassword(password: string, stored: string): Promise<boolean
 // "K7QD-9WXM-3HFA": 12 random characters (60 bits), so a fast hash is enough to store it.
 function newRecoveryCode() {
   const chars = Array.from({ length: 12 }, () => RECOVERY_ALPHABET[randomInt(0, RECOVERY_ALPHABET.length)]).join('');
+  // /.{4}/g matches each run of four characters, and joining them with dashes gives K7QD-9WXM-3HFA.
+  // The `!` asserts that match() found something, which it always does for 12 characters.
   return chars.match(/.{4}/g)!.join('-');
 }
 
+// Uppercased, with spaces and dashes removed first, so "k7qd 9wxm-3hfa" matches too.
 const hashRecoveryCode = (code: string) => sha256(code.toUpperCase().replace(/[^A-Z0-9]/g, ''));
 
+// A reusable schema: trim and lowercase the text (zod changes the value), then check
+// it. refine() adds a custom check, whose message is a translation key like any other.
 const email = z
   .string()
   .trim()
@@ -75,6 +86,8 @@ const email = z
   // 'other-universities' takes any school's address.
   .refine((value) => (isOn('other-universities') ? /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value) : MCGILL_EMAIL.test(value)), { message: 'Use your McGill email (@mail.mcgill.ca or @mcgill.ca)' });
 
+// Spread into both the sign-up and the profile-update schemas, so both validate
+// the same way. The union accepts either an empty string or one of the faculties.
 const profileFields = {
   name: nonEmpty('Name', 100),
   pronouns: z.string().trim().max(40),
@@ -85,8 +98,11 @@ const profileFields = {
 const MAX_ATTEMPTS = 5;
 const PAUSE_MINUTES = 15;
 
+// The type of a whole users row, as Drizzle returns it.
 type UserRow = typeof users.$inferSelect;
 
+// Throws while sign-in is paused. `?.getTime() ?? 0`
+// treats "never paused" as a pause that ended long ago.
 function checkNotPaused(ctx: Context, user: UserRow) {
   if (isOn('no-sign-in-pause') || isOn('sign-in-question')) return;
   const left = (user.lockedUntil?.getTime() ?? 0) - ctx.now().getTime();
@@ -104,14 +120,19 @@ function failedAttempt(ctx: Context, user: UserRow, error: (triesLeft: number | 
     throw error(null);
   }
   const failed = user.failedSignIns + 1;
+  // % gives the remainder, so this counts down 4, 3, 2, 1 and lands on
+  // MAX_ATTEMPTS again at every fifth failure, which is what pauses sign-in.
   const left = MAX_ATTEMPTS - (failed % MAX_ATTEMPTS);
   const pause = left === MAX_ATTEMPTS;
   ctx.db
     .update(users)
+    // Spreading a conditional object adds lockedUntil only when pausing. Spreading {} adds nothing.
     .set({ failedSignIns: failed, ...(pause ? { lockedUntil: new Date(ctx.now().getTime() + PAUSE_MINUTES * 60_000) } : {}) })
     .where(eq(users.id, user.id))
     .run();
   if (pause) throw new AppError('Too many failed attempts. Try again in {{count}} minutes.', 'UNAUTHORIZED', { count: PAUSE_MINUTES });
+  // `error` is a function the caller passed in, so each caller words its own message.
+  // It gets the tries left only when there are few enough to be worth a warning.
   throw error(left <= 2 ? left : null);
 }
 
@@ -129,12 +150,16 @@ function clearAttempts(ctx: Context, user: UserRow) {
   }
 }
 
+// The same rules the sign-up form shows (shared/validation.ts),
+// enforced here too, because a form's checks can be skipped.
 function checkPassword(password: string, address: string) {
   if (passwordProblems(password, address).length) {
     throw new AppError("Use at least 12 characters that aren't a common password or your name");
   }
 }
 
+// Renaming while destructuring (passwordHash: _) pulls the secret fields out under throwaway
+// names, and `rest` gets everything else. Every user sent to the UI goes through this.
 export function publicUser(user: typeof users.$inferSelect) {
   const { passwordHash: _, recoveryCodeHash: __, ...rest } = user;
   return rest;
@@ -144,6 +169,8 @@ function findUser(db: DB, id: number) {
   return db.select().from(users).where(eq(users.id, id)).get();
 }
 
+// auth_sessions stores only the token's SHA-256. The token itself is kept in app_state so it can
+// be found again after a reload. Setting ctx.session.userId signs this tab in straight away.
 function startSession(ctx: Context, userId: number) {
   const token = randomHex(32);
   ctx.db.insert(authSessions).values({ tokenHash: sha256(token), userId }).run();
@@ -155,6 +182,7 @@ function startSession(ctx: Context, userId: number) {
   ctx.session.userId = userId;
 }
 
+// Removes both halves of the session, and signs the tab out.
 function endSession(ctx: Context) {
   const saved = ctx.db.select().from(appState).where(eq(appState.key, SESSION_KEY)).get();
   if (saved) ctx.db.delete(authSessions).where(eq(authSessions.tokenHash, sha256(saved.value))).run();
@@ -170,6 +198,7 @@ function restoreSession(ctx: Context) {
   ctx.session.userId = row?.userId ?? null;
 }
 
+// Sensitive changes, like a new password or deleting the account, ask for the current password again.
 async function requirePassword(db: DB, userId: number, password: string) {
   const user = findUser(db, userId);
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
@@ -178,6 +207,7 @@ async function requirePassword(db: DB, userId: number, password: string) {
   return user;
 }
 
+// Stores only a hash. The code itself is returned once, for the user to write down.
 function issueRecoveryCode(db: DB, userId: number) {
   const code = newRecoveryCode();
   db.update(users).set({ recoveryCodeHash: hashRecoveryCode(code) }).where(eq(users.id, userId)).run();
@@ -207,6 +237,8 @@ function keepSharedContributions(ctx: AuthedContext, keepPosts: boolean) {
     db.update(replies).set({ authorId: former }).where(eq(replies.authorId, userId)).run();
   } else {
     // Their replies go, so questions they answered are open again.
+    // No .all() here: an unfinished query passed to inArray() becomes
+    // a SQL subquery, so the filtering happens inside the database.
     const theirReplies = db.select({ id: replies.id }).from(replies).where(eq(replies.authorId, userId));
     db.update(posts).set({ acceptedReplyId: null }).where(inArray(posts.acceptedReplyId, theirReplies)).run();
   }
@@ -217,9 +249,13 @@ function keepSharedContributions(ctx: AuthedContext, keepPosts: boolean) {
 const deletingKey = (userId: number) => `variant-deleting-account-${userId}`;
 const DELETE_AFTER = 30 * 86_400_000;
 
+// Files first, since they're outside the database. Then the shared data is handed over in one
+// transaction, and finally the user row goes. Deleting it cascades to everything else that was theirs.
 async function deleteAccountNow(ctx: AuthedContext, keepPosts: boolean) {
   await deleteUserFiles(ctx.db, ctx.userId);
   if (!keepPosts) await deleteAuthoredImages(ctx);
+  // A copy of ctx whose db is the transaction, so every write in the helper belongs to
+  // it. The cast is needed because a transaction's type isn't quite the database's.
   ctx.db.transaction((tx) => keepSharedContributions({ ...ctx, db: tx as unknown as DB }, keepPosts));
   ctx.db.delete(users).where(eq(users.id, ctx.userId)).run();
 }
@@ -248,6 +284,8 @@ interface MailedSecret {
   until: number;
 }
 
+// Stores a hash and an expiry time, writes the email to the outbox, and
+// in this demo (isDev) also returns the secret so the screen can show it.
 function mailSecret(ctx: Context, user: UserRow, key: string, secret: string, minutes: number, subject: string, body: string) {
   write(ctx.db, key, { hash: hashRecoveryCode(secret), until: ctx.now().getTime() + minutes * 60_000 });
   sendEmail(ctx.db, { userId: user.id, to: user.email, locale: user.locale, subject, body });
@@ -275,6 +313,7 @@ function limitNameChange(db: DB, userId: number, name: string) {
   write(db, key, CURRENT_TERM);
 }
 
+// Mostly publicProcedure, because these run before anyone is signed in.
 export const authRouter = {
   // 'one-sign-in-form': which of the two forms an email belongs on.
   emailExists: publicProcedure(z.object({ email: z.string().trim().toLowerCase() }), ({ email }, ctx) => !!ctx.db.select({ id: users.id }).from(users).where(eq(users.email, email)).get()),
@@ -292,6 +331,8 @@ export const authRouter = {
       : null,
   ),
 
+  // Called by Root in App.tsx on every load. A remembered token restores
+  // the session, and a user who no longer exists is signed out.
   me: publicProcedure(z.void(), (_input, ctx) => {
     if (ctx.session.userId == null) restoreSession(ctx);
     if (ctx.session.userId == null) return null;
@@ -317,6 +358,8 @@ export const authRouter = {
       }
       const user = ctx.db
         .insert(users)
+        // `await` can sit inside an object literal in an async
+        // function: the hash is ready before the insert runs.
         .values({ ...fields, email, passwordHash: await hashPassword(password) })
         .returning()
         .get();
@@ -377,6 +420,8 @@ export const authRouter = {
     return { text: `What's ${a} + ${b}?` };
   }),
 
+  // Order matters here. A paused account is refused before the password is checked. An unknown email
+  // gets the same message as a wrong password, so sign-in can't be used to find out who has an account.
   signIn: publicProcedure(
     z.object({ email: z.string().trim().toLowerCase(), password: z.string(), totp: z.string().optional(), answer: z.string().optional() }),
     async ({ email, password, totp, answer }, ctx) => {
@@ -411,6 +456,7 @@ export const authRouter = {
     },
   ),
 
+  // Public, so signing out still works after the session has already ended.
   signOut: publicProcedure(z.void(), (_input, ctx) => endSession(ctx)),
 
   // G4.4 with the recovery code. Signs out everywhere and hands back a fresh code.
@@ -439,6 +485,7 @@ export const authRouter = {
   ),
 };
 
+// Settings for the signed-in user, so every procedure here works on ctx.userId.
 export const profileRouter = {
   // 'second-factor': the key goes into an authenticator app, and a right code turns it on.
   totpStatus: procedure(z.void(), (_input, ctx) => ({ on: !!read<string | null>(ctx.db, totpKey(ctx.userId), null) })),
@@ -481,6 +528,8 @@ export const profileRouter = {
 
   setHiddenFromClassLists: procedure(z.object({ hidden: z.boolean() }), ({ hidden }, ctx) => setHiddenFromClassLists(ctx.db, ctx.userId, hidden)),
 
+  // .returning().get() gives back the updated row, so
+  // the UI gets the new profile without another query.
   update: procedure(z.object(profileFields), (input, ctx) => {
     if (isOn('name-change-limit')) limitNameChange(ctx.db, ctx.userId, input.name);
     return publicUser(ctx.db.update(users).set(input).where(eq(users.id, ctx.userId)).returning().get());
@@ -494,6 +543,8 @@ export const profileRouter = {
   // Settings → Goat.
   setAvatar: procedure(
     z.object(
+      // Builds the schema from GOAT_OPTIONS instead of writing it out: one z.enum per goat part, so a
+      // new option needs no change here. The casts tell zod and TypeScript what the built object holds.
       Object.fromEntries(
         (Object.keys(GOAT_OPTIONS) as GoatPart[]).map((part) => [part, z.enum(GOAT_OPTIONS[part] as unknown as [string, ...string[]])]),
       ) as Record<GoatPart, z.ZodEnum>,
@@ -516,6 +567,8 @@ export const profileRouter = {
 
   // G4.7: cascades remove the rest (enrollments, marks, plans, to-dos, notifications…).
   // G4: a copy of everything UniLink keeps about you, as JSON, before (or instead of) deleting it.
+  // chooseSaveLocation returns a path. In the browser, writing
+  // to that path downloads the file (see web/node/fs.ts).
   exportData: procedure(z.void(), async (_input, ctx) => {
     const target = await ctx.platform.chooseSaveLocation({
       title: 'Download my data',
@@ -527,6 +580,8 @@ export const profileRouter = {
     return { path: target };
   }),
 
+  // Asks for the password again, then deletes the account
+  // now, or with a switch marks it for deletion in 30 days.
   deleteAccount: procedure(z.object({ password: z.string(), keepPosts: z.boolean() }), async ({ password, keepPosts }, ctx) => {
     await requirePassword(ctx.db, ctx.userId, password);
     const keep = keepPosts && !isOn('delete-everything') && !isOn('always-delete-posts');

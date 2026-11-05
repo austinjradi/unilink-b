@@ -30,6 +30,8 @@ const NO_STOPPING = 'A focus session can’t be stopped early.';
 // holds back notifications while it's on, and can turn on GNOME's Do Not Disturb.
 // Blocking websites isn't possible from here; see README.
 
+// `null as Date | null` gives these fields a wider type
+// than their starting value, so they can hold a Date later.
 const DEFAULTS = {
   autoForClasses: true,
   autoForSessions: true,
@@ -40,10 +42,13 @@ const DEFAULTS = {
   focusTaskId: null as number | null,
 };
 
+// No row means the defaults, so nothing needs creating until someone changes a setting.
 function settingsFor(db: DB, userId: number) {
   return db.select().from(studyModeSettings).where(eq(studyModeSettings.userId, userId)).get() ?? { userId, ...DEFAULTS };
 }
 
+// Partial<typeof DEFAULTS> means any subset of the settings. The first
+// save inserts every default; later saves update only the fields given.
 function saveSettings(db: DB, userId: number, patch: Partial<typeof DEFAULTS>) {
   db.insert(studyModeSettings)
     .values({ userId, ...DEFAULTS, ...patch })
@@ -52,6 +57,8 @@ function saveSettings(db: DB, userId: number, patch: Partial<typeof DEFAULTS>) {
 }
 
 // Class times and study sessions from yesterday through tomorrow.
+// Weekly class times become dated windows: for each of the three days, a meeting
+// on that weekday, within the term and not on a holiday, becomes one window.
 function focusWindows(db: DB, userId: number, now: Date): FocusWindow[] {
   // A professor's class times are when they're teaching, not when to go quiet.
   if (isProfessor(db, userId)) return [];
@@ -68,6 +75,7 @@ function focusWindows(db: DB, userId: number, now: Date): FocusWindow[] {
       .innerJoin(classes, eq(classMeetings.classId, classes.id))
       .innerJoin(courses, eq(classes.courseId, courses.id))
       .innerJoin(enrollments, and(eq(enrollments.classId, classes.id), eq(enrollments.userId, userId)))
+      // A left join keeps meetings even with no course_info row, giving null for that table's columns.
       .leftJoin(courseInfo, and(eq(courseInfo.classId, classes.id), eq(courseInfo.userId, userId)))
       .all();
     for (const { meeting: m, term, code, auto } of meetings) {
@@ -103,6 +111,8 @@ function focusWindows(db: DB, userId: number, now: Date): FocusWindow[] {
   return windows;
 }
 
+// Combines the settings and the windows. studyModeStatus in
+// shared/studyMode.ts decides whether it's on right now.
 export function currentStudyMode(ctx: AuthedContext) {
   const settings = settingsFor(ctx.db, ctx.userId);
   const now = ctx.now();
@@ -231,6 +241,8 @@ export interface TickState {
 
 export const initialTickState = (): TickState => ({ userId: null, studyActive: false, dndOn: false });
 
+// The bridge runs this every 30 seconds. The tab's ctx has no userId
+// of its own, so this reads ctx.session and builds an authed copy.
 export async function backgroundTick(ctx: Context, state: TickState) {
   const userId = ctx.session.userId;
   if (userId !== state.userId) {
@@ -240,10 +252,12 @@ export async function backgroundTick(ctx: Context, state: TickState) {
   }
   if (userId == null) return;
 
+  // Spreading builds the AuthedContext the services expect.
   const authed = { ...ctx, userId };
   sweepReminders(authed);
 
   const { settings, status } = currentStudyMode(authed);
+  // Only a change sends a notification, not every tick.
   if (status.active !== state.studyActive) {
     state.studyActive = status.active;
     notify(ctx.db, userId, {
@@ -261,8 +275,10 @@ export async function backgroundTick(ctx: Context, state: TickState) {
   }
 
   const wantDnd = status.active && settings.systemDnd;
+  // setSystemDnd returns false where it isn't supported (always, in a browser), so dndOn stays false.
   if (wantDnd !== state.dndOn) state.dndOn = (await ctx.platform.setSystemDnd(wantDnd)) && wantDnd;
 
+  // Shows whatever is new on the desktop, unless study mode is holding notifications back.
   for (const n of takeDesktopNotifications(authed, { silenced: status.active && settings.silenceNotifications })) {
     ctx.platform.showNotification(n);
   }
