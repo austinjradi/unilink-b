@@ -82,6 +82,7 @@ import { ReqInfo, WithInfo } from './ReqInfo';
 // posts with class and topic tags and 🐐 reactions, filters on the right, and threads.
 // Version B: questions and notes, fixed topics, flat replies and accepted answers.
 
+// The types of one feed item and of an opened thread, taken from what the board service returns.
 type FeedPost = Out<typeof rpc.board.feed>[number];
 type PostDetail = Out<typeof rpc.board.get>;
 type Since = 'today' | 'week' | 'month' | null;
@@ -110,6 +111,9 @@ export const toStoredTopic = (value: string, suggestions: string[]) =>
   suggestions.find((s) => t(s).toLowerCase() === value.trim().toLowerCase()) ?? value.trim();
 
 // 'remember-filters': each filter comes back on the next visit, on this device.
+// A custom hook shaped like useState: it returns [value, set]. The lazy initialiser
+// `useState(() => …)` reads localStorage only on the first render, and `as const`
+// on the return makes it a tuple, so callers can destructure it the same way.
 function useFeedFilter<T>(name: string, initial: T) {
   const remember = useVariant('remember-filters');
   const key = `unilink-feed-filter-${name}`;
@@ -135,11 +139,14 @@ function useFeedFilter<T>(name: string, initial: T) {
 }
 
 // 'edit-window': past this, the edit buttons go away.
+// Returns a function rather than a boolean, so one hook call can check many dates.
 function useTooOldToEdit() {
   const limited = useVariant('edit-window');
   return (at: Date) => limited && Date.now() - new Date(at).getTime() > EDIT_WINDOW_MS;
 }
 
+// The props are destructured across several lines, with their types in a
+// second object after the colon. comments? and onComments? are optional.
 function ReactionBar({
   goats,
   goated,
@@ -182,6 +189,8 @@ function Body({ text }: { text: string }) {
   const inlineOnly = useVariant('inline-code-only');
   return (
     <>
+      {/* Each part of the text becomes an element, picked by a chain of ternaries on part.kind. */}
+      {/* The index is a safe key here: the parts are rebuilt from the text and never reorder. */}
       {parsePost(text).map((part, i) =>
         inlineOnly && (part.kind === 'block' || part.kind === 'mathblock' || part.kind === 'math') ? (
           // Version A: only `inline code` is formatted, so the rest shows as it was typed.
@@ -194,6 +203,7 @@ function Body({ text }: { text: string }) {
           </Code>
         ) : part.kind === 'math' || part.kind === 'mathblock' ? (
           <MathText key={i} tex={part.text} block={part.kind === 'mathblock'} />
+        // stopPropagation() on the link's click stops the card underneath from also opening the thread.
         ) : part.kind === 'link' ? (
           <Anchor key={i} href={part.text} target="_blank" rel="noopener noreferrer" inherit style={{ wordBreak: 'break-all' }} onClick={(e) => e.stopPropagation()}>
             {part.text}
@@ -235,6 +245,8 @@ function Images({ images, height }: { images: { id: number; name: string }[]; he
   );
 }
 
+// Asks the backend for a URL to show the file at. staleTime:
+// Infinity, because that URL never changes while the page is open.
 function StoredImage({ image, height }: { image: { id: number; name: string }; height: number }) {
   const url = useQuery({ queryKey: ['board', 'image', image.id], queryFn: () => rpc.board.imageUrl({ id: image.id }), staleTime: Infinity });
   if (!url.data) return null;
@@ -256,6 +268,8 @@ function StoredImage({ image, height }: { image: { id: number; name: string }; h
 // Images waiting to go out with a post or reply, picked or pasted.
 const MAX_IMAGES = 4;
 
+// A custom hook that returns state and actions together, so the post form and the reply box share the
+// same image handling. The updater form, setImages((list) => …), always works from the latest list.
 function useImageDraft() {
   const textOnly = useVariant('text-only-posts');
   const anyFile = useVariant('any-file-attachments');
@@ -267,6 +281,9 @@ function useImageDraft() {
     remove: (index: number) => setImages((list) => list.filter((_, i) => i !== index)),
     clear: () => setImages([]),
     // A screenshot pasted into the text goes in as an image instead of doing nothing.
+    // `[...e.clipboardData.files]` turns the FileList into a real array.
+    // preventDefault() stops the browser pasting the file's name as text, and
+    // window.unilink.addFile gives each file a path the backend can read.
     onPaste: (e: ClipboardEvent<HTMLTextAreaElement>) => {
       const files = [...e.clipboardData.files].filter((file) => anyFile || file.type.startsWith('image/'));
       if (!files.length || textOnly) return;
@@ -276,6 +293,7 @@ function useImageDraft() {
   };
 }
 
+// ReturnType<typeof useImageDraft> types the prop as exactly what the hook returns.
 function ImageDraft({ draft }: { draft: ReturnType<typeof useImageDraft> }) {
   const textOnly = useVariant('text-only-posts');
   const anyFile = useVariant('any-file-attachments');
@@ -313,6 +331,8 @@ function ImageDraft({ draft }: { draft: ReturnType<typeof useImageDraft> }) {
 
 // A student reports a post or reply to the professor, who sees the reason but not who gave it.
 function confirmReport(title: string, onConfirm: (reason: string) => void) {
+  // A plain variable, not state: the textarea writes into it and onConfirm reads
+  // it when the dialog closes. Nothing needs to re-render while it changes.
   let reason = '';
   modals.openConfirmModal({
     title: <WithInfo id="post-report">{title}</WithInfo>,
@@ -490,6 +510,7 @@ function FeedReplies({ post }: { post: FeedPost }) {
   );
 }
 
+// One post in the list. Clicking the card calls onOpen, which puts ?post=<id> in the URL.
 function PostCard({ post, onOpen }: { post: FeedPost; onOpen: () => void }) {
   const noPins = useVariant('vote-not-pin');
   const react = useAction(() => rpc.board.react({ postId: post.id }));
@@ -607,6 +628,8 @@ function ChipSection({ title, info, children }: { title: string; info: ReqTopicI
   );
 }
 
+// A generic component: T is the item type. `render` is a function prop that
+// draws one item, and only the first four show until "more" is clicked.
 function MoreChips<T extends string>({ items, render }: { items: T[]; render: (item: T) => ReactNode }) {
   const [open, setOpen] = useState(false);
   const shown = items.slice(0, 4);
@@ -633,6 +656,7 @@ function MoreChips<T extends string>({ items, render }: { items: T[]; render: (i
 // 'discussion-elsewhere': the board is somewhere else, and this only points to it.
 export function Feed(props: { classId?: number; left?: ReactNode }) {
   const elsewhere = useVariant('discussion-elsewhere');
+  // {...props} passes every prop straight through.
   if (!elsewhere) return <FeedBoard {...props} />;
   return (
     <Grid gap="lg" columns={24}>
@@ -679,6 +703,7 @@ function TaPicker({ classId }: { classId: number }) {
 // Posts are the heaviest thing on a page, so only as many as have been scrolled to are drawn.
 const POST_PAGE_SIZE = 10;
 
+// The board itself: filter state, the feed query, the list of posts, the composer and the open thread.
 function FeedBoard({ classId, left }: { classId?: number; left?: ReactNode }) {
   const noReporting = useVariant('no-reporting');
   const professor = useMe().role === 'professor';
@@ -693,7 +718,11 @@ function FeedBoard({ classId, left }: { classId?: number; left?: ReactNode }) {
   const upvotes = useVariant('plain-upvotes');
   const noReactions = useVariant('no-reactions');
   const [params, setParams] = useSearchParams();
+  // The open thread lives in the URL as ?post=12. With no such
+  // parameter Number() gives 0, and `|| null` turns that into null.
   const openPost = Number(params.get('post')) || null;
+  // setParams takes a function that edits the current parameters. replace: true
+  // swaps the history entry, so opening threads doesn't fill up the Back button.
   const setOpenPost = (id: number | null) =>
     setParams(
       (p) => {
@@ -706,6 +735,8 @@ function FeedBoard({ classId, left }: { classId?: number; left?: ReactNode }) {
 
   const [search, setSearch] = useState('');
   const [shownPosts, setShownPosts] = useState(POST_PAGE_SIZE);
+  // The search text, updated only after typing pauses
+  // for 200 ms, so each keystroke doesn't start a query.
   const [debounced] = useDebouncedValue(search, 200);
   const [classIds, setClassIds] = useState<string[]>([]);
   const [topics, setTopics] = useFeedFilter<string[]>('topics', []);
@@ -719,6 +750,7 @@ function FeedBoard({ classId, left }: { classId?: number; left?: ReactNode }) {
   const [untilDay, setUntilDay] = useState('');
   // Below the wide layout the filters would sit under every post, so they open in a drawer.
   const [filtersOpen, setFiltersOpen] = useState(false);
+  // TypeScript won't add booleans, so each filter becomes 1 or 0 with a ternary.
   const activeFilters = classIds.length + topics.length + (since ? 1 : 0) + (unresolved ? 1 : 0) + (following ? 1 : 0) + (reported ? 1 : 0) + (search.trim() ? 1 : 0);
   const [composing, setComposing] = useState<PostDetail | 'new' | null>(null);
 
@@ -739,6 +771,8 @@ function FeedBoard({ classId, left }: { classId?: number; left?: ReactNode }) {
   const weekStart = week && period ? addDays(period.start, 7 * (Number(week) - 1)) : null;
   const fromDate = !feedDates ? null : weekStart ? parseYmd(weekStart) : fromDay ? parseYmd(fromDay) : null;
   const untilDate = !feedDates ? null : weekStart ? parseYmd(addDays(weekStart, 7)) : untilDay ? parseYmd(addDays(untilDay, 1)) : null;
+  // Everything the feed query needs, in one object: it's
+  // both the procedure's input and part of the query key.
   const feedFilters = typed
     ? {
         classIds: classId ? [classId] : typedClass ? [typedClass.id] : tabClass ? [Number(tabClass)] : null,
@@ -773,9 +807,13 @@ function FeedBoard({ classId, left }: { classId?: number; left?: ReactNode }) {
   // New badge until the next visit.
   const loaded = feed.isSuccess;
   useEffect(() => {
+    // Called directly rather than through useAction, so nothing refetches and the
+    // New badges stay until the next visit. .catch(() => {}) ignores a failure.
     if (classId && loaded) rpc.board.seen({ classId }).catch(() => {});
   }, [classId, loaded]);
 
+  // The filter panel as JSX in a variable: drawn in the right-hand
+  // column on wide screens, and in a drawer on narrow ones.
   const filters = (
     <Stack gap="md">
       <Text fw={800} size="xl" ta="center" className="display">
@@ -952,6 +990,8 @@ function FeedBoard({ classId, left }: { classId?: number; left?: ReactNode }) {
             <Loading />
           ) : feed.data?.length ? (
             <Stack gap="md">
+              {/* Only the first shownPosts posts are drawn. */}
+              {/* LoadOnScroll raises the number as you near the bottom. */}
               {feed.data.slice(0, shownPosts).map((p) => (
                 <PostCard key={p.id} post={p} onOpen={() => setOpenPost(p.id)} />
               ))}
@@ -1017,11 +1057,16 @@ function FeedBoard({ classId, left }: { classId?: number; left?: ReactNode }) {
 
 // --- Thread (p. 10): the post and one flat list of replies, the accepted answer first ----
 
+// Keeps the reply's text in state, copies it to localStorage
+// on every change as a draft, and clears both once it's sent.
 function ReplyBox({ postId, isQuestion, parentId = null, onSent }: { postId: number; isQuestion: boolean; parentId?: number | null; onSent?: () => void }) {
   const me = useMe();
   const noDrafts = useVariant('no-post-drafts');
   const draftName = parentId ? `reply-${postId}-${parentId}` : `reply-${postId}`;
+  // A lazy initial value: the function runs on the first render
+  // only, so localStorage isn't read on every keystroke.
   const [body, setBody] = useState(() => (noDrafts ? '' : (loadDraft<string>(me.id, draftName) ?? '')));
+  // One function updates both the state and the saved draft. Empty text deletes the draft.
   const write = (text: string) => {
     setBody(text);
     if (!noDrafts) saveDraft(me.id, draftName, text.trim() ? text : null);
@@ -1272,6 +1317,8 @@ function AudienceEditor({ post }: { post: PostDetail }) {
   );
 }
 
+// An open thread: the post, its replies and every action on them.
+// It fetches with board.get, separately from the feed list.
 function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p: PostDetail) => void; onDeleted: () => void }) {
   const noPins = useVariant('vote-not-pin');
   const post = useQuery({ queryKey: ['board', 'post', postId], queryFn: () => rpc.board.get({ postId }) });
@@ -1289,6 +1336,8 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
   const follow = useAction((following: boolean) => rpc.board.follow({ postId, following }), {
     success: (_r, following) => (following ? t('You’ll be notified of new replies') : t('You won’t be notified of new replies')),
   });
+  // success and onSuccess both get the result: r.kept says
+  // whether the post was blanked or removed completely.
   const remove = useAction(() => rpc.board.remove({ postId }), {
     success: (r) => (r.kept ? t('Post deleted. Its replies stay up.') : t('Post deleted')),
     onSuccess: (r) => !r.kept && onDeleted(),
@@ -1512,11 +1561,13 @@ function PostThread({ postId, onEdit, onDeleted }: { postId: number; onEdit: (p:
 }
 
 // 'named-post-drafts': several drafts per class, each under a name.
+// A generic component: T is the shape of the form values it saves.
 function NamedDrafts<T>({ userId, classKey, values, onLoad }: { userId: number; classKey: string; values: T; onLoad: (draft: T) => void }) {
   const key = `named-${classKey}`;
   const [drafts, setDrafts] = useState<Record<string, T>>(() => loadDraft<Record<string, T>>(userId, key) ?? {});
   const [name, setName] = useState('');
   const save = () => {
+    // A computed key: the draft is stored under the name that was typed.
     const next = { ...drafts, [name.trim()]: values };
     saveDraft(userId, key, next);
     setDrafts(next);
@@ -1535,6 +1586,8 @@ function NamedDrafts<T>({ userId, classKey, values, onLoad }: { userId: number; 
 
 // 'post-toolbar': buttons for the formatting instead of typing its marks.
 function PostToolbar({ target, value, onChange }: { target: RefObject<HTMLTextAreaElement | null>; value: string; onChange: (next: string) => void }) {
+  // Wraps the selected text in markers. selectionStart and selectionEnd come from the textarea itself,
+  // reached through the ref. `after = before` makes the closing marker default to the opening one.
   const wrap = (before: string, after = before) => {
     const start = target.current?.selectionStart ?? value.length;
     const end = target.current?.selectionEnd ?? value.length;
@@ -1560,6 +1613,8 @@ function PostToolbar({ target, value, onChange }: { target: RefObject<HTMLTextAr
   );
 }
 
+// Creating and editing posts. It holds more state than most forms: the
+// fields, images, poll options, other sections to post to, and a saved draft.
 function PostForm({
   classId,
   topics,
@@ -1588,12 +1643,15 @@ function PostForm({
   const anyAudience = useVariant('any-classmate-audience');
   const inlineOnly = useVariant('inline-code-only');
   const toolbar = useVariant('post-toolbar');
+  // A ref to the textarea's DOM element, so the toolbar can read the selection and give focus back.
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [pollOptions, setPollOptions] = useState<string[]>([]);
   const draft = useImageDraft();
   // A professor's announcement can go to their other sections too, each its own thread.
   const [also, setAlso] = useState<string[]>([]);
   const myClasses = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
+  // The starting values. Casts like `as 'question' | 'note' | 'poll'` widen each
+  // field's type beyond its starting value, so the form can hold any of them.
   const blank = {
     classId: String(existing?.classId ?? classId ?? ''),
     kind: (existing?.kind ?? 'question') as 'question' | 'note' | 'poll',
@@ -1607,9 +1665,12 @@ function PostForm({
   // A new post picks up where the last one was left. (Images aren't kept, only the text.)
   const draftName = `post-${classId ?? 'home'}`;
   const keepsDraft = !existing && !noDrafts && !namedDrafts;
+  // The saved draft, read once. useForm takes it as its initial values.
   const [restored, setRestored] = useState(() => (keepsDraft ? loadDraft<typeof blank>(me.id, draftName) : null));
   const form = useForm({
     initialValues: restored ?? blank,
+    // Runs on every change to any field: the draft is saved as you
+    // type, and deleted when the title and body are both empty.
     onValuesChange: (values) => {
       if (keepsDraft) saveDraft(me.id, draftName, values.title.trim() || values.body.trim() ? values : null);
     },
@@ -1618,6 +1679,8 @@ function PostForm({
       topic: (v) => (v ? null : t('Pick a topic')),
       title: (v) => (noTitles || v.trim() ? null : t('Add a title')),
       body: (v) => (v.trim() ? null : t('Write something')),
+      // A validator can read the other values too: an audience
+      // is required only for a post to selected classmates.
       audienceEmails: (v, values) => (values.visibility === 'selected' && !existing && !v.length ? t('Add at least one classmate') : null),
     },
   });
@@ -1628,6 +1691,8 @@ function PostForm({
   });
   // "Already asked?" while writing a new post's title.
   const [title] = useDebouncedValue(form.values.title, 300);
+  // Waits for the debounced title, and `enabled` keeps
+  // it off until the title has at least six characters.
   const similar = useQuery({
     queryKey: ['board', 'similar', form.values.classId, title],
     queryFn: () => rpc.board.similar({ classId: Number(form.values.classId), title }),
