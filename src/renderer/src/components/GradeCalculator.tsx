@@ -38,6 +38,7 @@ import { useVariant } from '../lib/variants';
 import { Empty, Loading } from './ui';
 import { ReqInfo, WithInfo } from './ReqInfo';
 
+// One component of the scheme with this student's mark, as courses.assessments returns it.
 type Assessment = Out<typeof rpc.courses.assessments>[number];
 
 // A4 + A5 in the layout of the wireframe (A2Team.pdf p. 6): the grading scheme with
@@ -68,6 +69,11 @@ function CutoffForm({ classId, current, onDone }: { classId: number; current: Re
   );
 }
 
+// Everything shown is worked out during render from two queries (the
+// components and the course info). Nothing calculated is kept in state.
+// The mark inputs are uncontrolled: defaultValue sets the starting text,
+// and the mark is saved on blur. Each input's key includes the score, so
+// a new score from the server re-creates the input with the new value.
 export function GradeCalculator({ classId }: { classId: number }) {
   const sharedScheme = useVariant('shared-scheme');
   const personalScheme = useVariant('personal-grading-scheme');
@@ -107,10 +113,13 @@ export function GradeCalculator({ classId }: { classId: number }) {
     success: (_r, on) => (on ? t('Second scheme added. Adjust its weights in the table.') : t('Second scheme removed')),
   });
 
+  // Every hook is above this line, so returning early is allowed.
   if (items.isPending || !items.data || !info.data) return <Loading />;
   const list = noSecond ? items.data.map((a) => ({ ...a, altWeight: null })) : items.data;
   const { teaching, managedBy } = info.data;
   const canEdit = info.data.canEdit || personalScheme;
+  // Each step builds a new list from the one before, as switches
+  // require. summarize() in shared/grades.ts then does the maths.
   const counted = lowestDropped ? dropLowest(list) : list;
   const scale = scaleWith(ownCutoffs ? cutoffs.data : null);
   const summary = summarize(scaleUp ? scaleWeights(counted) : counted, scale);
@@ -254,6 +263,8 @@ export function GradeCalculator({ classId }: { classId: number }) {
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
+                {/* One row per component. key={a.id} keeps each */}
+                {/* row's input attached to its own component. */}
                 {list.map((a) => (
                   <Table.Tr key={a.id}>
                     <Table.Td fw={600}>{a.name}</Table.Td>
@@ -502,8 +513,11 @@ export function GradeCalculator({ classId }: { classId: number }) {
 }
 
 // 'grade-slider': one average for what's left, on a slider.
+// Local state only: the slider's value never leaves this component,
+// and the result is recomputed on every render as it moves.
 function ScenarioSlider({ items, scale }: { items: Assessment[]; scale: GradeScale }) {
   const [value, setValue] = useState(75);
+  // Destructuring with a rename: the `final` field becomes a variable called overall.
   const { final: overall } = finalIfRemainingAverages(items, value);
   return (
     <Card padding="md" h="100%">
@@ -524,6 +538,8 @@ function ScenarioSlider({ items, scale }: { items: Assessment[]; scale: GradeSca
 // 'per-component-scenarios': a different mark for each thing that's left.
 function ScenarioMarks({ items, scale }: { items: Assessment[]; scale: GradeScale }) {
   const left = items.filter((a) => a.score == null);
+  // A map from component id to the mark typed in. Updating it with a
+  // spread makes a new object, which is how React notices the change.
   const [marks, setMarks] = useState<Record<number, number>>({});
   const overall = items.reduce((sum, a) => sum + (a.weight * (a.score ?? marks[a.id] ?? 0)) / 100, 0);
   return (
@@ -543,6 +559,9 @@ function ScenarioMarks({ items, scale }: { items: Assessment[]; scale: GradeScal
   );
 }
 
+// One of three views, by switch. The table's rows are fixed percentages
+// plus the one needed, de-duplicated with a Set and sorted with a
+// compare function, because sort() would otherwise compare them as text.
 function Scenarios({ items, needed, single, two, scale }: { items: Assessment[]; needed: number | null; single: string | null; two: boolean; scale: GradeScale }) {
   const slider = useVariant('grade-slider');
   const perComponent = useVariant('per-component-scenarios');
@@ -589,6 +608,7 @@ function Scenarios({ items, needed, single, two, scale }: { items: Assessment[];
   );
 }
 
+// The form for adding or editing one component of the scheme.
 function ComponentForm({ classId, existing, two, teaching, onDone }: { classId: number; existing: Assessment | null; two: boolean; teaching: boolean; onDone: () => void }) {
   const form = useForm({
     initialValues: {
@@ -654,6 +674,8 @@ function ComponentForm({ classId, existing, two, teaching, onDone }: { classId: 
 }
 
 // A4: a component made of many small marks. They stay private like any other mark.
+// For a component made of many small marks: they're
+// typed into one box, and only the best few can count.
 function SeveralMarks({ assessment: a, onDone }: { assessment: Assessment; onDone: () => void }) {
   // 'shared-best-rule': "best 4 of 5" is the section's, not each student's.
   const sharedRule = useVariant('shared-best-rule');
@@ -710,8 +732,12 @@ function SeveralMarks({ assessment: a, onDone }: { assessment: Assessment; onDon
 }
 
 // A5: the breakdown from the course outline, reviewed before anything is added to the section's scheme.
+// Reads a grading breakdown from text (pasted, from a file, or from the
+// course outline), lets the student untick lines, then adds the ticked ones.
 function SchemeImport({ classId, scheme, outlineName, onDone }: { classId: number; scheme: Assessment[]; outlineName: string | null; onDone: () => void }) {
   const [text, setText] = useState('');
+  // The unticked lines, by index. A Set in state has to be
+  // replaced with a new Set to update it, never changed in place.
   const [unchecked, setUnchecked] = useState<Set<number>>(new Set());
   const mine = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
   const term = mine.data?.find((c) => c.id === classId)?.term ?? CURRENT_TERM;
@@ -722,11 +748,15 @@ function SchemeImport({ classId, scheme, outlineName, onDone }: { classId: numbe
   };
   const readFile = useAction(() => rpc.calendar.readSyllabusFile(), { onSuccess: (r) => fill(r?.text ?? null) });
   const readOutline = useAction(() => rpc.courses.outlineText({ classId }), { onSuccess: fill });
+  // Recomputed on every keystroke, since the text is state.
+  // parseScheme is a pure function in shared/syllabus.ts.
   const found = parseScheme(text, term);
   const there = (name: string) => scheme.some((a) => a.name.trim().toLowerCase() === name.trim().toLowerCase());
   const noReview = useVariant('scheme-no-review');
   const picked = found.filter((item, n) => !unchecked.has(n) && !there(item.name));
   const total = picked.reduce((sum, item) => sum + item.weight, 0) + scheme.reduce((sum, a) => sum + a.weight, 0);
+  // Adds the components one by one and collects any that fail, instead of
+  // stopping at the first: .catch() on each call keeps the loop going.
   const add = useAction(
     async () => {
       const failed: string[] = [];
@@ -810,6 +840,8 @@ function SchemeImport({ classId, scheme, outlineName, onDone }: { classId: numbe
 
 // G2 ← myCourses: marks from a copied grades page, matched to this section's components by name.
 // They stay private like any other mark, and nothing changes until they're reviewed.
+// Matches marks pasted from myCourses to components by name, then saves the matched
+// ones. `g.component!` asserts there's a match, which the filter has already ensured.
 function GradesPaste({ scheme, onDone }: { scheme: Assessment[]; onDone: () => void }) {
   const [text, setText] = useState('');
   const [unchecked, setUnchecked] = useState<Set<number>>(new Set());

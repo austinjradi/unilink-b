@@ -19,6 +19,8 @@ import { useVariant } from '../lib/variants';
 import { t } from '../lib/i18n';
 import { ReqInfo, WithInfo } from '../components/ReqInfo';
 
+// The type of one row: Out<> gives { today, later },
+// ['today'] picks that list, and [number] one item in it.
 type TodayItem = Out<typeof rpc.todos.today>['today'][number];
 
 // Home, after the feed wireframe (A2Team.pdf p. 9): deadlines and today's tasks on the
@@ -30,20 +32,27 @@ export function Home() {
   const noFeed = useVariant('no-cross-class-feed');
   const emptyStart = useVariant('empty-start');
   const wizard = useVariant('setup-wizard');
+  // `enabled: wizard` means this query only runs when the setup-wizard switch is on.
   const mine = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine(), enabled: wizard });
   const [setup, setSetup] = useLocalStorage<number | 'done'>({ key: `unilink-setup-${me.id}`, defaultValue: 0 });
   const [parts, setParts] = useLocalStorage<HomePart[]>({ key: `unilink-home-${me.id}`, defaultValue: HOME_PARTS.map((p) => p.id) });
+  // An early return is fine here because every hook comes before
+  // it. Hooks must run in the same order on every render.
   if (wizard && setup !== 'done' && mine.data && (!mine.data.length || setup > 0)) return <SetupWizard step={setup} onStep={setSetup} />;
 
+  // JSX kept as values and picked by id below, so the left column's order can come from data.
   const blocks: Record<string, ReactNode> = { welcome: <Welcome />, tasks: <TodayTasks />, deadlines: <Deadlines /> };
   const left = (
     <Stack gap="lg">
       {emptyStart && <InviteClassmates />}
       {(custom ? parts : HOME_PARTS.map((p) => p.id)).map((id) => (
+        // A Fragment groups without adding an element. The short
+        // form <></> can't take a key, hence the long form.
         <Fragment key={id}>{blocks[id]}</Fragment>
       ))}
     </Stack>
   );
+  // Chained ternaries choose the middle column; null means there isn't one.
   const middle = calendarFirst ? <TodayCalendar /> : noFeed ? <ClassLinks /> : custom && !parts.includes('discussion') ? null : <Feed left={left} />;
   return (
     <>
@@ -73,10 +82,13 @@ const HOME_PARTS = [
   { id: 'deadlines', label: 'Deadlines' },
   { id: 'discussion', label: 'Discussions' },
 ] as const;
+// The union of the ids above, derived from the list, so the two can't drift apart.
 type HomePart = (typeof HOME_PARTS)[number]['id'];
 
 function HomeCustomizer({ parts, onChange }: { parts: HomePart[]; onChange: (next: HomePart[]) => void }) {
   const hidden = HOME_PARTS.filter((p) => !parts.includes(p.id)).map((p) => p.id);
+  // Copies the array before changing it. State must never be changed in place, or React
+  // won't notice. splice() takes the item out, then puts it back one place up or down.
   const move = (id: HomePart, by: number) => {
     const next = [...parts];
     const at = next.indexOf(id);
@@ -314,6 +326,8 @@ function Welcome() {
   );
 }
 
+// The Today card: today's planned tasks and to-dos, a box
+// for adding a to-do, and a button to take today off.
 function TodayTasks() {
   const today = ymd(new Date());
   const data = useQuery({ queryKey: ['todos', 'today'], queryFn: () => rpc.todos.today() });
@@ -333,6 +347,8 @@ function TodayTasks() {
   // 'drag-reorder-tasks': the order lives in this browser. Anything not dragged yet stays below.
   const rank = (key: string) => (order.includes(key) ? order.indexOf(key) : order.length);
   const inDraggedOrder = (list: TodayItem[]) => [...list].sort((a, b) => rank(a.key) - rank(b.key));
+  // HTML drag and drop: the row being dragged is kept in state, and dropping
+  // it on another row moves it to that row's place in the saved order.
   const dropOn = (target: string) => {
     if (!dragging || dragging === target) return;
     const keys = inDraggedOrder(data.data?.today ?? []).map((i) => i.key).filter((key) => key !== dragging);
@@ -355,10 +371,14 @@ function TodayTasks() {
   const twoLists = useVariant('separate-todos-and-tasks');
   const [choosing, setChoosing] = useState(false);
   const [toMove, setToMove] = useState<number[]>([]);
+  // Moves the chosen tasks one at a time: `await` inside
+  // for…of waits for each call before starting the next.
   const moveChosen = useAction(async () => {
     for (const id of toMove) await rpc.planner.moveTask({ taskId: id, day: addDays(today, 1) });
   }, { onSuccess: () => { setChoosing(false); setToMove([]); } });
   const planned = !noTakeOff && items.some((i) => i.kind === 'task' && !i.done && i.due === today);
+  // Adding today as a day off makes the planner move today's
+  // tasks. The undo toast puts the previous list of days off back.
   const takeOff = useAction(() => rpc.planner.setDaysOff({ days: [...daysOff, today] }), {
     onSuccess: () => undo(t('Today’s planned tasks moved to your next free time.'), () => rpc.planner.setDaysOff({ days: daysOff })),
   });
@@ -387,6 +407,8 @@ function TodayTasks() {
               {t('Nothing planned today.')}
             </Text>
           )}
+          {/* Which list to draw depends on switches. When dragging */}
+          {/* is on, each row is wrapped in a draggable div. */}
           {(twoLists ? items.filter((item) => item.kind === 'task') : canDrag ? inDraggedOrder(items) : items).map((item) =>
             canDrag && !twoLists ? (
               <div key={item.key} className="task-drag" draggable onDragStart={() => setDragging(item.key)} onDragEnd={() => setDragging(null)} onDragOver={(e) => e.preventDefault()} onDrop={() => dropOn(item.key)} style={{ opacity: dragging === item.key ? 0.5 : undefined }}>
@@ -404,6 +426,8 @@ function TodayTasks() {
           {twoLists && items.filter((item) => item.kind !== 'task').map((item) => (
             <TaskRow key={item.key} item={item} today={today} />
           ))}
+          {/* Like every Mantine modal here, it's always */}
+          {/* rendered, and `opened` decides whether it shows. */}
           <Modal opened={choosing} onClose={() => setChoosing(false)} title="Which tasks should move to tomorrow?">
             <Stack gap="xs">
               {items.filter((i) => i.kind === 'task' && !i.done && i.due === today).map((i) => (
@@ -496,6 +520,7 @@ function TodayTasks() {
 
 // 'todo-trash': deleted to-dos stay here for a while, in this browser.
 const TRASH_KEY = 'unilink-todo-trash';
+// Reads the list that TaskRow writes, from the same localStorage key.
 function TodoTrash() {
   const [trash, setTrash] = useLocalStorage<{ title: string; dueDate: string | null }[]>({ key: TRASH_KEY, defaultValue: [] });
   const restore = useAction((row: { title: string; dueDate: string | null }) => rpc.todos.add({ title: row.title, dueDate: row.dueDate, classId: null, weekly: false }), {
@@ -507,6 +532,7 @@ function TodoTrash() {
       <Text size="xs" fw={800} c="dimmed" mb={4}>
         Trash <ReqInfo id="task-delete" />
       </Text>
+      {/* slice(-5) takes the last five items. */}
       {trash.slice(-5).map((row) => (
         <Group key={row.title} justify="space-between" wrap="nowrap">
           <Text size="xs" c="dimmed" truncate>
@@ -521,16 +547,20 @@ function TodoTrash() {
   );
 }
 
+// One row in Today. Planned tasks and to-dos look alike
+// here, but are saved through different procedures.
 function TaskRow({ item, today }: { item: TodayItem; today: string }) {
   const hasTrash = useVariant('todo-trash');
   const askRepeating = useVariant('ask-delete-repeating');
   const [trash, setTrash] = useLocalStorage<{ title: string; dueDate: string | null }[]>({ key: TRASH_KEY, defaultValue: [] });
+  // The ternary picks the procedure by kind. Both return a promise, so either one works as the action.
   const toggle = useAction((done: boolean) =>
     item.kind === 'task' ? rpc.planner.setDone({ taskId: item.id, done }) : rpc.todos.setDone({ id: item.id, done }),
   );
   const undo = useUndo();
   const [asking, setAsking] = useState(false);
   const skipWeek = useAction(() => rpc.todos.setDone({ id: item.id, done: true }));
+  // After a delete, the toast offers Undo, which adds the to-do back with the same fields.
   const remove = useAction(() => rpc.todos.remove({ id: item.id }), {
     onSuccess: () => {
       if (hasTrash) setTrash([...trash, { title: item.title, dueDate: item.due }]);
@@ -540,6 +570,8 @@ function TaskRow({ item, today }: { item: TodayItem; today: string }) {
 
   return (
     <Group gap={8} wrap="nowrap" align="flex-start">
+      {/* A controlled checkbox: `checked` comes from the data, and onChange asks */}
+      {/* the backend to change it. The new state shows once the refetch arrives. */}
       <Checkbox mt={2} size="xs" checked={item.done} onChange={(e) => toggle.mutate(e.currentTarget.checked)} aria-label={t('Done: {{title}}', { title: item.title })} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <Text size="sm" fw={600} td={item.done ? 'line-through' : undefined} c={item.done ? 'dimmed' : undefined} lineClamp={2}>
@@ -604,9 +636,12 @@ function Deadlines() {
   const noCalendar = useVariant('no-calendar-page');
   const [windowDays, setWindowDays] = useLocalStorage<string>({ key: 'unilink-home-deadline-days', defaultValue: '21' });
   const days = chooseWindow ? Number(windowDays) : 21;
+  // `days` is part of the key, so choosing another window fetches a new list.
   const upcoming = useQuery({ queryKey: ['calendar', 'upcoming', days], queryFn: () => rpc.calendar.upcoming({ days }) });
   const setDone = useAction((id: number) => rpc.calendar.setDeadlineDone({ id, done: true }), { success: 'Marked as done' });
 
+  // Whole days from today to the deadline, counted from the
+  // start of each day, so 11 pm tomorrow is still one day away.
   const left = (d: Date) => {
     const days = dayjs(d).startOf('day').diff(dayjs().startOf('day'), 'day');
     return days <= 0 ? null : days;
