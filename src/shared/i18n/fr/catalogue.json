@@ -100,5 +100,6 @@
   "{{count}} program rules_one": "{{count}} règle de programme",
   "{{count}} program rules_other": "{{count}} règles de programme",
   "{{have}} of at most {{limit}}": "{{have}} sur au plus {{limit}}",
-  "{{have}} of {{need}}": "{{have}} sur {{need}}"
+  "{{have}} of {{need}}": "{{have}} sur {{need}}",
+  "Show more posts": "Afficher plus de publications"
 }

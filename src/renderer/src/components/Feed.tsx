@@ -64,6 +64,7 @@ import { Link, useSearchParams } from 'react-router';
 import { addDays, CURRENT_TERM, daysBetween, parseYmd } from '@shared/dates';
 import { teachingPeriod } from '@shared/keyDates';
 import { parsePost, parseTypedSearch } from '@shared/postText';
+import { LoadOnScroll } from './LoadOnScroll';
 import { MathText } from './MathText';
 import { loadDraft, saveDraft } from '../lib/drafts';
 import { fromNow } from '../lib/format';
@@ -675,6 +676,9 @@ function TaPicker({ classId }: { classId: number }) {
   );
 }
 
+// Posts are the heaviest thing on a page, so only as many as have been scrolled to are drawn.
+const POST_PAGE_SIZE = 10;
+
 function FeedBoard({ classId, left }: { classId?: number; left?: ReactNode }) {
   const noReporting = useVariant('no-reporting');
   const professor = useMe().role === 'professor';
@@ -701,6 +705,7 @@ function FeedBoard({ classId, left }: { classId?: number; left?: ReactNode }) {
     );
 
   const [search, setSearch] = useState('');
+  const [shownPosts, setShownPosts] = useState(POST_PAGE_SIZE);
   const [debounced] = useDebouncedValue(search, 200);
   const [classIds, setClassIds] = useState<string[]>([]);
   const [topics, setTopics] = useFeedFilter<string[]>('topics', []);
@@ -947,9 +952,10 @@ function FeedBoard({ classId, left }: { classId?: number; left?: ReactNode }) {
             <Loading />
           ) : feed.data?.length ? (
             <Stack gap="md">
-              {feed.data.map((p) => (
+              {feed.data.slice(0, shownPosts).map((p) => (
                 <PostCard key={p.id} post={p} onOpen={() => setOpenPost(p.id)} />
               ))}
+              {feed.data.length > shownPosts && <LoadOnScroll label={t('Show more posts')} shown={shownPosts} onMore={() => setShownPosts(shownPosts + POST_PAGE_SIZE)} />}
             </Stack>
           ) : (
             <Card>
