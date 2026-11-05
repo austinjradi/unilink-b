@@ -19,8 +19,10 @@ import { read, write } from './variantData';
 // target grade and your notes stay private. Once a professor teaches the section, those
 // shared parts are theirs to change (and marks stay private from them too).
 
+// HH:mm on a 24-hour clock: [01]\d covers 00 to 19, 2[0-3] covers 20 to 23, and [0-5]\d is the minutes.
 const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:mm');
 
+// The union allows an empty email, or a valid one.
 const detailFields = {
   professor: z.string().trim().max(120),
   professorEmail: z.union([z.literal(''), z.string().trim().email('Enter a valid email')]),
@@ -28,6 +30,7 @@ const detailFields = {
   location: z.string().trim().max(200),
 };
 
+// .gt(0) means greater than 0, so a weight of exactly 0 isn't allowed.
 const assessmentFields = {
   name: nonEmpty('Name', 100),
   weight: z.number().gt(0, 'Weight must be above 0%').max(100, 'Weight can be at most 100%'),
@@ -36,6 +39,7 @@ const assessmentFields = {
   dueAt: z.date().nullable(),
 };
 
+// A component in a section this user belongs to.
 function sharedAssessment(db: DB, userId: number, id: number) {
   const row = db.select().from(assessments).where(eq(assessments.id, id)).get() ?? notFound('assessment');
   requireMember(db, userId, row.classId);
@@ -62,6 +66,7 @@ const requireSchemeEditor = (db: DB, userId: number, classId: number) => (isOn('
 const needsApproval = (db: DB, userId: number, classId: number) => isOn('approve-shared-changes') && !teaches(db, userId, classId);
 
 // 'personal-class-times': each student's own class times, shaped like the shared ones.
+// `classId * 1000 + i` makes up a unique id for each stored time, so it looks like a real row.
 export function personalMeetings(db: DB, userId: number) {
   return db
     .select({ classId: classes.id, term: classes.term })
@@ -92,6 +97,7 @@ function assertWeightFits(db: DB, classId: number, weight: number, altWeight: nu
   const total = Number(others?.total ?? 0) + weight;
   const altTotal = Number(others?.alt ?? 0) + (altWeight ?? 0);
   for (const t of [total, altTotal]) {
+    // A small tolerance, because adding decimal weights in floating point can land a hair above 100.
     if (t > 100.001) {
       throw new AppError('The grading scheme would add up to {{total}}%. It can be at most 100%.', 'BAD_INPUT', {
         total: Math.round(t * 10) / 10,
@@ -181,6 +187,8 @@ const cutoffsKey = (classId: number) => `variant-cutoffs-${classId}`;
 
 // 'shared-scheme': a professor's sections of a course use the scheme they just changed. Matching
 // by name keeps the marks students entered against each part.
+// With the shared-scheme switch, a professor's scheme is copied to their
+// other sections of the course, matched by name: updated, added, or removed.
 function syncScheme(ctx: AuthedContext, classId: number) {
   if (!isOn('shared-scheme') || !teaches(ctx.db, ctx.userId, classId)) return;
   const scheme = ctx.db.select().from(assessments).where(eq(assessments.classId, classId)).all();
@@ -229,6 +237,7 @@ export const coursesRouter = {
       cgpa: record.cgpa,
       cgpaGoal: ctx.db.select({ goal: users.cgpaGoal }).from(users).where(eq(users.id, ctx.userId)).get()?.goal ?? null,
       cgpaCredits: record.cgpaCredits,
+      // The same calculation as the Grades tab (summarize), so the two always show the same numbers.
       classes: rows.map(({ target, ...c }) => {
         const items = gradedItems(ctx.db, ctx.userId, c.classId);
         const counted = isOn('drop-lowest') ? dropLowest(items) : items;
@@ -247,6 +256,8 @@ export const coursesRouter = {
     };
   }),
 
+  // Everything the Overview and Grades tabs show about one section: shared
+  // details, this student's own notes and target, class times, and who can edit.
   info: procedure(z.object({ classId: idSchema }), ({ classId }, ctx) => {
     requireMember(ctx.db, ctx.userId, classId);
     const shared = ctx.db.select().from(classDetails).where(eq(classDetails.classId, classId)).get();
@@ -378,6 +389,8 @@ export const coursesRouter = {
   ),
 
   // A3: the section's weekly class times, replaced as a set by whoever edits them.
+  // Replaces the whole set of class times in one transaction, delete
+  // then insert, which is simpler than working out which times changed.
   saveMeetings: procedure(
     z.object({
       classId: idSchema,
@@ -385,6 +398,7 @@ export const coursesRouter = {
         .array(
           z
             .object({ weekday: z.number().int().min(0).max(6), startTime: time, endTime: time, location: z.string().trim().max(200) })
+            // Comparing HH:mm strings works, because they sort in time order.
             .refine((m) => m.endTime > m.startTime, { message: 'Each class time must end after it starts' }),
         )
         .max(14),
@@ -513,6 +527,7 @@ export const coursesRouter = {
 
   // For a professor teaching several sections: the same scheme in another one. A section with
   // a scheme keeps it, since replacing it would erase students' marks.
+  // Never over a scheme that already exists, since students may have marks on it.
   copyScheme: procedure(z.object({ fromClassId: idSchema, toClassId: idSchema }), ({ fromClassId, toClassId }, ctx) => {
     requireTeacher(ctx.db, ctx.userId, fromClassId);
     requireTeacher(ctx.db, ctx.userId, toClassId);
@@ -535,6 +550,8 @@ export const coursesRouter = {
     tellSchemeChanged(ctx, classId);
     ctx.db
       .update(assessments)
+      // sql`${assessments.weight}` copies each row's own weight inside SQL,
+      // so every component starts with the same weight in both schemes.
       .set({ altWeight: on ? sql`${assessments.weight}` : null })
       .where(and(eq(assessments.classId, classId), on ? isNull(assessments.altWeight) : undefined))
       .run();
@@ -565,6 +582,8 @@ export const coursesRouter = {
         ctx.db.delete(assessmentScores).where(and(eq(assessmentScores.assessmentId, id), eq(assessmentScores.userId, ctx.userId))).run();
         return;
       }
+      // The total goes in score, so everything else reads
+      // a single number. The parts are kept for editing.
       const values = { score: result.score, parts: { marks, best } };
       ctx.db
         .insert(assessmentScores)
@@ -585,6 +604,7 @@ export const coursesRouter = {
       syncScheme(ctx, row.classId);
       return;
     }
+    // A classmate's mark on it blocks removal; the user's own mark doesn't.
     const othersMarked = ctx.db
       .select({ userId: assessmentScores.userId })
       .from(assessmentScores)

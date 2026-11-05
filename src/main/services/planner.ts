@@ -34,6 +34,7 @@ const taskInput = z.object({
   minutes: z.number().int().min(5, 'Tasks take at least 5 minutes').max(600, 'Split tasks longer than 10 hours'),
 });
 
+// z.date() accepts a real Date object, which works because calls never pass through JSON.
 const assignmentFields = {
   title: nonEmpty('Title', 200),
   classId: idSchema.nullable(),
@@ -62,6 +63,7 @@ function bufferFor(bufferDays: number, today: string, dueDate: string) {
   return Math.ceil(available * 0.1);
 }
 
+// Only the student's own plans. Anyone else's is NOT_FOUND.
 function ownAssignment(db: DB, userId: number, id: number) {
   const row = db
     .select()
@@ -71,6 +73,8 @@ function ownAssignment(db: DB, userId: number, id: number) {
   return row ?? notFound('assignment');
 }
 
+// A task belongs to whoever owns its assignment, so this joins the two. Because
+// notFound() returns never, TypeScript knows `row` is set after the check.
 export function ownTask(db: DB, userId: number, taskId: number) {
   const row = db
     .select({ task: plannerTasks, userId: plannerAssignments.userId })
@@ -83,6 +87,7 @@ export function ownTask(db: DB, userId: number, taskId: number) {
 }
 
 // Minutes already committed per day: other assignments' open tasks and study sessions you're going to.
+// A Map from day to minutes already taken. The add helper keeps a running total for each day.
 function dailyLoad(db: DB, userId: number, from: string, to: string, excludeAssignmentId?: number) {
   const load = new Map<string, number>();
   const add = (day: string, minutes: number) => load.set(day, (load.get(day) ?? 0) + minutes);
@@ -123,6 +128,7 @@ function dailyLoad(db: DB, userId: number, from: string, to: string, excludeAssi
 }
 
 // Free study minutes for a given day, from the student's weekly availability and days off.
+// Returns a function of the day, so the user's row is read once and then used for many days.
 function studyBudget(db: DB, userId: number) {
   const user = db.select({ weekly: users.weeklyStudyMinutes, off: users.daysOff }).from(users).where(eq(users.id, userId)).get();
   const weekly = weeklyMinutes(user?.weekly);
@@ -144,6 +150,8 @@ function replanOpen(ctx: AuthedContext) {
   }
 }
 
+// The bridge between the database and the pure planTasks(): gather the tasks, free
+// time and other commitments, schedule, then save only the dates that changed.
 export function replan(ctx: Context & { userId: number }, assignmentId: number, { unpinAll = false } = {}) {
   const { db, userId } = ctx;
   const assignment = ownAssignment(db, userId, assignmentId);
@@ -162,6 +170,8 @@ export function replan(ctx: Context & { userId: number }, assignmentId: number, 
   const budget = studyBudget(db, userId);
   const load = dailyLoad(db, userId, today, dueDate < today ? today : dueDate, assignmentId);
 
+  // capacity(day) is the free time left that day once everything
+  // else is counted: the budget minus the load, never below 0.
   const plan = schedule({
     tasks: tasks.map((t) => ({
       id: t.id,
@@ -176,6 +186,8 @@ export function replan(ctx: Context & { userId: number }, assignmentId: number, 
     capacity: (day) => Math.max(0, budget(day) - (load.get(day) ?? 0)),
   });
 
+  // Only tasks whose day changed are written. A task the planner moved
+  // is unpinned, since it no longer sits where the student put it.
   db.transaction((tx) => {
     for (const t of tasks) {
       const day = plan.dates.get(t.id);
@@ -191,6 +203,8 @@ export function replan(ctx: Context & { userId: number }, assignmentId: number, 
   });
 }
 
+// Picks the scheduling rule: as early as possible by
+// default, or one of two alternatives under switches.
 function schedule(input: Parameters<typeof planTasks>[0]) {
   if (isOn('spread-work-evenly')) return { dates: spreadTasks(input) };
   if (isOn('one-task-a-day')) return { dates: oneTaskADay(input) };
@@ -244,6 +258,8 @@ export function reconcile(ctx: AuthedContext) {
   const lastDay = open.reduce((d, t) => (t.scheduledFor > d ? t.scheduledFor : d), today);
   const load = dailyLoad(ctx.db, ctx.userId, today, lastDay);
   const budget = studyBudget(ctx.db, ctx.userId);
+  // Assignments to re-plan: those with an open task on a past day, or one on a day now
+  // over budget (unless it was placed by hand). A Set, so each one is re-planned once.
   const stale = new Set(
     open
       .filter((t) => (t.scheduledFor < today && !isOn('missed-tasks-stay-late')) || (!t.pinned && (load.get(t.scheduledFor) ?? 0) > budget(t.scheduledFor)))
@@ -274,6 +290,7 @@ function followMovedDeadlines(ctx: AuthedContext) {
     )
     .all();
   for (const a of linked) {
+    // Whichever source the plan follows. The left joins give null for the other one.
     const due = a.deadlineDue ?? a.assessmentDue;
     if (!due || due.getTime() === a.dueAt.getTime()) continue;
     // 'ask-before-moving-plan': the plan waits for the student's answer.
@@ -309,6 +326,8 @@ function checkSource(db: DB, userId: number, { deadlineId, assessmentId }: { dea
   }
 }
 
+// Copies a picked file into the app's own files under a unique name
+// (a UUID prefix), so two handouts with the same name never collide.
 export async function storeAttachment(ctx: Context, source: string) {
   const info = await stat(source).catch(() => null);
   if (!info?.isFile()) throw new AppError('That file could not be read.');
@@ -328,6 +347,7 @@ export async function deleteUserFiles(db: DB, userId: number) {
   await Promise.all(rows.map((r) => rm(r.path!, { force: true })));
 }
 
+// Every write that changes dates or free time ends by calling replan() or replanOpen().
 export const plannerRouter = {
   // What the free time could be, going by this term's class times. null with no class times to go by.
   freeTimeAroundClasses: procedure(z.void(), (_input, ctx) => {
@@ -337,6 +357,7 @@ export const plannerRouter = {
 
   // Free study minutes for each weekday, Sunday first. Every open assignment is re-planned.
   setAvailability: procedure(
+    // .length(7) requires exactly one number per weekday.
     z.object({ minutes: z.array(z.number().int().min(0).max(16 * 60)).length(7) }),
     ({ minutes }, ctx) => {
       if (!minutes.some((m) => m > 0)) throw new AppError('Leave some study time on at least one day.');
@@ -348,11 +369,14 @@ export const plannerRouter = {
   // Days with no study time at all. Past ones are dropped, since they no longer matter.
   setDaysOff: procedure(z.object({ days: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(120) }), ({ days }, ctx) => {
     const today = ymd(ctx.now());
+    // Drops duplicates and past days. A plain .sort() orders
+    // strings alphabetically, which for YYYY-MM-DD is date order.
     const upcoming = [...new Set(days)].filter((day) => day >= today).sort();
     ctx.db.update(users).set({ daysOff: upcoming }).where(eq(users.id, ctx.userId)).run();
     replanOpen(ctx);
   }),
 
+  // Reconciles first, then returns each plan with its tasks and the warnings worked out from them.
   list: procedure(z.void(), (_input, ctx) => {
     reconcile(ctx);
     const today = ymd(ctx.now());
@@ -423,6 +447,7 @@ export const plannerRouter = {
     await ctx.platform.openPath(a.attachmentPath);
   }),
 
+  // Inserts the plan and its tasks, all on today to begin with, then replan() spreads them out.
   create: procedure(
     z.object({
       ...assignmentFields,
@@ -446,6 +471,7 @@ export const plannerRouter = {
           .returning({ id: plannerAssignments.id })
           .get();
         tx.insert(plannerTasks)
+          // map()'s second argument is the index, used here as each task's position.
           .values(tasks.map((t, position) => ({ ...t, position, assignmentId: row.id, scheduledFor: today })))
           .run();
         return row;
@@ -560,6 +586,7 @@ export const plannerRouter = {
     const moved = before.dueAt.getTime() !== fields.dueAt.getTime();
     ctx.db
       .update(plannerAssignments)
+      // A due date the student picks detaches the plan from the class deadline it was following.
       .set(moved ? { ...fields, deadlineId: null, assessmentId: null } : fields)
       .where(eq(plannerAssignments.id, assignmentId))
       .run();
@@ -574,10 +601,12 @@ export const plannerRouter = {
     if (a.attachmentPath) await rm(a.attachmentPath, { force: true });
   }),
 
+  // The Re-plan button: unpinAll lets it move tasks placed by hand too.
   replan: procedure(z.object({ assignmentId: idSchema }), ({ assignmentId }, ctx) => {
     replan(ctx, assignmentId, { unpinAll: true });
   }),
 
+  // max(position) finds the last task, and `?? -1` makes the first task's position 0.
   addTask: procedure(z.object({ assignmentId: idSchema }).and(taskInput), ({ assignmentId, ...task }, ctx) => {
     ownAssignment(ctx.db, ctx.userId, assignmentId);
     const last = ctx.db

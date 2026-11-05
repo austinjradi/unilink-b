@@ -34,6 +34,7 @@ import { read, write } from './variantData';
 // student checks shared deadlines off for themselves.
 // G2: export to Google Calendar (.ics) and import from myCourses (.ics).
 
+// `as const`, so `(typeof DEADLINE_KINDS)[number]` further down is the union of these four.
 export const DEADLINE_KINDS = ['assignment', 'exam', 'quiz', 'other'] as const;
 
 // 'labs-and-readings' adds these. The column isn't constrained, so nothing else changes.
@@ -51,12 +52,16 @@ const NO_TIME = 'variant-deadlines-no-time';
 const PENDING_DEADLINES = 'variant-pending-deadlines';
 const CANCELLED_LECTURES = 'variant-cancelled-lectures';
 const submissionsKey = (userId: number) => `variant-submissions-${userId}`;
+// Small helpers for app_state values that hold a list of ids.
 const idSet = (db: DB, key: string) => new Set(read<number[]>(db, key, []));
 const addTo = (db: DB, key: string, id: number) => write(db, key, [...idSet(db, key), id]);
 const removeFrom = (db: DB, key: string, id: number) => write(db, key, [...idSet(db, key)].filter((other) => other !== id));
 
+// No classes that day: a break or holiday from shared/keyDates.ts, unless a switch keeps classes going.
 const onBreak = (day: string) => !isOn('classes-through-breaks') && noClassesOn(day);
 
+// One shape for everything on the calendar, so the page can
+// draw classes, deadlines, sessions and tasks the same way.
 export type CalendarEvent = {
   // A graded item's share of its class's grade.
   weight?: number;
@@ -80,8 +85,10 @@ export type CalendarEvent = {
   addedBy: string | null;
 };
 
+// Days travel as YYYY-MM-DD strings.
 const ymdSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
+// kind accepts the extra kinds too; assertKind() refuses them unless their switch is on.
 const deadlineFields = {
   classId: idSchema.nullable(),
   kind: z.enum([...DEADLINE_KINDS, ...EXTRA_KINDS]),
@@ -95,6 +102,7 @@ const deadlineFields = {
 
 const labels = classLabels;
 
+// Returns a query, not rows, so callers can use it as a subquery inside inArray().
 function myClassIds(db: DB, userId: number) {
   // 'one-class-per-course': what's in any section of a course is in the class.
   if (isOn('one-class-per-course')) {
@@ -132,6 +140,7 @@ export function busyChecker(db: DB, userId: number) {
       for (const { meeting: m, term } of meetings) {
         const range = termRange(term);
         if (m.weekday !== start.getDay() || day < range.start || day > range.end) continue;
+        // Two time ranges overlap when each one starts before the other ends.
         if (atTime(day, m.startTime) < end && start < atTime(day, m.endTime)) return label.get(m.classId) ?? null;
       }
     }
@@ -161,6 +170,8 @@ export function visibleDeadlines(db: DB, userId: number, from?: Date, to?: Date)
     })
     .from(deadlines)
     .innerJoin(users, eq(deadlines.userId, users.id))
+    // A left join on this user's check-off: doneAt is null when
+    // they haven't ticked it, and the deadline still comes back.
     .leftJoin(deadlineDone, and(eq(deadlineDone.deadlineId, deadlines.id), eq(deadlineDone.userId, userId)))
     .where(
       and(
@@ -191,6 +202,9 @@ export function visibleDeadlines(db: DB, userId: number, from?: Date, to?: Date)
     }));
 }
 
+// Builds every event between two dates from all of its sources: class
+// times, deadlines, days off, key dates, exams, sessions and planned work.
+// The calendar page, the upcoming list and the .ics export all use it.
 function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] {
   const label = labels(db);
   const locale = db.select({ locale: users.locale }).from(users).where(eq(users.id, userId)).get()?.locale ?? 'en';
@@ -198,6 +212,8 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
   const events: CalendarEvent[] = [];
 
   // Weekly class times, only within the class's term and not on breaks or holidays.
+  // `to` is exclusive (the start of the day after), so
+  // one millisecond earlier gives the last day included.
   const days = eachDay(ymd(from), ymd(new Date(to.getTime() - 1)));
   for (const { meeting: m, term } of myMeetings(db, userId)) {
     const range = termRange(term);
@@ -282,6 +298,8 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
   for (const k of KEY_DATES) {
     if (isOn('hide-key-dates') || (isOn('only-official-dates') && k.approximate)) continue;
     const title = translate(locale, k.title);
+    // Fields every key date shares. Spreading them into each
+    // event below means each push lists only what differs.
     const blank = { end: null, classId: null, classLabel: null, location: '', done: false, deadlineId: null, addedBy: null };
     if (k.type === 'deadline') {
       if (k.date < firstDay || k.date > lastDay) continue;
@@ -437,9 +455,11 @@ function collect(db: DB, userId: number, from: Date, to: Date): CalendarEvent[] 
     });
   }
 
+  // All-day events first, then by start time.
   return events.sort((a, b) => Number(b.allDay) - Number(a.allDay) || a.start.getTime() - b.start.getTime());
 }
 
+// Only whoever added a deadline (or the section's professor) can change it.
 function ownDeadline(db: DB, userId: number, id: number) {
   const row = db.select().from(deadlines).where(eq(deadlines.id, id)).get() ?? notFound('deadline');
   // The section's professor can also correct or remove a class deadline.
@@ -449,6 +469,8 @@ function ownDeadline(db: DB, userId: number, id: number) {
   return row;
 }
 
+// A deadline this user can see: their own private one, or one in a class they're in. The
+// comma expression `(requireMember(...), false)` runs the check, then evaluates to false.
 function seenDeadline(db: DB, userId: number, id: number) {
   const row = db.select().from(deadlines).where(eq(deadlines.id, id)).get() ?? notFound('deadline');
   if (row.classId == null ? row.userId !== userId : (requireMember(db, userId, row.classId), false)) notFound('deadline');
@@ -459,6 +481,7 @@ function assertKind(kind: string) {
   if (!isOn('labs-and-readings') && (EXTRA_KINDS as readonly string[]).includes(kind)) throw new AppError(NO_EXTRA_KIND);
 }
 
+// Imported events have no kind, so this guesses one from words in the title.
 function guessKind(title: string): (typeof DEADLINE_KINDS)[number] {
   if (/exam|midterm|final/i.test(title)) return 'exam';
   if (/quiz/i.test(title)) return 'quiz';
@@ -467,6 +490,7 @@ function guessKind(title: string): (typeof DEADLINE_KINDS)[number] {
 }
 
 export const calendarRouter = {
+  // The days to show, both ends included. collect()'s end is exclusive, hence the day added to `to`.
   range: procedure(z.object({ from: ymdSchema, to: ymdSchema }), ({ from, to }, ctx) =>
     collect(ctx.db, ctx.userId, parseYmd(from), parseYmd(addDays(to, 1))),
   ),
@@ -495,6 +519,8 @@ export const calendarRouter = {
     }
     const row = ctx.db
       .insert(deadlines)
+      // The cast narrows kind to the database's four kinds,
+      // which assertKind() has already made sure of.
       .values({ ...fields, kind: fields.kind as (typeof DEADLINE_KINDS)[number], userId: ctx.userId })
       .returning({ id: deadlines.id })
       .get();
@@ -509,6 +535,8 @@ export const calendarRouter = {
     if (fields.classId) requireMember(ctx.db, ctx.userId, fields.classId);
     assertKind(fields.kind);
     ctx.db.update(deadlines).set({ ...fields, kind: fields.kind as (typeof DEADLINE_KINDS)[number] }).where(eq(deadlines.id, id)).run();
+    // A ternary picks a function, which is then called: addTo
+    // or removeFrom, with the same arguments either way.
     if (isOn('ask-to-share-deadline')) (shared === false ? addTo : removeFrom)(ctx.db, PRIVATE_DEADLINES, id);
     if (isOn('date-without-time')) (noTime ? addTo : removeFrom)(ctx.db, NO_TIME, id);
   }),
@@ -591,6 +619,7 @@ export const calendarRouter = {
     for (const { meeting: m, term } of myMeetings(ctx.db, ctx.userId)) {
       const range = termRange(term);
       let first = range.start;
+      // Steps forward from the start of term to the first day on this meeting's weekday.
       while (parseYmd(first).getDay() !== m.weekday) first = addDays(first, 1);
       // The weeks that fall on a break or holiday are left out.
       const skipped = eachDay(first, range.end)
@@ -602,6 +631,8 @@ export const calendarRouter = {
         start: atTime(first, m.startTime),
         end: atTime(first, m.endTime),
         location: m.location,
+        // One repeating event per class time instead of one per
+        // week. `except` lists the weeks it doesn't happen.
         weekly: { until: atTime(range.end, '23:59'), except: skipped },
       });
     }
@@ -649,6 +680,7 @@ export const calendarRouter = {
     // Includes deadlines classmates already shared, so the section never gets two copies.
     const existing = new Set(visibleDeadlines(ctx.db, ctx.userId).map((d) => `${d.title}|${d.dueAt.getTime()}`));
 
+    // Events more than a day in the past are skipped.
     const cutoff = ctx.now().getTime() - 86_400_000;
     let imported = 0;
     let skipped = 0;
@@ -658,6 +690,9 @@ export const calendarRouter = {
           skipped++;
           continue;
         }
+        // Looks for a course code such as COMP 251 or MATH-240 in the event's
+        // title, to file it under that class. [A-Z]{3}[A-Z0-9] is the subject
+        // (its last character can be a digit), and \d{3} the course number.
         const code = e.title.match(/\b([A-Z]{3}[A-Z0-9])[\s-]?(\d{3}[A-Z0-9]*)\b/);
         tx.insert(deadlines)
           .values({
