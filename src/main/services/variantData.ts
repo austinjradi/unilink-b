@@ -5,11 +5,15 @@ import { appState } from '../db/schema';
 // What people choose under a switched-on requirement change. It's kept in app_state so the tables
 // stay as this version was built, and it's simply ignored once the change is switched back.
 
+// A tiny key/value store on the app_state table, with JSON values. The caller says what
+// type to expect with <T>, and gets the fallback when the key has never been written.
 export function read<T>(db: DB, key: string, fallback: T): T {
   const row = db.select().from(appState).where(eq(appState.key, key)).get();
   return row ? (JSON.parse(row.value) as T) : fallback;
 }
 
+// Insert or update: onConflictDoUpdate turns an insert
+// that hits an existing key into an update of that row.
 export function write(db: DB, key: string, value: unknown) {
   const text = JSON.stringify(value);
   db.insert(appState).values({ key, value: text }).onConflictDoUpdate({ target: appState.key, set: { value: text } }).run();

@@ -3,9 +3,15 @@ import type { GoatConfig } from '@shared/goat';
 import type { Message } from '@shared/i18n';
 import type { NotificationPrefs } from '@shared/notifications';
 
+// Small column builders. Each is a function, so every table gets its own fresh column object.
 const id = () => integer('id').primaryKey({ autoIncrement: true });
+// Stored as an integer number of milliseconds, read and written as a Date.
 const timestamp = (name: string) => integer(name, { mode: 'timestamp_ms' });
+// $defaultFn runs in JavaScript whenever a row is inserted
+// without this column, and fills in the current time.
 const createdAt = () => timestamp('created_at').notNull().$defaultFn(() => new Date());
+// A required link to a user. `() => users.id` is a function so that a table can point at a
+// table defined later in the file. onDelete 'cascade': deleting a user deletes these rows too.
 const userRef = (name = 'user_id') =>
   integer(name)
     .notNull()
@@ -17,6 +23,8 @@ const classRef = () =>
 
 // --- G4 Accounts ------------------------------------------------------------
 
+// sqliteTable(name, columns). Each key (passwordHash) is the name used in
+// TypeScript; each string ('password_hash') is the column's real name in SQL.
 export const users = sqliteTable('users', {
   id: id(),
   email: text('email').notNull().unique(),
@@ -25,6 +33,8 @@ export const users = sqliteTable('users', {
   // A2: the program the student is working towards (an id from db/programs.ts).
   degreeProgramId: text('degree_program_id'),
   // G3: per-type channel choices; missing types use the defaults in shared/notifications.ts.
+  // mode 'json' stores the value as JSON text. $type<…>() tells TypeScript
+  // what shape comes back; nothing checks that shape at runtime.
   notificationPrefs: text('notification_prefs', { mode: 'json' }).$type<NotificationPrefs>(),
   // The student's goat avatar; null until customized (see shared/goat.ts).
   avatar: text('avatar', { mode: 'json' }).$type<GoatConfig>(),
@@ -35,6 +45,8 @@ export const users = sqliteTable('users', {
   // G4: the one-time recovery code shown at sign-up (and after each reset) replaces emailed reset codes.
   recoveryCodeHash: text('recovery_code_hash'),
   // Professors teach sections: they run its scheme and details, post assignments and moderate.
+  // `enum` only narrows the TypeScript type to these strings.
+  // SQLite stores plain text and doesn't enforce it.
   role: text('role', { enum: ['student', 'professor'] }).notNull().default('student'),
   // G4 "log in securely": wrong passwords or recovery codes since the last sign-in. Every
   // fifth one pauses sign-in and resets until `lockedUntil`.
@@ -65,6 +77,8 @@ export const appState = sqliteTable('app_state', {
 
 // --- S1 Classes (G2 course catalogue) ----------------------------------------
 
+// The third argument, `(t) => [...]`, receives the table's
+// columns and returns its indexes and constraints.
 export const courses = sqliteTable(
   'courses',
   {
@@ -92,6 +106,8 @@ export const classes = sqliteTable(
   (t) => [uniqueIndex('classes_course_term_section_idx').on(t.courseId, t.term, t.section)],
 );
 
+// A join table. Its composite primary key (user plus class)
+// is also what stops anyone joining the same section twice.
 export const enrollments = sqliteTable(
   'enrollments',
   {
@@ -197,6 +213,7 @@ export const posts = sqliteTable(
     visibility: text('visibility', { enum: ['class', 'selected'] }).notNull(),
     // Version B: questions can be resolved with an accepted answer; notes can't.
     kind: text('kind', { enum: ['question', 'note'] }).notNull().default('question'),
+    // Not declared as a foreign key, so SQLite doesn't check that the reply exists.
     acceptedReplyId: integer('accepted_reply_id'),
     // Deleting a post that has replies keeps the thread and blanks the post.
     deletedAt: timestamp('deleted_at'),
@@ -230,6 +247,8 @@ export const replies = sqliteTable(
       .references(() => posts.id, { onDelete: 'cascade' }),
     authorId: userRef('author_id'),
     // Set when replying to another reply (one level of threading).
+    // A table pointing at itself needs the explicit return type AnySQLiteColumn. Without
+    // it, TypeScript can't work out the type of `replies` while it's still defining it.
     parentId: integer('parent_id').references((): AnySQLiteColumn => replies.id, { onDelete: 'cascade' }),
     body: text('body').notNull(),
     createdAt: createdAt(),

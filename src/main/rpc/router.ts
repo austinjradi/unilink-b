@@ -14,6 +14,8 @@ import { studyModeRouter } from '../services/studyMode';
 import { studySessionsRouter } from '../services/studySessions';
 import { todosRouter } from '../services/todos';
 
+// Every router, under the name the renderer uses: `auth` here is `rpc.auth` in React. A new feature's
+// router needs one line here and nothing else. The comments name the requirement each one implements.
 export const appRouter = {
   auth: authRouter, // G4
   profile: profileRouter, // G4
@@ -35,4 +37,6 @@ export const appRouter = {
   timePolls: timePollsRouter, // S3
 };
 
+// `typeof` on a value gives its type. The renderer imports only this type (with `import
+// type`), so it knows the whole API's shape without importing backend code into React.
 export type AppRouter = typeof appRouter;
