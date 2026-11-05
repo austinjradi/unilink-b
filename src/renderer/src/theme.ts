@@ -13,6 +13,8 @@ import {
 // Look and feel from the team's wireframes (A2Team.pdf): rounded pill buttons,
 // soft pastel accents, sketch-like outlined cards, and a friendly rounded type.
 
+// A Mantine colour is ten shades, from lightest (0) to darkest
+// (9). MantineColorsTuple checks there are exactly ten.
 const periwinkle: MantineColorsTuple = [
   '#eef0ff',
   '#dcdffd',
@@ -42,6 +44,7 @@ const dark: MantineColorsTuple = [
   '#111219',
 ];
 
+// createTheme only adds type checking. The object is passed to MantineProvider in App.tsx.
 export const theme = createTheme({
   respectReducedMotion: true,
   primaryColor: 'periwinkle',
@@ -51,6 +54,8 @@ export const theme = createTheme({
   fontFamily: '"Nunito Variable", Nunito, system-ui, sans-serif',
   headings: { fontFamily: 'Fredoka, "Nunito Variable", system-ui, sans-serif', fontWeight: '600' },
   components: {
+    // Component.extend sets defaults for every use of that component,
+    // so every Button is pill-shaped without passing radius each time.
     Button: Button.extend({ defaultProps: { radius: 'xl' } }),
     Badge: Badge.extend({ defaultProps: { radius: 'xl' } }),
     SegmentedControl: SegmentedControl.extend({ defaultProps: { radius: 'xl' } }),
@@ -60,6 +65,8 @@ export const theme = createTheme({
 });
 
 // A hex colour with each channel scaled down.
+// Reads each pair of hex digits (from positions 1, 3 and 5,
+// after the #), scales it, and writes it back as two hex digits.
 const darker = (hex: string, by: number) =>
   `#${[1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) * by).toString(16).padStart(2, '0')).join('')}`;
 
@@ -67,6 +74,8 @@ const darker = (hex: string, by: number) =>
 // heavily darkened shade (maroon, brown). Use a see-through tint with pastel
 // text instead, which keeps the soft look of the light theme.
 // Light mode's grey text, tags and coloured text are darkened to reach WCAG AA contrast (4.5:1).
+// Returns CSS variables for every mode, for light only, and for dark only. Object.fromEntries
+// builds an object from [key, value] pairs, here three variables per colour.
 export const cssVariablesResolver: CSSVariablesResolver = (t) => ({
   variables: {},
   light: {

@@ -5,13 +5,18 @@ import { useEffect, useRef } from 'react';
 // for keyboards and browsers that can't tell.
 export function LoadOnScroll({ label, shown, loading, onMore }: { label: string; shown: number; loading?: boolean; onMore: () => void }) {
   const anchor = useRef<HTMLDivElement>(null);
+  // A ref holds a value across renders without causing one. Updating it every render
+  // means the observer, created once per page of results, always calls the newest onMore.
   const more = useRef(onMore);
   more.current = onMore;
   // Watches again after each page: if it's still in view, there's room for another.
   useEffect(() => {
     if (!anchor.current || typeof IntersectionObserver === 'undefined') return;
+    // IntersectionObserver reports when an element comes into view. rootMargin '600px 0px'
+    // counts it as visible 600px early, so the next page loads before you reach the end.
     const watcher = new IntersectionObserver(([entry]) => entry.isIntersecting && more.current(), { rootMargin: '600px 0px' });
     watcher.observe(anchor.current);
+    // The cleanup stops watching when `shown` changes or the component unmounts.
     return () => watcher.disconnect();
   }, [shown]);
   return (

@@ -8,6 +8,8 @@ import type { ReqTopicId } from '../lib/reqTopics';
 import { useVariant } from '../lib/variants';
 import { ReqInfo } from './ReqInfo';
 
+// A props type written inline. `?` marks optional props,
+// and ReactNode accepts text, elements, or nothing.
 export function PageHeader({
   title,
   subtitle,
@@ -23,6 +25,7 @@ export function PageHeader({
 }) {
   return (
     <div style={{ marginBottom: 'var(--mantine-spacing-lg)' }}>
+      {/* Each crumb with a `to` is a link; one without is plain text. */}
       {crumbs && (
         <Breadcrumbs mb={6} separatorMargin={6}>
           {crumbs.map((c) =>
@@ -42,6 +45,8 @@ export function PageHeader({
         <div>
           <Title order={1} fz={34}>
             {title}
+            {/* `<>…</>` is a fragment: it groups a space and */}
+            {/* the icon without adding an element to the page. */}
             {info && <> <ReqInfo id={info} /></>}
           </Title>
           {subtitle && (
@@ -93,6 +98,8 @@ export function Loading() {
 }
 
 // Class codes and post/session types, as outlined tags.
+// Mantine's colours are CSS variables named after the colour, so a colour
+// name is enough to build the right variable for light or dark mode.
 export function Tag({ children, color }: { children: ReactNode; color?: string }) {
   return (
     <span
@@ -111,12 +118,16 @@ export function Tag({ children, color }: { children: ReactNode; color?: string }
 export const kindColor = (kind: string) => KIND_COLORS[kind] ?? 'gray';
 
 // Pastel fill for calendar chips.
+// Custom properties like --chip-bg aren't part of React's CSSProperties
+// type, so the object is cast to it. styles.css reads the variables.
 export const chipStyle = (kind: string): CSSProperties =>
   ({
     '--chip-bg': `var(--mantine-color-${kindColor(kind)}-light)`,
     '--chip-fg': `var(--mantine-color-${kindColor(kind)}-light-color)`,
   }) as CSSProperties;
 
+// tx() only marks text for translation, because a constant
+// is created once. The label is translated when it's shown.
 const KIND_LABELS: Record<string, string> = {
   class: tx('class'),
   session: tx('session'),

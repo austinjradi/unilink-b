@@ -12,6 +12,8 @@ import { useVariantsOn } from '../lib/variants';
 
 // One popup for the whole app. An icon can sit in a menu or popover that closes and unmounts
 // as soon as you click elsewhere, so it can't own what it opens. No id is the list of switches.
+// A module-level store, like the switches: any icon can open the
+// one popup, and ReqInfoHost subscribes to it to draw the popup.
 let shown: { id: ReqTopicId | null; opened: boolean } | null = null;
 const listeners = new Set<() => void>();
 
@@ -27,6 +29,8 @@ const subscribe = (listener: () => void) => {
 
 // Every open Mantine modal closes on Escape. The popup often sits on top of a half-filled form,
 // so it takes the key first (registered here, before any modal mounts) and only it closes.
+// `{ capture: true }` runs this listener first, on the event's way down the page, before
+// Mantine's own Escape handlers. stopImmediatePropagation() then stops theirs from running.
 window.addEventListener(
   'keydown',
   (event) => {
@@ -43,6 +47,8 @@ window.addEventListener(
 // phone, doesn't count, so it can't take the place of one you can see.
 const SCREEN = '[role="dialog"], .mantine-Popover-dropdown';
 
+// Works on the DOM directly rather than through React: it groups icons by
+// screen and topic, and hides every repeat after the first one on display.
 function showFirstIcons() {
   const groups = new Map<Element, Map<string, HTMLElement[]>>();
   for (const icon of document.querySelectorAll<HTMLElement>('.req-info')) {
@@ -73,6 +79,8 @@ let queued = false;
 function queueShowFirst() {
   if (queued) return;
   queued = true;
+  // A microtask runs as soon as the current code finishes and before the
+  // browser paints, so many icons rendering at once lead to a single pass.
   queueMicrotask(() => {
     queued = false;
     showFirstIcons();
@@ -85,6 +93,9 @@ window.addEventListener('resize', queueShowFirst);
 // items, none of which should react to it.
 export function ReqInfo({ id }: { id: ReqTopicId }) {
   // After every render, not just on mount: a list can reorder without anything mounting.
+  // No dependency array, so this runs after every render. useLayoutEffect
+  // runs before the browser paints, so a hidden repeat never flashes on
+  // screen. Returning the same function also runs it on unmount.
   useLayoutEffect(() => {
     queueShowFirst();
     return queueShowFirst;

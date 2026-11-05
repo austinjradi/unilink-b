@@ -21,6 +21,8 @@ import { NotificationBell } from './NotificationBell';
 import { ReqInfo, WithInfo } from './ReqInfo';
 
 // Top navigation from the wireframes: logo, pill tabs, then the student and their goat.
+// The tabs as data, one entry each, with the entry type written inline. `match`
+// decides whether a tab is the current one, and studentOnly hides it from professors.
 const NAV: { to: string; label: string; info: ReqTopicId; match: (p: string) => boolean; studentOnly?: boolean }[] = [
   { to: '/', label: tx('Home'), info: 'nav-home', match: (p: string) => p === '/' },
   { to: '/courses', label: tx('Courses'), info: 'nav-courses', match: (p: string) => p.startsWith('/courses') || p.startsWith('/classes') },
@@ -34,6 +36,7 @@ const NAV: { to: string; label: string; info: ReqTopicId; match: (p: string) => 
   { to: '/settings', label: tx('Settings'), info: 'nav-settings', match: (p: string) => p.startsWith('/settings') },
 ];
 
+// "Ada Lovelace" becomes "AL": split on whitespace, take each first letter, keep two.
 export const initials = (name: string) =>
   name
     .split(/\s+/)
@@ -59,8 +62,12 @@ export function Logo() {
 // Everything is saved only in this browser. If that stops working, say so while there's still time.
 function SaveProblem() {
   const [problem, setProblem] = useState(false);
+  // onSaveProblem returns an unsubscribe function, and returning it from the
+  // arrow makes it this effect's cleanup. setProblem itself is the listener.
   useEffect(() => window.unilink.onSaveProblem(setProblem), []);
+  // `void` throws away keepData's promise, because an effect must return nothing or a cleanup function.
   useEffect(() => void window.unilink.keepData(), []);
+  // A component that returns null renders nothing.
   if (!problem) return null;
   return (
     <Alert color="red" icon={<IconAlertTriangle size={18} />} mb="md" title={<WithInfo id="save-problem">{t('This browser isn’t saving your work')}</WithInfo>}>
@@ -76,6 +83,8 @@ function SaveProblem() {
 
 // ST1: shown while study mode is on.
 function StudyModePill() {
+  // refetchInterval polls every 15 seconds, because study mode turns itself on and off as classes
+  // start and end. Three components in this file use the same key, so they share one cached result.
   const status = useQuery({ queryKey: ['studyMode', 'status'], queryFn: () => rpc.studyMode.status(), refetchInterval: 15_000 });
   const stop = useAction(() => rpc.studyMode.stop(), { success: 'Study mode off' });
   if (!status.data?.active) return null;
@@ -139,14 +148,19 @@ function CalmFocus() {
   );
 }
 
+// children is whatever sits between <Layout> and </Layout>: the
+// current page. ReactNode is the type for anything React can render.
 export function Layout({ children }: { children: ReactNode }) {
   const me = useMe();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const signOut = useAction(() => rpc.auth.signOut());
+  // Mantine's useNetwork reports whether the browser is online, and re-renders when that changes.
   const network = useNetwork();
 
   // Clicking a desktop notification opens what it's about.
+  // navigate is a dependency, so if it ever changed, the
+  // old subscription would be removed and a new one made.
   useEffect(() => window.unilink.onNavigate((link) => navigate(link)), [navigate]);
 
   // Tab titles name the page ("Calendar · UniLink"), for history and many open tabs.
@@ -160,9 +174,15 @@ export function Layout({ children }: { children: ReactNode }) {
   const photoAvatar = useVariant('photo-avatar');
   const profilePage = useVariant('separate-profile-page');
   const autoSignOut = useVariant('auto-sign-out');
+  // True after 15 minutes with no mouse or keyboard input.
   const idle = useIdle(15 * 60_000);
+  // Like useState, but saved in localStorage under that key and shared by every
+  // component using it. Destructuring only the first item ignores the setter.
   const [photo] = useLocalStorage<string | null>({ key: `unilink-photo-${me.id}`, defaultValue: null });
   useEffect(() => {
+    // The eslint-disable line below silences the rule that wants every
+    // value used here listed as a dependency. signOut can be a new object
+    // on any render, so listing it would re-run this effect needlessly.
     if (autoSignOut && idle) signOut.mutate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoSignOut, idle]);
@@ -172,17 +192,26 @@ export function Layout({ children }: { children: ReactNode }) {
   const settingsInMenu = useVariant('settings-in-account-menu');
   const lightOnly = useVariant('light-only');
   const helpLinks = useVariant('help-links');
+  // Mantine's light and dark setting: the current value and a function to change it.
   const { colorScheme, setColorScheme } = useMantineColorScheme();
+  // The tabs to show: student-only tabs go for professors,
+  // and so do tabs that a switch moves elsewhere.
   const nav = NAV.filter((item) => (me.role === 'student' || !item.studentOnly) && (academics || item.to !== '/academics') && (!sessionsOnlyOnClass || item.to !== '/sessions') && (!plannerInCalendar || item.to !== '/planner') && (!calculatorOnlyInClass || item.to !== '/calculator') && (!studyToggle || item.to !== '/study-mode'));
   const listOpen = useListOpen();
   useEffect(() => {
     // The requirements list puts it back when it closes, and this takes over from there.
     if (listOpen) return;
+    // document.title is the name on the browser tab. Like every effect,
+    // this runs after render, whenever its dependencies change.
     document.title = section ? `${t(section.label)} · UniLink` : 'UniLink';
   }, [section, listOpen]);
 
   return (
+    // AppShell is Mantine's page frame: a fixed header and a main area. `padding={{ base: 'sm',
+    // sm: 'lg' }}` is a responsive value, small on phones and larger from the sm breakpoint up.
     <AppShell header={{ height: 72 }} padding={{ base: 'sm', sm: 'lg' }} className={bottomTabs ? 'with-bottom-tabs' : scrollingTabs ? 'with-scrolling-tabs' : undefined}>
+      {/* A skip link: hidden until reached with Tab, it lets */}
+      {/* keyboard users jump past the header to the page. */}
       <UnstyledButton className="skip-link" onClick={() => document.getElementById('content')?.focus()}>
         {t('Skip to content')}
       </UnstyledButton>
@@ -195,6 +224,9 @@ export function Layout({ children }: { children: ReactNode }) {
           </WithInfo>
 
           <Group gap={6} wrap="nowrap" component="nav" className="nav-tabs">
+            {/* `data-active={… || undefined}` leaves the attribute off rather */}
+            {/* than writing data-active="false", so CSS can select [data-active]. */}
+            {/* aria-current tells screen readers which tab is the current page. */}
             {nav.map((item) => (
               <Link key={item.to} to={item.to} className="nav-pill" data-active={item.match(pathname) || undefined} aria-current={item.match(pathname) ? 'page' : undefined}>
                 {t(item.label)}
@@ -220,6 +252,8 @@ export function Layout({ children }: { children: ReactNode }) {
             {me.role === 'student' && !studyToggle && <StudyModePill />}
             {me.role === 'student' && <FocusCheckIn />}
             {/* Phones and small tablets: the tabs don't fit, so they're in a menu. */}
+            {/* Menu is a compound component: Menu.Target is */}
+            {/* what opens it, Menu.Dropdown is what appears. */}
             <Menu position="bottom-end" width={240}>
               <Menu.Target>
                 <ActionIcon variant="subtle" color="gray" size="lg" className="nav-menu" aria-label={t('Menu')}>
@@ -298,12 +332,17 @@ export function Layout({ children }: { children: ReactNode }) {
         </Group>
       </AppShell.Header>
 
+      {/* tabIndex={-1} lets the skip link move focus here */}
+      {/* with focus(), without adding this to the Tab order. */}
       <AppShell.Main id="content" tabIndex={-1} style={{ outline: 'none' }}>
         <Box maw={1400} mx="auto">
           <SaveProblem />
+          {/* The page that matched the current route. */}
           {children}
         </Box>
       </AppShell.Main>
+      {/* `condition && <JSX>` renders the JSX only when the */}
+      {/* condition is true. With false, React renders nothing. */}
       {bottomTabs && (
         <nav className="bottom-tabs" aria-label={t('Menu')}>
           {nav.map((item) => (
