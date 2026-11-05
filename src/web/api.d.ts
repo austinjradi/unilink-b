@@ -1,5 +1,7 @@
 import type { RpcResult } from '../main/rpc/core';
 
+// `declare global` adds to types that exist everywhere. This merges a `unilink` property into the
+// browser's own Window interface, so `window.unilink` is typed in every file without an import.
 declare global {
   interface Window {
     unilink: {
@@ -22,4 +24,5 @@ declare global {
   }
 }
 
+// An empty export makes this file a module, which `declare global` requires.
 export {};
