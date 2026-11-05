@@ -62,6 +62,7 @@ import { PlannerPage } from './Planner';
 
 type Deadline = Out<typeof rpc.calendar.deadlines>[number];
 type CalEvent = Out<typeof rpc.calendar.range>[number];
+// A union of strings: the view can only be one of these.
 type View = 'month' | 'week' | 'semester' | 'key' | 'agenda';
 
 const KINDS = [
@@ -81,6 +82,7 @@ const classStyle = (classId: number | null): CSSProperties =>
     '--chip-fg': `var(--mantine-color-${CLASS_COLOURS[(classId ?? 0) % CLASS_COLOURS.length]}-light-color)`,
   }) as CSSProperties;
 
+// A hook that returns a function: the switch is read once, then applied to many events.
 function useEventStyle() {
   const byClass = useVariant('colour-by-class');
   return (e: CalEvent) => (byClass ? classStyle(e.classId) : chipStyle(eventKind(e)));
@@ -95,6 +97,8 @@ const mondayOf = (day: string) => {
 
 // A3 in the layout of the wireframe (A2Team.pdf p. 7).
 // Classes switched off in the calendar's filter. What belongs to no class always shows.
+// Context instead of props: the views are nested several levels
+// deep, and each reads the filter where it needs it with useContext.
 const HiddenClasses = createContext<number[]>([]);
 
 // 'filter-by-event-kind': kinds switched off, instead of classes.
@@ -171,6 +175,8 @@ export function CalendarPage() {
   return noCalendar ? <ExportOnly /> : <FullCalendar />;
 }
 
+// The calendar page: view and date state, filters, and the forms for
+// adding things. The views below get their events through useRange.
 function FullCalendar() {
   const navigate = useNavigate();
   const noSyllabus = useVariant('no-syllabus-import');
@@ -194,6 +200,8 @@ function FullCalendar() {
   const [cursor, setCursor] = useState(today);
   // The day listed under the calendar: today, or whichever day was picked in it.
   const [selected, setSelected] = useState(today);
+  // Selecting a day also scrolls its list into view on narrow
+  // windows. `?.` skips that if the element isn't on the page.
   const pick = (day: string) => {
     setSelected(day);
     if (dayPopup) setDayOpen(true);
@@ -409,6 +417,8 @@ function FullCalendar() {
   );
 }
 
+// Every view fetches its events through this. `select` filters the cached result for this component
+// without changing the cache, so views share one fetch per range. The filter itself comes from context.
 function useRange(from: string, to: string) {
   const hidden = useContext(HiddenClasses);
   const hiddenKinds = useContext(HiddenKinds);
@@ -423,6 +433,8 @@ function useRange(from: string, to: string) {
 type DayPicker = { today: string; selected: string; onSelect: (day: string) => void };
 
 // Days are buttons: picking one lists everything on it under the calendar.
+// Returns props to spread onto a div, so a day behaves like a button: it can take focus, be
+// clicked, and respond to Enter or Space. preventDefault() stops Space from scrolling the page.
 const dayButton = (day: string, onSelect: (day: string) => void) => ({
   role: 'button',
   tabIndex: 0,
@@ -438,8 +450,11 @@ const dayButton = (day: string, onSelect: (day: string) => void) => ({
 
 function MonthView({ cursor, today, selected, onSelect }: { cursor: string } & DayPicker) {
   // On phones the chips are too narrow to read, so each event is a coloured dot instead.
+  // useMediaQuery re-renders the component whenever the window crosses that width.
   const phone = useMediaQuery('(max-width: 640px)');
   const month = dayjs(cursor).month();
+  // The grid starts on the Monday on or before the 1st and ends on the
+  // Sunday after the month's last day, so it always shows whole weeks.
   const start = mondayOf(ymd(dayjs(cursor).startOf('month').toDate()));
   const end = addDays(mondayOf(ymd(dayjs(cursor).endOf('month').toDate())), 6);
   const days = eachDay(start, end);
@@ -448,8 +463,11 @@ function MonthView({ cursor, today, selected, onSelect }: { cursor: string } & D
   const byClass = useVariant('colour-by-class');
   const canDrag = useVariant('drag-tasks');
   const moveTask = useAction((v: { taskId: number; day: string }) => rpc.planner.moveTask(v));
+  // HTML drag and drop: the dragged task's id travels in dataTransfer under a
+  // custom type. A task's key is task-<id>, so slice(5) leaves just the id.
   const dragTask = (e: CalEvent) => ({ draggable: true, onDragStart: (event: DragEvent) => event.dataTransfer.setData('text/unilink-task', e.key.slice(5)) });
   const dropOn = (day: string) => ({
+    // A drop target has to cancel dragover, or the browser won't allow dropping there.
     onDragOver: (event: DragEvent) => event.preventDefault(),
     onDrop: (event: DragEvent) => {
       const id = Number(event.dataTransfer.getData('text/unilink-task'));
@@ -699,6 +717,7 @@ function KeyDatesView() {
 
   const dates = keyDatesFor(termName).filter((d) => (!onlyOfficial || !d.approximate) && (!onlyUpcoming || (d.end ?? d.date) >= today));
   const next = dates.find((d) => (d.end ?? d.date) >= today);
+  // useMemo keeps the Map between renders, and rebuilds it only when the catalogue data changes.
   const titles = useMemo(() => new Map((catalogue.data ?? []).map(([code, title]) => [code, title])), [catalogue.data]);
   const myClasses = (mine.data ?? []).filter((c) => c.term === termName);
   const myCourses = new Set(myClasses.map((c) => `${c.subject} ${c.number}`));
@@ -710,6 +729,8 @@ function KeyDatesView() {
   );
   const myExams = myClasses.flatMap((c) => finalExamsFor(`${c.subject} ${c.number}`, termName, c.section)).sort(byTime);
   const conflicts = new Map([...examConflicts(myExams)].filter(([, conflict]) => !exactConflicts || conflict.overlap));
+  // useDeferredValue lets React show the typed text first and update
+  // the long filtered list a moment later, so typing stays smooth.
   const query = useDeferredValue(search.trim().toLowerCase().replace(/\s+/g, ''));
   const listed = useMemo(() => exams.filter((e) => !query || `${e.course}${titles.get(e.course) ?? ''}`.toLowerCase().replace(/\s+/g, '').includes(query)), [exams, titles, query]);
   const day = (date: string) => dayjs(date).format(t('ddd, MMM D'));
@@ -1100,6 +1121,8 @@ function AllDeadlines({ onEdit }: { onEdit: (d: Deadline) => void }) {
 // A3 "imported from my syllabus": paste the course outline's schedule, check what was found,
 // and add it for the whole section. Weighted items join the shared grading scheme (A5),
 // which shows them on the calendar too; the rest become class deadlines.
+// Reads a syllabus (a file, the course outline, or pasted text), finds dated items, and lets
+// the student review them. Weighted items join the grading scheme; the rest become deadlines.
 export function SyllabusImport({ onDone, initialClassId = null }: { onDone: () => void; initialClassId?: number | null }) {
   const [classId, setClassId] = useState<number | null>(initialClassId);
   const [text, setText] = useState('');
@@ -1119,6 +1142,8 @@ export function SyllabusImport({ onDone, initialClassId = null }: { onDone: () =
 
   const found = cls ? parseSyllabus(text, cls.term) : [];
   const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  // Skips what the class already has: a component with the same
+  // name, or a deadline with the same title on the same day.
   const already = (i: SyllabusItem) =>
     i.weight != null
       ? (scheme.data ?? []).some((a) => same(a.name, i.title))
@@ -1252,6 +1277,8 @@ export function SyllabusImport({ onDone, initialClassId = null }: { onDone: () =
   );
 }
 
+// A default parameter value is worked out at each call, so the
+// default label is translated into the current language every time.
 export function ClassSelect({ value, onChange, label = t('Class'), info }: { value: number | null; onChange: (v: number | null) => void; label?: string; info: ReqTopicId }) {
   const classes = useQuery({ queryKey: ['classes', 'mine'], queryFn: () => rpc.classes.mine() });
   return (

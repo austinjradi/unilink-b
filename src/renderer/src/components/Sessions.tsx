@@ -45,11 +45,14 @@ import { ReqInfo, WithInfo } from './ReqInfo';
 // S3 study sessions in the layout of the wireframes (A2Team.pdf p. 12–13): rows with the
 // class and type tags, when and where, how many are going, and a join/details action.
 
+// One session as describe() in the service shapes it, already limited to what this viewer may see.
 export type Session = Out<typeof rpc.studySessions.list>[number];
 
 // Stored in English (so search and tags match for everyone), shown translated.
 export const SESSION_TAGS = [tx('Assignment'), tx('Midterm'), tx('Final'), tx('Lab'), tx('Project'), tx('Review'), tx('Office hours')];
 
+// "7 October 18:00–20:00", repeating the date only when the session ends on
+// another day. isSame(…, 'day') compares calendar days, not exact times.
 function when(s: Session) {
   const start = dayjs(s.startsAt);
   return `${start.format('D MMMM HH:mm')}–${dayjs(s.endsAt).format(start.isSame(s.endsAt, 'day') ? 'HH:mm' : 'D MMM HH:mm')}`;
@@ -57,6 +60,7 @@ function when(s: Session) {
 
 const place = (s: Session) => (s.format === 'online' ? t('Online') : s.location);
 
+// Nested ternaries choose the toast text from what joining returned.
 const joinedMessage = (r: { status: string; weeks?: number }) =>
   r.status === 'invited'
     ? 'You asked to join. The host will decide.'
@@ -156,8 +160,11 @@ function SessionCard({ session: s, onDetails }: { session: Session; onDetails: (
 }
 
 // 'session-calendar-view': the next four weeks as a calendar.
+// Four weeks from this Monday: Array.from({ length: 28 }, …) makes
+// the 28 days, and each day lists the sessions that start on it.
 function SessionCalendar({ sessions, onOpen }: { sessions: Session[]; onOpen: (id: number) => void }) {
   const today = dayjs();
+  // dayjs counts days from Sunday as 0, so (day() + 6) % 7 is the number of days since Monday.
   const monday = ymd(today.subtract((today.day() + 6) % 7, 'day').toDate());
   const days = Array.from({ length: 28 }, (_, i) => addDays(monday, i));
   return (
@@ -427,6 +434,7 @@ function GoalChecklist({ session: s }: { session: Session }) {
   );
 }
 
+// The full view of one session, with every action this viewer is allowed.
 export function SessionDetails({ session: s, onEdit, onClose }: { session: Session; onEdit: () => void; onClose: () => void }) {
   const noWeeks = useVariant('one-off-sessions');
   const hostStays = useVariant('hosts-cannot-leave');
@@ -708,6 +716,7 @@ function CodeBox() {
   );
 }
 
+// One form for creating a session, editing one, or setting one up for the time a poll chose.
 export function SessionForm({
   classId,
   existing,
@@ -736,6 +745,8 @@ export function SessionForm({
   const checklist = useVariant('session-goal-checklist');
   const [lengthMinutes, setLengthMinutes] = useState('120');
   const [goals, setGoals] = useState<string[]>(() => (existing?.description ?? '').split('\n').map((line) => line.replace(/^- /, '').trim()).filter(Boolean));
+  // The default start: tomorrow at 18:00. dayjs values
+  // never change in place; each call returns a new date.
   const tomorrowEvening = dayjs().add(1, 'day').hour(18).minute(0).second(0).toDate();
   const form = useForm({
     initialValues: {
@@ -747,6 +758,8 @@ export function SessionForm({
       location: existing?.location ?? '',
       meetingUrl: existing?.meetingUrl ?? '',
       visibility: (existing?.visibility ?? 'class') as 'class' | 'invite',
+      // Mantine's date pickers can hand back a string, so these fields allow
+      // a Date, a string or null. toDate() converts them when they're used.
       startsAt: (existing?.startsAt ?? fromPoll?.startsAt ?? tomorrowEvening) as Date | string | null,
       endsAt: (existing?.endsAt ?? fromPoll?.endsAt ?? dayjs(tomorrowEvening).add(2, 'hour').toDate()) as Date | string | null,
       capacity: (existing?.capacity ?? 6) as number | string,
@@ -758,16 +771,22 @@ export function SessionForm({
       location: (v, values) => (quick || values.format === 'online' || v.trim() ? null : t('Where is it? Add a room or place')),
       meetingUrl: (v, values) => (onePlaceField || values.format === 'in-person' || /^https:\/\/\S+\.\S+/.test(v.trim()) ? null : t('Add the meeting link, starting with https://')),
       capacity: (v) => ((optionalLimit && v === '') || (typeof v === 'number' && v >= 2 && v <= 30) ? null : t('Between 2 and 30 people')),
+      // `toDate(v)!` asserts that the date exists, which
+      // the && checks before it have just made sure of.
       endsAt: (v, values) => (startAndLength || (toDate(v) && toDate(values.startsAt) && toDate(v)! > toDate(values.startsAt)!) ? null : t('Must end after it starts')),
     },
   });
   const start = toDate(form.values.startsAt);
   const end = toDate(form.values.endsAt);
+  // Warns about a clash while the time is being picked. The times are in the key as numbers
+  // (getTime()), so every change asks again, and `enabled` waits for a valid range.
   const busy = useQuery({
     queryKey: ['calendar', 'busyAt', start?.getTime(), end?.getTime(), existing?.id],
     queryFn: () => rpc.calendar.busyAt({ start: start!, end: end!, exceptSessionId: existing?.id ?? null }),
     enabled: !!start && !!end && start < end,
   });
+  // Builds the procedure's input from the form values, then creates or updates.
+  // For a poll, it also records the chosen time, once the session exists.
   const save = useAction(
     async (v: typeof form.values) => {
       const className = classes.data?.find((c) => String(c.id) === v.classId)?.code ?? '';
@@ -784,6 +803,7 @@ export function SessionForm({
         startsAt,
         endsAt: startAndLength ? new Date(startsAt.getTime() + Number(lengthMinutes) * 60_000) : toDate(v.endsAt)!,
         capacity: v.capacity === '' ? null : Number(v.capacity),
+        // A tag picked in French is stored as its English original, so tags match for everyone.
         tag: v.tag.trim() ? toStoredTopic(v.tag, SESSION_TAGS) : null,
       };
       if (existing) await rpc.studySessions.update({ sessionId: existing.id, ...fields });

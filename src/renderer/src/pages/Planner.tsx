@@ -55,6 +55,7 @@ import { ClassSelect } from './Calendar';
 import { t, tx } from '../lib/i18n';
 import { ReqInfo, WithInfo } from '../components/ReqInfo';
 
+// One plan, and one of its tasks, as planner.list returns them.
 type Assignment = Out<typeof rpc.planner.list>[number];
 type Task = Assignment['tasks'][number];
 
@@ -71,14 +72,19 @@ export function PlannerPage() {
   // "Add event/assignment" on the calendar links here with ?new=1, and "Plan it" on a
   // deadline adds &from=<the deadline's calendar key>.
   const [params, setParams] = useSearchParams();
+  // The URL can open the form: ?new=1 starts with the new-plan
+  // form open. useState only uses this value on the first render.
   const [editing, setEditing] = useState<Assignment | 'new' | null>(params.get('new') ? 'new' : null);
+  // Kept in state, so it stays the same after the URL is tidied up.
   const [from] = useState(params.get('from'));
   const [editingTime, setEditingTime] = useState(false);
+  // Closing also removes ?new=1, so a reload doesn't open the form again.
   const close = () => {
     setEditing(null);
     if (params.get('new')) setParams({}, { replace: true });
   };
 
+  // Three lists worked out from one query during render: in progress, finished, and archived.
   const active = list.data?.filter((a) => !a.archived && !a.pastDue && a.doneCount < a.tasks.length) ?? [];
   const finished = list.data?.filter((a) => !a.archived && (a.pastDue || a.doneCount === a.tasks.length)) ?? [];
   const archived = list.data?.filter((a) => a.archived) ?? [];
@@ -97,6 +103,8 @@ export function PlannerPage() {
                 : oneADay
                   ? 'One task a day, starting today'
                   : t('Tasks are scheduled as early as your free study time allows ({{hours}} h a week), so you finish ahead of each deadline', {
+                      // reduce() adds up the week's minutes. Dividing by 6, rounding,
+                      // then dividing by 10 gives hours with one decimal place.
                       hours: Math.round(weeklyMinutes(me.weeklyStudyMinutes).reduce((a, b) => a + b, 0) / 6) / 10,
                     })}{' '}
             (
@@ -209,21 +217,27 @@ function ArchivedPlans({ plans }: { plans: Assignment[] }) {
 
 // 'weekly-time-grid': blocks of two hours through the day, which add up to the minutes.
 const GRID_HOURS = [8, 10, 12, 14, 16, 18, 20];
+// A grid of two-hour blocks for each weekday. Clicking a block fills that
+// day's free time up to it, or, if it was already on, stops just before it.
 function WeeklyGrid({ minutes, onChange }: { minutes: number[]; onChange: (minutes: number[]) => void }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: `52px repeat(7, 1fr)`, gap: 2 }}>
       <div />
+      {/* Monday first on screen, while the data stays Sunday first (index 0). */}
       {[1, 2, 3, 4, 5, 6, 0].map((day) => (
         <Text key={day} size="xs" fw={700} ta="center">
           {dayjs().day(day).format('ddd')}
         </Text>
       ))}
       {GRID_HOURS.map((hour, row) => (
+        // display: contents puts each row's cells straight into the
+        // parent grid, while the div still carries the key React needs.
         <div key={hour} style={{ display: 'contents' }}>
           <Text size="xs" c="dimmed" ta="right" pr={4}>
             {hour}:00
           </Text>
           {[1, 2, 3, 4, 5, 6, 0].map((day) => {
+            // A block is on when that day's free time reaches past this row, at 120 minutes a row.
             const on = minutes[day] / 120 > row;
             return (
               <button
@@ -591,8 +605,11 @@ function TaskRow({ task, dueDay }: { task: Task; dueDay: string }) {
   );
 }
 
+// A task not saved yet: it has no id or day until the plan is created.
 type TaskDraft = { title: string; minutes: number };
 
+// Creating a plan: the assignment, then its tasks, as a number of equal
+// parts, a custom list, or the questions found in an attached handout.
 function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string | null }) {
   const byHand = useVariant('plan-date-by-hand');
   const onlyPosted = useVariant('only-posted-assignments');
@@ -614,9 +631,12 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
     initialValues: {
       title: '',
       classId: null as number | null,
+      // Four days from now at 23:59 by default. `as Date | string
+      // | null` allows whatever the date picker hands back.
       dueAt: dayjs().add(4, 'day').hour(23).minute(59).second(0).toDate() as Date | string | null,
       bufferDays: oneBuffer || spread ? 1 : DEFAULT_BUFFER_DAYS,
       notes: '',
+      // The cast widens the type, so mode can later hold either value.
       mode: 'parts' as 'parts' | 'custom',
       parts: 3,
       partLabel: t('Problem'),
@@ -631,7 +651,10 @@ function NewAssignmentForm({ onDone, from }: { onDone: () => void; from: string 
   });
   const v = form.values;
   const dueDay = toDate(v.dueAt);
+  // Days from today to the last day before the buffer, counting both ends, and never fewer than one.
   const daysToWork = dueDay ? Math.max(1, dayjs(addDays(ymd(dueDay), -v.bufferDays)).diff(dayjs(ymd(new Date())), 'day') + 1) : 1;
+  // The tasks to create, worked out from the form during render: one per
+  // day, a number of equal parts, or the custom rows that have a title.
   const tasks: TaskDraft[] =
     perDay
       ? Array.from({ length: daysToWork }, (_, i) => ({ title: `${v.title.trim() || t('Part')}: day ${i + 1}`, minutes: v.partMinutes }))
