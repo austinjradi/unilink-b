@@ -24,8 +24,11 @@ import { storeAttachment } from './planner';
 // A section's professor moderates: pins and locks threads, endorses replies, removes what
 // doesn't belong, and their notes go out to the whole section as announcements.
 
+// Stored in English and translated when shown, so filters work whatever language each student uses.
 export const SUGGESTED_TOPICS = ['Lectures', 'Assignments', 'Exams', 'Labs and tutorials', 'Logistics', 'Off-topic'];
 
+// Fields shared by create and update. z.enum allows only
+// those two kinds, and nonEmpty trims and requires the text.
 const postFields = {
   kind: z.enum(['question', 'note']),
   topic: z.string().trim().min(1, 'Pick a topic').max(120),
@@ -61,11 +64,15 @@ function boardSections(db: DB, classId: number) {
   return db.select({ id: classes.id }).from(classes).where(and(eq(classes.courseId, cls.courseId), eq(classes.term, cls.term))).all().map((c) => c.id);
 }
 
+// Passes if the user is in any section that shares this
+// board. Otherwise requireMember throws the usual error.
 function requireBoardAccess(db: DB, userId: number, classId: number) {
   if (isOn('post-without-joining') || boardSections(db, classId).some((id) => isMember(db, userId, id))) return;
   requireMember(db, userId, classId);
 }
 
+// Returns a SQL condition instead of running a query, so every post query can put
+// it in its where clause. The subquery lists the posts this user was picked to see.
 export function canSeePost(userId: number) {
   return or(
     eq(posts.visibility, 'class'),
@@ -87,6 +94,8 @@ function myClassIds(db: DB, userId: number) {
 // discussion. Before their first visit, only the last three days count, not the whole term.
 const FIRST_VISIT_WINDOW = 3 * 86_400_000;
 
+// Loads every visit once and returns a lookup function,
+// so checking many posts doesn't run a query for each.
 function lastSeen(db: DB, userId: number, now: Date) {
   const seen = new Map(
     db
@@ -99,12 +108,16 @@ function lastSeen(db: DB, userId: number, now: Date) {
   return (classId: number) => seen.get(classId) ?? now.getTime() - FIRST_VISIT_WINDOW;
 }
 
+// The guard used before anything touches a post: it must exist, this user
+// must be allowed to see it, and they must have access to its board.
+// Anything else is NOT_FOUND, so a hidden post looks like a missing one.
 function visiblePost(db: DB, userId: number, postId: number) {
   const post = db.select().from(posts).where(and(eq(posts.id, postId), canSeePost(userId))).get() ?? notFound('post');
   requireBoardAccess(db, userId, post.classId);
   return post;
 }
 
+// For editing and deleting: only the author, and only while the post hasn't been deleted.
 function ownPost(db: DB, userId: number, postId: number) {
   const post = db.select().from(posts).where(eq(posts.id, postId)).get() ?? notFound('post');
   if (post.authorId !== userId) throw new AppError('You can only change your own posts.', 'FORBIDDEN');
@@ -113,6 +126,7 @@ function ownPost(db: DB, userId: number, postId: number) {
 }
 
 // S4: screenshots and photos in posts and replies. SVGs are left out: they can carry scripts.
+// jpe?g matches both jpg and jpeg, because ? makes the e optional. The i flag ignores case.
 const IMAGE_FILE = /\.(png|jpe?g|gif|webp)$/i;
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -129,17 +143,22 @@ async function storeImages(ctx: AuthedContext, paths: string[]) {
     if (info.size > MAX_IMAGE_BYTES && anyFile) throw new AppError(FILES_UP_TO);
     if (info.size > MAX_IMAGE_BYTES) throw new AppError('Images can be up to 5 MB.');
   }
+  // Promise.all copies every image at once and waits for them all. If one fails, the whole call fails.
   return Promise.all(paths.map((path) => storeAttachment(ctx, path)));
 }
 
+// `which` is a Drizzle condition, so callers choose the images: one
+// post's, one reply's, or a list of ids. Files go before their rows.
 async function deleteImages(ctx: AuthedContext, which: SQL | undefined) {
   const rows = ctx.db.select().from(boardImages).where(which).all();
   await Promise.all(rows.map((image) => rm(image.path, { force: true })));
   if (rows.length) ctx.db.delete(boardImages).where(inArray(boardImages.id, rows.map((image) => image.id))).run();
 }
 
+// Images on the post itself. Images added in replies have a replyId; the post's own have null there.
 const ownImagesOf = (postId: number) => and(eq(boardImages.postId, postId), isNull(boardImages.replyId));
 
+// One query for the images of many posts. An empty list skips the query altogether.
 function imagesFor(db: DB, postIds: number[]) {
   if (!postIds.length) return [];
   return db
@@ -163,10 +182,14 @@ export async function deleteAuthoredImages(ctx: AuthedContext) {
 }
 
 // Posting or replying follows a thread, unless the student unfollowed it before.
+// onConflictDoNothing leaves an existing row as it is,
+// including following = false from someone who unfollowed.
 function follow(db: DB, postId: number, userId: number) {
   db.insert(postFollows).values({ postId, userId, following: true }).onConflictDoNothing().run();
 }
 
+// A subquery: whether this user actively follows each post
+// in the outer query. The feed's Following filter uses it.
 const followsSql = (userId: number) =>
   sql`(select count(*) from ${postFollows} where ${postFollows.postId} = ${posts.id} and ${postFollows.userId} = ${userId} and ${postFollows.following} = 1)`;
 
@@ -177,6 +200,8 @@ function followersOf(db: DB, post: typeof posts.$inferSelect) {
     .select({ id: postFollows.userId })
     .from(postFollows)
     .innerJoin(enrollments, and(eq(enrollments.userId, postFollows.userId), eq(enrollments.classId, post.classId)))
+    // A left join, because most students have no course_info
+    // row. isNull(muteReplies) below counts them as not muted.
     .leftJoin(courseInfo, and(eq(courseInfo.userId, postFollows.userId), eq(courseInfo.classId, post.classId)))
     .where(
       and(
@@ -207,6 +232,7 @@ function replyRecipients(db: DB, post: typeof posts.$inferSelect) {
 // 'ta-moderate': who a section's professor picked to help moderate.
 const tasOf = (db: DB, classId: number) => read<number[]>(db, `variant-tas-${classId}`, []);
 
+// The section's professor, or with a switch, a TA they picked.
 function moderates(db: DB, userId: number, classId: number) {
   return teaches(db, userId, classId) || (isOn('ta-moderate') && tasOf(db, classId).includes(userId));
 }
@@ -242,6 +268,7 @@ function audienceOf(db: DB, postId: number) {
 }
 
 // S1/G4.5: what classmates see about someone once they post or reply.
+// Spread into a select with `...authorColumns` to add the author's fields to each row.
 const authorColumns = {
   authorId: users.id,
   authorName: users.name,
@@ -256,6 +283,8 @@ const authorColumns = {
 type AuthorRow = { authorId: number; authorAvatar: unknown; authorEmail: string; authorPronouns: string; authorFaculty: string; authorGradYear: number | null };
 
 // Former students (deleted accounts) are shown without a name, email, profile or goat outfit.
+// Takes the avatar out of the row and puts authorGoat, the outfit to draw, in its
+// place. Spreading `former ? {…} : {}` blanks the profile only for a deleted account.
 const withGoat = <T extends AuthorRow>({ authorAvatar, ...row }: T) => {
   const former = row.authorEmail === FORMER_STUDENT_EMAIL;
   return {
@@ -268,6 +297,8 @@ const withGoat = <T extends AuthorRow>({ authorAvatar, ...row }: T) => {
 
 // What this reader gets of an author, under the requirement changes that limit it. Professors'
 // profiles are public, and nobody's limited to themselves. Given the post, it can be anonymous.
+// Returns a function, a closure over db, viewerId and the set of anonymous posts, so the set loads
+// once and is then applied to every row. The generic T keeps whatever other fields each row has.
 function authorView(db: DB, viewerId: number) {
   const anonymous = isOn('anonymous-posts') ? anonymousPostIds(db) : new Set<number>();
   return <T extends ReturnType<typeof withGoat<AuthorRow>> & { authorRole: string }>(row: T, post?: { id: number; classId: number }) => {
@@ -294,6 +325,8 @@ function checkEditWindow(createdAt: Date, now: Date) {
   if (isOn('edit-window') && now.getTime() - createdAt.getTime() > EDIT_WINDOW_MS) throw new AppError(TOO_LATE_TO_EDIT, 'FORBIDDEN');
 }
 
+// Reads (topics, feed, get, similar), then writes for posts,
+// replies, reactions, follows, reports and moderation.
 export const boardRouter = {
   // The fixed topics, for the filters and the composer.
   topics: procedure(z.object({ classId: idSchema.nullable() }), ({ classId }, ctx) => {
@@ -306,6 +339,8 @@ export const boardRouter = {
   }),
 
   // One class's board, or the home feed across every class the student is in.
+  // Every feed filter arrives in one input object. The where clause
+  // below is built from them, with undefined for each filter that's off.
   feed: procedure(
     z.object({
       classIds: z.array(idSchema).nullable(),
@@ -328,6 +363,8 @@ export const boardRouter = {
       const mine = myClassIds(ctx.db, ctx.userId);
       const joined = classIds ? classIds.filter((id) => mine.includes(id) || isOn('post-without-joining')) : mine;
       if (classIds?.length === 1 && !joined.length) requireBoardAccess(ctx.db, ctx.userId, classIds[0]);
+      // The boards to read: the classes asked for (or all of mine), widened
+      // to every section that shares a board. new Set removes duplicates.
       const ids = [...new Set((joined.length ? joined : (classIds ?? [])).flatMap((id) => boardSections(ctx.db, id)))].filter((id) => joined.includes(id) || isOn('shared-course-board') || isOn('shared-prof-thread') || isOn('one-class-per-course'));
       if (!ids.length) return [];
 
@@ -339,6 +376,8 @@ export const boardRouter = {
             ? new Date(now.getTime() - (since === 'week' ? 7 : 30) * 86_400_000)
             : null;
       const term = `%${search}%`;
+      // Subqueries in the select list give each post row its reaction
+      // count, report count and reply count, and whether this user reacted.
       const goats = sql<number>`(select count(*) from ${postReactions} where ${postReactions.postId} = ${posts.id})`.mapWith(Number);
       const seen = lastSeen(ctx.db, ctx.userId, now);
       const reportsSql = sql`(select count(*) from ${postReports} where ${postReports.postId} = ${posts.id})`;
@@ -402,6 +441,7 @@ export const boardRouter = {
         )
         // On one class's board, what its professor pinned comes first.
         .orderBy(...(ids.length === 1 || classIds?.length === 1 ? [isOn('vote-not-pin') ? desc(goats) : sql`${posts.pinnedAt} is null`] : []), ...(sort !== 'top' && isOn('sort-unanswered') ? [sql`case when ${posts.kind} = 'question' and not exists (select 1 from ${replies} where ${replies.postId} = ${posts.id}) then 0 else 1 end`] : []), ...(sort === 'top' ? [desc(goats)] : isOn('sort-activity') ? [sql`coalesce((select max(${replies.createdAt}) from ${replies} where ${replies.postId} = ${posts.id}), ${posts.createdAt}) desc`] : []), desc(posts.createdAt), desc(posts.id))
+        // At most 100 posts per request. The feed draws them ten at a time as you scroll.
         .limit(100)
         .all();
       const images = imagesFor(ctx.db, rows.map((p) => p.id)).filter((image) => image.replyId == null);
@@ -411,6 +451,8 @@ export const boardRouter = {
         ...view(withGoat(p), p),
         professorAnswered: isOn('any-reply-answers') ? p.replyCount > 0 : p.professorAnswered,
         poll: isOn('poll-posts') ? pollFor(ctx.db, p.id, ctx.userId) : null,
+        // New means someone else's post, not deleted, written
+        // since this user last opened that class's board.
         isNew: p.authorId !== ctx.userId && !p.deletedAt && p.createdAt.getTime() > seen(p.classId) && !read.has(p.id),
         images: images.filter((image) => image.postId === p.id),
         // Only the section's professor sees that anything's been reported.
@@ -446,6 +488,7 @@ export const boardRouter = {
       .all()) {
       if (p.authorId !== ctx.userId && p.createdAt.getTime() > seen(p.classId) && !read.has(p.id)) counts.set(p.classId, (counts.get(p.classId) ?? 0) + 1);
     }
+    // Spreading a Map gives its [key, value] pairs, destructured in the arrow's parameters.
     return [...counts].map(([classId, count]) => ({ classId, count }));
   }),
 
@@ -472,6 +515,7 @@ export const boardRouter = {
     const canModerate = moderates(ctx.db, ctx.userId, post.classId);
     const reports = reportsOn(ctx.db, postId);
     if (isOn('community-moderation') && !canModerate && post.authorId !== ctx.userId && reports.filter((r) => r.replyId == null).length >= HIDE_AFTER_REPORTS) notFound('post');
+    // Only a moderator sees report reasons; everyone else gets an empty list. Nobody sees who reported.
     const reasonsFor = (replyId: number | null) => (canModerate ? reports.filter((r) => r.replyId === replyId).map((r) => r.reason) : []);
     const reportedByMe = (replyId: number | null) => reports.some((r) => r.replyId === replyId && r.userId === ctx.userId);
     const hasProfessor = professorsOf(ctx.db, post.classId).length > 0;
@@ -534,10 +578,14 @@ export const boardRouter = {
           goats: replyGoats.filter((g) => g.replyId === r.id).length,
           goated: replyGoats.some((g) => g.replyId === r.id && g.userId === ctx.userId),
         }))
+        // Number(true) is 1, so subtracting booleans sorts accepted replies first, then
+        // endorsed ones. `||` moves to the second comparison only when the first is a tie (0).
         .sort((a, b) => (isOn('most-goats-on-top') ? b.goats - a.goats : Number(b.accepted) - Number(a.accepted) || Number(b.endorsed) - Number(a.endorsed))),
     };
   }),
 
+  // Checks and image copies first. Then one transaction inserts the
+  // post, its audience and its images, and makes the author follow it.
   create: procedure(
     z.object({
       classId: idSchema,
@@ -561,6 +609,7 @@ export const boardRouter = {
         throw new AppError('Pick at least one classmate who can see this post.');
       }
       const stored = await storeImages(ctx, images);
+      // transaction() returns whatever its callback returns: here, the new post's id.
       const created = ctx.db.transaction((tx) => {
         const post = tx
           .insert(posts)
@@ -589,6 +638,7 @@ export const boardRouter = {
     },
   ),
 
+  // A question turned into a note loses its accepted answer, since only questions have one.
   update: procedure(z.object({ postId: idSchema, ...postFields }), ({ postId, ...fields }, ctx) => {
     const post = ownPost(ctx.db, ctx.userId, postId);
     checkEditWindow(post.createdAt, ctx.now());
@@ -613,6 +663,7 @@ export const boardRouter = {
       ctx.db.delete(posts).where(eq(posts.id, postId)).run();
       return { kept: false };
     }
+    // Blanking keeps the row, so the replies that point at it stay and the thread still reads.
     ctx.db.update(posts).set({ title: '', body: '', deletedAt: ctx.now() }).where(eq(posts.id, postId)).run();
     return { kept: true };
   }),
@@ -620,6 +671,8 @@ export const boardRouter = {
   // 🐐 toggles: one goat per student per post or reply.
   react: procedure(z.object({ postId: idSchema }), ({ postId }, ctx) => {
     visiblePost(ctx.db, ctx.userId, postId);
+    // One condition, used twice: to look for an existing reaction
+    // and to delete it. Reacting again takes the reaction back.
     const key = and(eq(postReactions.postId, postId), eq(postReactions.userId, ctx.userId));
     if (ctx.db.select().from(postReactions).where(key).get()) ctx.db.delete(postReactions).where(key).run();
     else ctx.db.insert(postReactions).values({ postId, userId: ctx.userId }).run();
@@ -678,6 +731,7 @@ export const boardRouter = {
       .filter((p) => p.score > 0)
       .sort((a, b) => b.score - a.score || b.id - a.id)
       .slice(0, 3)
+      // Drops the score before returning: `score: _` destructures it into a throwaway name.
       .map(({ score: _, ...p }) => p);
   }),
 
@@ -715,6 +769,7 @@ export const boardRouter = {
       // One level: a reply to a reply stays under the same top-level reply.
       setReplyParent(ctx.db, reply.id, replyParents(ctx.db)[parentId] ?? parentId);
     }
+    // A reply in a deleted post's thread is saved, but nobody is notified.
     if (post.deletedAt) return;
     const replierName = ctx.db.select({ name: users.name }).from(users).where(eq(users.id, ctx.userId)).get()?.name;
     const name = replierName ?? { t: 'A classmate' };
@@ -741,6 +796,7 @@ export const boardRouter = {
     if (reply && reply.postId !== postId) notFound('reply');
     if (reply && reply.authorId === ctx.userId) throw new AppError("You can't accept your own reply.");
     ctx.db.update(posts).set({ acceptedReplyId: reply?.id ?? null, ...(isOn('lock-on-accept') ? { lockedAt: reply ? ctx.now() : null } : {}) }).where(eq(posts.id, postId)).run();
+    // Notifies only when the accepted answer actually changes, not when the same one is accepted again.
     if (reply && reply.id !== post.acceptedReplyId) {
       notify(ctx.db, reply.authorId, {
         type: 'answer-accepted',
@@ -767,6 +823,8 @@ export const boardRouter = {
     if (!professors.length && !isOn('community-moderation')) throw new AppError("This section's professor isn't on UniLink, so there's nobody to tell.");
     const reply = replyId ? ctx.db.select().from(replies).where(and(eq(replies.id, replyId), eq(replies.postId, postId))).get() ?? notFound('reply') : null;
     if ((reply?.authorId ?? post.authorId) === ctx.userId) throw new AppError("You can't report your own post.");
+    // Reports on the post itself have a null replyId, and
+    // isNull() is how SQL tests for that: `= NULL` is never true.
     const about = and(eq(postReports.postId, postId), replyId ? eq(postReports.replyId, replyId) : isNull(postReports.replyId));
     if (ctx.db.select({ id: postReports.id }).from(postReports).where(and(about, eq(postReports.userId, ctx.userId))).get()) {
       throw new AppError('You already reported this.', 'CONFLICT');
@@ -813,6 +871,7 @@ export const boardRouter = {
     const reply = ctx.db.select().from(replies).where(eq(replies.id, replyId)).get() ?? notFound('reply');
     const post = moderatedPost(ctx, reply.postId);
     ctx.db.update(replies).set({ endorsedAt: endorsed ? ctx.now() : null }).where(eq(replies.id, replyId)).run();
+    // Notifies only on a new endorsement, and not when moderators endorse their own reply.
     if (endorsed && !reply.endorsedAt && reply.authorId !== ctx.userId) {
       notify(ctx.db, reply.authorId, {
         type: 'answer-accepted',
@@ -846,6 +905,8 @@ export const boardRouter = {
     return { kept: replyCount > 0 };
   }),
 
+  // acceptedReplyId isn't a foreign key, so it's cleared
+  // by hand, in the same transaction as the delete.
   removeReplyAsProfessor: procedure(z.object({ replyId: idSchema, reason: z.string().trim().max(500) }), async ({ replyId, reason }, ctx) => {
     const reply = ctx.db.select().from(replies).where(eq(replies.id, replyId)).get() ?? notFound('reply');
     const post = moderatedPost(ctx, reply.postId);

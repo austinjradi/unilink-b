@@ -26,8 +26,11 @@ import { read, write } from './variantData';
 //   upcoming ones; each week otherwise works like a session of its own.
 
 export const DEFAULT_CAPACITY = 6;
+// Like recovery codes: no I, O, 0 or 1, which are easy to mistype.
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
+// The session fields, shared by create and update. Each .refine() is a check across several
+// fields; its `path` names the field the error belongs to, so the form shows it there.
 const details = z
   .object({
     title: nonEmpty('Title', 120),
@@ -49,6 +52,7 @@ const details = z
     path: ['meetingUrl'],
   });
 
+// A whole study_sessions row.
 type SessionRow = typeof studySessions.$inferSelect;
 
 // Switches stay in English, so these aren't written where the French check would ask for a translation.
@@ -77,6 +81,7 @@ const invitesOf = (db: DB, id: number) => read<number[]>(db, invitesKey(id), [])
 const chatOf = (db: DB, id: number) => read<{ name: string; body: string; at: number }[]>(db, chatKey(id), []);
 const suggestionsOf = (db: DB, id: number) => read<{ id: number; name: string; text: string }[]>(db, suggestionsKey(id), []);
 const goalsDone = (db: DB, id: number) => read<number[]>(db, goalsKey(id), []);
+// When the code was last issued (or the session created), plus a week.
 const codeExpiry = (db: DB, session: SessionRow) => read<number>(db, codeIssuedKey(session.id), session.createdAt.getTime()) + CODE_LASTS;
 
 // Who can join: the class, or more under the switches that open it up.
@@ -90,6 +95,7 @@ function requireCanJoin(db: DB, userId: number, session: SessionRow) {
   if (!canJoinSession(db, userId, session)) requireMember(db, userId, session.classId);
 }
 
+// Six random characters. Array.from with a length calls the function once per character.
 function newInviteCode() {
   return Array.from({ length: 6 }, () => CODE_ALPHABET[randomInt(0, CODE_ALPHABET.length)]).join('');
 }
@@ -98,6 +104,7 @@ function getSession(db: DB, sessionId: number) {
   return db.select().from(studySessions).where(eq(studySessions.id, sessionId)).get() ?? notFound('study session');
 }
 
+// The guard for host-only changes: it has to be your session, and not cancelled.
 function hostedSession(db: DB, userId: number, sessionId: number) {
   const session = getSession(db, sessionId);
   if (session.hostId !== userId) throw new AppError('Only the host can change this session.', 'FORBIDDEN');
@@ -105,6 +112,7 @@ function hostedSession(db: DB, userId: number, sessionId: number) {
   return session;
 }
 
+// In the order people joined, which is also the waitlist's order.
 function membersOf(db: DB, sessionId: number) {
   return db
     .select()
@@ -130,6 +138,8 @@ function sessionByCode(db: DB, code: string, now: Date) {
     .where(and(eq(studySessions.inviteCode, code.replace(/[\s-]/g, '')), ne(studySessions.inviteCode, '')))
     .orderBy(asc(studySessions.startsAt))
     .all();
+  // The first week still on; if there's none, the last week, so an
+  // old code still finds its session. .at(-1) is the last item.
   const session = matches.find((s) => !s.cancelledAt && s.endsAt >= now) ?? matches.at(-1);
   if (!session) throw new AppError('No study session has that code. Check it with the host.', 'NOT_FOUND');
   return session;
@@ -158,6 +168,7 @@ function joinWeeks(ctx: AuthedContext, session: SessionRow) {
   const weeks = laterWeeks(ctx.db, session, ctx.now()).filter((s) => !membership(ctx.db, s.id, ctx.userId));
   if (!weeks.length) return joinSession(ctx, session);
   const results = weeks.map((s) => joinSession(ctx, s));
+  // The first week's result, plus how many weeks were joined.
   return { ...results[0], weeks: results.length };
 }
 
@@ -176,6 +187,8 @@ function describe(db: DB, userId: number, allRows: SessionRow[], now: Date) {
   const rows = allRows.filter((s) => !professors.has(s.hostId));
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);
+  // One query for the members of every session at once, instead
+  // of one per session. Each session picks out its own below.
   const members = db
     .select({
       sessionId: studySessionMembers.sessionId,
@@ -195,6 +208,8 @@ function describe(db: DB, userId: number, allRows: SessionRow[], now: Date) {
   const busy = busyChecker(db, userId);
 
   // For "Join every week": the upcoming weeks of each series, and the ones you're in.
+  // `(id): id is number =>` is an inline type guard, so after
+  // filter() TypeScript knows the array holds no nulls.
   const seriesIds = [...new Set(rows.map((r) => r.seriesId).filter((id): id is number => id != null))];
   const weeks = seriesIds.length
     ? db
@@ -235,6 +250,7 @@ function describe(db: DB, userId: number, allRows: SessionRow[], now: Date) {
       hostIsProfessor: going.find((m) => m.userId === s.hostId)?.role === 'professor',
       goingCount: going.length,
       waitlistCount: waitlist.length,
+      // Only people going see who else is. Everyone else gets an empty list, and the count above.
       going: attending || isOn('everyone-sees-going')
         ? going.map(({ userId, name, email, avatar }) => ({ userId, name, email, goat: goatFor(userId, avatar) }))
         : [],
@@ -262,6 +278,8 @@ function describe(db: DB, userId: number, allRows: SessionRow[], now: Date) {
 // Fills free spots from the waitlist, first come first served.
 function promoteWaitlist(db: DB, session: SessionRow) {
   const members = membersOf(db, session.id);
+  // Spots left: the limit (or the default) minus the people
+  // going. Infinity, under a switch, means no limit.
   let free = (session.capacity ?? (isOn('optional-session-limit') ? Infinity : DEFAULT_CAPACITY)) - members.filter((m) => m.status === 'going').length;
   // 'confirm-waitlist-spot': the next people are offered the spot, and it stays open until they answer.
   if (isOn('confirm-waitlist-spot')) {
@@ -327,6 +345,7 @@ function leaveSession(ctx: AuthedContext, session: SessionRow, nextHostId?: numb
 
   if (session.hostId === userId) {
     const others = membersOf(db, session.id).filter((member) => member.status === 'going');
+    // The person the host picked, if any, otherwise whoever joined first.
     const next = others.find((member) => member.userId === nextHostId) ?? others[0];
     if (!next) {
       cancelSession(db, session, userId, ctx.now());
@@ -364,6 +383,8 @@ export function leaveClassSessions(ctx: AuthedContext, classId: number) {
   for (const { session } of rows) leaveSession(ctx, session);
 }
 
+// Refuses a cancelled or finished session and a second join, then adds you as going,
+// or waitlisted when it's full. `as const` keeps each status as its literal type.
 function joinSession(ctx: AuthedContext, session: SessionRow) {
   if (session.cancelledAt) throw new AppError('This session was cancelled.');
   if (session.endsAt < ctx.now()) throw new AppError('This session has already ended.');
@@ -388,6 +409,8 @@ function joinSession(ctx: AuthedContext, session: SessionRow) {
   return { status };
 }
 
+// Every read (list, past, mine, browse, byCode) returns sessions through
+// describe(), so each screen gets the same view of who can see what.
 export const studySessionsRouter = {
   // S3.2: the section's open sessions, plus invite-only ones you're in.
   list: procedure(z.object({ classId: idSchema }), ({ classId }, ctx) => {
@@ -427,6 +450,7 @@ export const studySessionsRouter = {
 
   // Upcoming sessions you're going to or waiting for, across classes.
   mine: procedure(z.void(), (_input, ctx) => {
+    // No .all(): this unfinished query becomes a subquery inside inArray() below.
     const sessionIds = ctx.db
       .select({ id: studySessionMembers.sessionId })
       .from(studySessionMembers)
@@ -483,8 +507,11 @@ export const studySessionsRouter = {
       const weeks = isOn('one-off-sessions') ? 1 : asked;
       const separate = isOn('separate-weekly-sessions');
       const inviteCode = newInviteCode();
+      // The same weekday and clock time n weeks later. Building the date from its parts, instead
+      // of adding 7 days of milliseconds, keeps the time right across a daylight-saving change.
       const inWeeks = (date: Date, n: number) => new Date(date.getFullYear(), date.getMonth(), date.getDate() + 7 * n, date.getHours(), date.getMinutes());
       return ctx.db.transaction((tx) => {
+        // One row per week, all in this transaction, with the host added as going to each.
         const created = Array.from({ length: weeks }, (_, n) => {
           const session = tx
             .insert(studySessions)
@@ -503,6 +530,8 @@ export const studySessionsRouter = {
           tx.insert(studySessionMembers).values({ sessionId: session.id, userId: ctx.userId, status: 'going' }).run();
           return session;
         });
+        // The series id is the first week's id, which only exists
+        // once the rows are inserted, hence this second step.
         if (weeks > 1 && !separate) {
           tx.update(studySessions).set({ seriesId: created[0].id }).where(inArray(studySessions.id, created.map((s) => s.id))).run();
         }
@@ -512,6 +541,7 @@ export const studySessionsRouter = {
   ),
 
   // S3.5: moving the time or place tells everyone in it. More room lets the waitlist in.
+  // .and() combines two schemas: the session's id plus every session field.
   update: procedure(z.object({ sessionId: idSchema }).and(details), ({ sessionId, ...input }, ctx) => {
     const before = hostedSession(ctx.db, ctx.userId, sessionId);
     const fields = {
@@ -525,6 +555,7 @@ export const studySessionsRouter = {
     }
     ctx.db.update(studySessions).set(fields).where(eq(studySessions.id, sessionId)).run();
     const after = getSession(ctx.db, sessionId);
+    // Only changes people have to act on (the time or the place) notify them. A new title doesn't.
     const moved =
       before.startsAt.getTime() !== after.startsAt.getTime() ||
       before.endsAt.getTime() !== after.endsAt.getTime() ||
@@ -558,6 +589,7 @@ export const studySessionsRouter = {
     const session = getSession(ctx.db, sessionId);
     requireCanJoin(ctx.db, ctx.userId, session);
     if (!canSeeSession(ctx.db, ctx.userId, session)) notFound('study session');
+    // Every week is joined, or none is.
     return ctx.db.transaction((tx) => joinWeeks({ ...ctx, db: tx as unknown as DB }, session));
   }),
 
@@ -593,6 +625,8 @@ export const studySessionsRouter = {
           description: [classLabel(ctx.db, session.classId), session.description, link].filter(Boolean).join('\n\n'),
         },
       ],
+      // The browser's time zone name, such as America/Toronto,
+      // so calendar apps put the event at the right time.
       Intl.DateTimeFormat().resolvedOptions().timeZone,
     );
     await writeFile(target, ics, 'utf8');
@@ -604,6 +638,7 @@ export const studySessionsRouter = {
   // see it), and whether you're in its class yet.
   byCode: procedure(z.object({ code: z.string().trim().toUpperCase() }), ({ code }, ctx) => {
     const session = sessionByCode(ctx.db, code, ctx.now());
+    // describe() works on a list, so this passes one session and destructures the one result.
     const [described] = describe(ctx.db, ctx.userId, [session], ctx.now());
     return { ...described, inClass: isMember(ctx.db, ctx.userId, session.classId) };
   }),
@@ -627,6 +662,7 @@ export const studySessionsRouter = {
     ctx.db
       .update(studySessions)
       .set({ inviteCode })
+      // A series shares one code, so the new code goes on every week of it.
       .where(session.seriesId == null ? eq(studySessions.id, sessionId) : eq(studySessions.seriesId, session.seriesId))
       .run();
     if (isOn('session-codes-expire')) write(ctx.db, codeIssuedKey(sessionId), ctx.now().getTime());
