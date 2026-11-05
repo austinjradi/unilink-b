@@ -32,11 +32,14 @@ import { t } from '../../lib/i18n';
 import { useVariant } from '../../lib/variants';
 import { ReqInfo, WithInfo } from '../../components/ReqInfo';
 
+// The type of one link, taken from what the service returns:
+// Out<> gives the array, and [number] one element of it.
 type ChatLink = Out<typeof rpc.links.list>[number];
 
 // Sent to the server in English; shown translated.
 const FLAG_REASONS = ['Expired', 'Broken', 'Not relevant', 'Spam or inappropriate'] as const;
 
+// `typeof IconLink` is the type of an icon component, so any Tabler icon fits.
 const PLATFORMS: Record<string, { icon: typeof IconLink; color: string }> = {
   WhatsApp: { icon: IconBrandWhatsapp, color: 'green' },
   Discord: { icon: IconBrandDiscord, color: 'indigo' },
@@ -44,6 +47,8 @@ const PLATFORMS: Record<string, { icon: typeof IconLink; color: string }> = {
   Telegram: { icon: IconBrandTelegram, color: 'cyan' },
 };
 
+// Record<LinkPurpose, string> requires a colour for every
+// purpose, so adding a purpose without one is a type error.
 const PURPOSE_COLORS: Record<LinkPurpose, string> = {
   course: 'periwinkle',
   section: 'teal',
@@ -53,11 +58,18 @@ const PURPOSE_COLORS: Record<LinkPurpose, string> = {
 };
 
 // S2 in the layout of the wireframe (A2Team.pdf p. 8).
+// Props are destructured in the parameter list, with their type written inline after the colon.
 export function GroupChats({ classId, classLabel }: { classId: number; classLabel: string }) {
+  // classId is part of the key, so each section has its own
+  // cache entry, and opening another section fetches its list.
   const links = useQuery({ queryKey: ['links', classId], queryFn: () => rpc.links.list({ classId }) });
+  // One piece of state drives the modal: null is closed, 'new'
+  // is the add form, and a link is the edit form for that link.
   const [editing, setEditing] = useState<ChatLink | 'new' | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const noBrowseLinks = useVariant('no-browse-links');
+  // Worked out during render rather than kept in state, so these lists can't fall
+  // out of step with the data. `?? []` covers the moment before data arrives.
   const shown = links.data?.filter((l) => !l.hidden && !l.pending) ?? [];
   const hidden = links.data?.filter((l) => l.hidden) ?? [];
   const pending = links.data?.filter((l) => l.pending) ?? [];
@@ -80,10 +92,13 @@ export function GroupChats({ classId, classLabel }: { classId: number; classLabe
         </WithInfo>
       </Group>
 
+      {/* A chained ternary: loading, then the lists, then the empty state. */}
       {links.isPending ? (
         <Loading />
       ) : shown.length || hidden.length || pending.length ? (
         <Stack gap="lg">
+          {/* key tells React which card is which between renders, so each */}
+          {/* card's state stays with its link when the list changes. */}
           {shown.map((l) => (
             <LinkCard key={l.id} link={l} classLabel={classLabel} onEdit={() => setEditing(l)} />
           ))}
@@ -108,6 +123,8 @@ export function GroupChats({ classId, classLabel }: { classId: number; classLabe
                   {t('Hidden after reports ({{count}})', { count: hidden.length })}
                 </Button>
               </WithInfo>
+              {/* The button above uses the updater form, setShowHidden((s) => !s), which */}
+              {/* receives the current value instead of reading it from this render. */}
               <Collapse expanded={showHidden}>
                 <Stack gap="lg">
                   {hidden.map((l) => (
@@ -138,8 +155,11 @@ export function GroupChats({ classId, classLabel }: { classId: number; classLabe
         </Group>
       )}
 
+      {/* The modal is always rendered, and `opened` shows or */}
+      {/* hides it. `!= null` is true for both a link and 'new'. */}
       <Modal opened={editing != null} onClose={() => setEditing(null)} title={editing === 'new' ? <WithInfo id="chat-add">{t('Add a group link')}</WithInfo> : <WithInfo id="chat-manage">{t('Edit link')}</WithInfo>}>
         {editing && (
+          // A new key gives a fresh LinkForm, so its fields reset when a different link is edited.
           <LinkForm key={editing === 'new' ? 'new' : editing.id} classId={classId} existing={editing === 'new' ? null : editing} onDone={() => setEditing(null)} />
         )}
       </Modal>
@@ -147,13 +167,18 @@ export function GroupChats({ classId, classLabel }: { classId: number; classLabe
   );
 }
 
+// One card per link. Each action gets its own useAction,
+// so each has its own pending state and messages.
 function LinkCard({ link, classLabel, onEdit }: { link: ChatLink; classLabel: string; onEdit: () => void }) {
   const profEdits = useVariant('prof-edit-links');
   const me = useMe();
   const platform = PLATFORMS[link.platform] ?? { icon: IconLink, color: 'gray' };
+  // No input: the values it needs are already in scope, so it's called as works.mutate().
   const works = useAction(() => rpc.links.vote({ linkId: link.id, vote: 'works', reason: null }), {
     success: 'Thanks for checking!',
   });
+  // This one takes an argument, the reason picked from the menu: report.mutate('Broken').
+  // `(typeof FLAG_REASONS)[number]` is the union of the four reasons.
   const report = useAction((reason: (typeof FLAG_REASONS)[number]) => rpc.links.vote({ linkId: link.id, vote: 'report', reason }), {
     success: 'Thanks, your report was added to the link.',
   });
@@ -172,6 +197,8 @@ function LinkCard({ link, classLabel, onEdit }: { link: ChatLink; classLabel: st
   const anyoneFixes = useVariant('anyone-fixes-links');
   const noWorks = useVariant('no-works-votes');
 
+  // Only with the warn-leaving switch: preventDefault() stops
+  // the link opening, and the confirm dialog opens it instead.
   const openLink = (event: MouseEvent) => {
     if (!warnLeaving) return;
     event.preventDefault();
@@ -183,6 +210,7 @@ function LinkCard({ link, classLabel, onEdit }: { link: ChatLink; classLabel: st
     });
   };
 
+  // openConfirmModal shows a yes or no dialog, and calls onConfirm only on yes.
   const confirmRemove = () =>
     modals.openConfirmModal({
       title: <WithInfo id="chat-manage">{t('Remove this link?')}</WithInfo>,
@@ -191,6 +219,7 @@ function LinkCard({ link, classLabel, onEdit }: { link: ChatLink; classLabel: st
       onConfirm: () => remove.mutate(),
     });
 
+  // Nested ternaries pick the first status that applies, from most to least serious.
   const status = link.hidden
     ? { label: t('Hidden'), color: 'red' }
     : link.likelyBroken
@@ -201,6 +230,7 @@ function LinkCard({ link, classLabel, onEdit }: { link: ChatLink; classLabel: st
 
   const copyName = useVariant('copy-with-name');
   const name = noName || !link.label ? t('{{platform}} group', { platform: link.platform }) : link.label;
+  // JSX kept in a variable, so the same buttons can go in either card layout below.
   const actions = (
     <>
       <WithInfo id="chat-open" block>
@@ -211,6 +241,8 @@ function LinkCard({ link, classLabel, onEdit }: { link: ChatLink; classLabel: st
       {/* To pass the chat on to a classmate outside UniLink. */}
       {!noCopy && (
         <WithInfo id="chat-copy" block>
+          {/* CopyButton takes a render prop: its child is a function */}
+          {/* that receives { copied, copy } and returns what to draw. */}
           <CopyButton value={copyName ? `${name}: ${link.url}` : link.url}>
             {({ copied, copy }) => (
               <Button variant="default" color={copied ? 'teal' : undefined} leftSection={copied ? <IconCircleCheck size={16} /> : <IconCopy size={16} />} onClick={copy}>
@@ -407,11 +439,17 @@ function LinkCard({ link, classLabel, onEdit }: { link: ChatLink; classLabel: st
   );
 }
 
+// One form for adding and editing: `existing` is null when adding.
 function LinkForm({ classId, existing, onDone }: { classId: number; existing: ChatLink | null; onDone: () => void }) {
+  // useForm holds the field values and errors. validate runs on submit, and each
+  // rule returns an error message, or null when the value is fine. Spreading
+  // form.getInputProps(name) onto an input wires up its value, onChange and error.
   const form = useForm({
     initialValues: { url: existing?.url ?? '', label: existing?.label ?? '', purpose: (existing?.purpose ?? 'course') as LinkPurpose, platform: existing?.platform ?? '' },
     validate: { url: (v) => (parseChatLink(v) ? null : t('Paste a full link, starting with https://')) },
   });
+  // Typing re-renders the form, so this runs on every
+  // keystroke and the detected platform stays current.
   const detected = parseChatLink(form.values.url);
   const noPurpose = useVariant('no-link-purpose');
   const noName = useVariant('no-link-name');
@@ -420,6 +458,8 @@ function LinkForm({ classId, existing, onDone }: { classId: number; existing: Ch
   const sameUrlOnly = useVariant('link-same-url-only');
   const privateLinks = useVariant('private-links');
   const approval = useVariant('approve-links');
+  // The action can be any async function: this one picks update or
+  // add, and useAction still handles the refresh and the toasts.
   const save = useAction(
     async (v: typeof form.values) => {
       const fields = { ...v, platform: v.platform || undefined };
@@ -430,6 +470,8 @@ function LinkForm({ classId, existing, onDone }: { classId: number; existing: Ch
   );
 
   return (
+    // form.onSubmit(handler) validates first and calls the handler only with valid
+    // values. It also stops the full page reload a form submit would normally cause.
     <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
       <Stack>
         <TextInput

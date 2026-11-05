@@ -10,6 +10,8 @@ import { reconcile } from './planner';
 // ST3: today's tasks first (planned work from ST2 plus the student's own to-dos);
 // upcoming deadlines come from the A3 calendar.
 
+// Zod fields shared by add and update. .nullable() also
+// accepts null, and the regex accepts only YYYY-MM-DD.
 const todoFields = {
   title: nonEmpty('Task', 200),
   dueDate: z
@@ -19,6 +21,7 @@ const todoFields = {
   classId: idSchema.nullable(),
 };
 
+// The where clause includes userId, so someone else's to-do is simply not found.
 function ownTodo(db: DB, userId: number, id: number) {
   return (
     db
@@ -29,6 +32,7 @@ function ownTodo(db: DB, userId: number, id: number) {
   );
 }
 
+// One row of Home's Today list, which mixes planned tasks and to-dos.
 export interface TodayItem {
   key: string;
   kind: 'task' | 'todo';
@@ -45,12 +49,18 @@ export interface TodayItem {
 }
 
 export const todosRouter = {
+  // z.void() means no input, so the renderer calls rpc.todos.today()
+  // with no argument. The underscore marks the unused parameter.
   today: procedure(z.void(), (_input, ctx) => {
+    // A read that can write: it re-plans missed tasks first, so Today shows current dates.
     reconcile(ctx);
     const today = ymd(ctx.now());
     const startOfToday = parseYmd(today);
     const doneToday = gte(plannerTasks.doneAt, startOfToday);
 
+    // Per assignment, how many tasks there are and how many are done.
+    // count(column) counts only non-null values, so count(doneAt)
+    // counts finished tasks, and groupBy gives one row per assignment.
     const progress = new Map(
       ctx.db
         .select({
@@ -79,6 +89,8 @@ export const todosRouter = {
       )
       .orderBy(asc(plannerTasks.scheduledFor), asc(plannerTasks.position))
       .all()
+      // Selecting `task: plannerTasks` nests the whole task
+      // row under task; this destructures it back out.
       .map(({ task, assignment, classId }) => ({
         key: `task-${task.id}`,
         kind: 'task',
@@ -100,6 +112,7 @@ export const todosRouter = {
       .orderBy(sql`${todos.dueDate} is null`, asc(todos.dueDate), asc(todos.createdAt))
       .all()
       .map(
+        // Annotating the arrow's return type checks each object against TodayItem as it's built.
         (t): TodayItem => ({
           key: `todo-${t.id}`,
           kind: 'todo',
@@ -115,6 +128,7 @@ export const todosRouter = {
         }),
       );
 
+    // A to-do with no date counts as today's.
     const isToday = (t: TodayItem) => t.due == null || t.due <= today;
     return {
       today: [...tasks, ...mine.filter(isToday)],
@@ -122,6 +136,7 @@ export const todosRouter = {
     };
   }),
 
+  // .default(false) fills the field in when it's missing, so the handler always gets a boolean.
   add: procedure(z.object({ ...todoFields, weekly: z.boolean().default(false) }), ({ weekly, ...fields }, ctx) => {
     if (fields.classId) requireMember(ctx.db, ctx.userId, fields.classId);
     // A to-do with no date has no next week to come back on.
@@ -154,6 +169,7 @@ export const todosRouter = {
     } else if (!next()) {
       const today = ymd(ctx.now());
       let dueDate = addDays(todo.dueDate, 7);
+      // Skips weeks that have already gone by, so the next one lands in the future.
       while (dueDate <= today) dueDate = addDays(dueDate, 7);
       ctx.db
         .insert(todos)

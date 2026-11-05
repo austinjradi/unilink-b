@@ -4,6 +4,7 @@ import type { DB } from '../db/client';
 import { classes, courses, enrollments, users } from '../db/schema';
 import { AppError } from '../rpc/core';
 
+// Whether this user has joined this section. `!!` turns the row (or undefined) into true or false.
 export function isMember(db: DB, userId: number, classId: number): boolean {
   return !!db
     .select({ userId: enrollments.userId })
@@ -14,6 +15,7 @@ export function isMember(db: DB, userId: number, classId: number): boolean {
 
 // 'one-class-per-course': the class everyone in the course is put in.
 export function firstSection(db: DB, classId: number) {
+  // Spreading passes each id as a separate argument, because Math.min doesn't accept an array.
   return Math.min(...sameCourseSections(db, classId));
 }
 
@@ -24,10 +26,13 @@ export function sameCourseSections(db: DB, classId: number) {
   return db.select({ id: classes.id }).from(classes).where(and(eq(classes.courseId, cls.courseId), eq(classes.term, cls.term))).all().map((c) => c.id);
 }
 
+// The require… helpers throw instead of returning false, so a
+// handler can call one and carry on knowing the check passed.
 export function requireMember(db: DB, userId: number, classId: number) {
   if (!isMember(db, userId, classId)) throw new AppError('Join this class first.', 'FORBIDDEN');
 }
 
+// `?.role` gives undefined when there's no such user, which isn't equal to 'professor'.
 export function isProfessor(db: DB, userId: number): boolean {
   return db.select({ role: users.role }).from(users).where(eq(users.id, userId)).get()?.role === 'professor';
 }
@@ -42,6 +47,8 @@ export function requireTeacher(db: DB, userId: number, classId: number) {
   if (!teaches(db, userId, classId)) throw new AppError("Only the section's professor can do this.", 'FORBIDDEN');
 }
 
+// selectDistinct drops duplicate rows, which appear when one
+// person is enrolled in several of the matching sections.
 function membersWithRole(db: DB, classId: number, role: 'student' | 'professor') {
   return db
     .selectDistinct({ id: users.id, name: users.name, email: users.email })
@@ -51,6 +58,7 @@ function membersWithRole(db: DB, classId: number, role: 'student' | 'professor')
     .all();
 }
 
+// Two small wrappers over the same query, one per role.
 export const professorsOf = (db: DB, classId: number) => membersWithRole(db, classId, 'professor');
 export const studentsOf = (db: DB, classId: number) => membersWithRole(db, classId, 'student');
 
@@ -67,7 +75,11 @@ export function requireSharedEditor(db: DB, userId: number, classId: number) {
 
 // Version B's classes are sections, labelled "COMP 251-001".
 // 'one-class-per-course' drops the section, so it's worked out each time a query is built.
+// An object with a getSQL() method can be placed inside a sql`…` template. Drizzle calls getSQL()
+// each time it builds a query, so the switch is checked then, not once when this file loads.
 const sectionPart = { getSQL: () => (isOn('one-class-per-course') ? sql`''` : sql`'-' || ${classes.section}`) };
+// A SQL expression that builds "COMP 251-001" from columns, usable in any select. sql<string>
+// sets the TypeScript type of the result, and || is SQL's way of joining strings.
 export const sectionCode = sql<string>`${courses.subject} || ' ' || ${courses.number} || ${sectionPart}`;
 
 export function classLabel(db: DB, classId: number | null): string | null {
@@ -82,6 +94,7 @@ export function classLabel(db: DB, classId: number | null): string | null {
 }
 
 // Labels for every class, for services that show many at once.
+// Loads every label in one query, for services that would otherwise call classLabel once per row.
 export function classLabels(db: DB) {
   return new Map(
     db
@@ -93,6 +106,8 @@ export function classLabels(db: DB) {
   );
 }
 
+// The return type `never` means this function always throws. That's what lets callers
+// write `row ?? notFound(...)` and have TypeScript know the result is never undefined.
 export function notFound(what: string): never {
   throw new AppError(`That ${what} no longer exists.`, 'NOT_FOUND');
 }
@@ -101,6 +116,7 @@ export function notFound(what: string): never {
 // credited to this placeholder account. It has no usable password and is never enrolled.
 export const FORMER_STUDENT_EMAIL = 'former.student@unilink.invalid';
 
+// Finds the placeholder account, creating it the first time it's needed.
 export function formerStudentId(db: DB): number {
   const existing = db.select({ id: users.id }).from(users).where(eq(users.email, FORMER_STUDENT_EMAIL)).get();
   if (existing) return existing.id;
