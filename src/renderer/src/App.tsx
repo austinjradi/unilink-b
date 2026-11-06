@@ -9,6 +9,7 @@ import { Layout } from './components/Layout';
 import { ReqInfoHost } from './components/ReqInfo';
 import { RequirementsView } from './components/RequirementsView';
 import { SiteBlockers } from './components/SiteBlockers';
+import { Welcome } from './components/Welcome';
 import { useListOpen } from './lib/reqView';
 import { useForcedLocale, useVariant } from './lib/variants';
 import type { Locale } from '@shared/i18n';
@@ -255,6 +256,8 @@ export function App() {
             {/* Re-mount everything on a language change so every label re-renders. */}
             <ModalsProvider key={locale}>
               <ReqInfoHost />
+              {/* Shown once, on a visitor's first load, before they start using the site. */}
+              <Welcome />
               {listOpen && <RequirementsView />}
               {/* Hidden rather than unmounted, so half-filled forms are still there on the way back. */}
               {/* display: contents removes the div itself from layout, */}
