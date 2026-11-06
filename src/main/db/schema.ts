@@ -501,7 +501,7 @@ export const notifications = sqliteTable(
   (t) => [uniqueIndex('notifications_dedupe_idx').on(t.userId, t.dedupeKey), index('notifications_user_idx').on(t.userId, t.createdAt)],
 );
 
-// Emails the app would send. There's no mail server yet, so they wait here (see README).
+// Emails the app would send. There's no mail server yet, so they wait here (see docs/PRODUCT.md).
 export const outbox = sqliteTable('outbox', {
   id: id(),
   userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }),

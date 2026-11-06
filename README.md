@@ -1,391 +1,1375 @@
-# UniLink (web), version B
+# UniLink B Web Port: How the Codebase Works
 
-UniLink for McGill students, running entirely in the browser: find your classes and classmates, share group
-chats, host study sessions, discuss course topics, and keep deadlines, grades and assignment plans in one place.
+This README explains how the code works, for a developer comfortable with React. For what the app does and the product decisions behind it, see [docs/PRODUCT.md](docs/PRODUCT.md). The live site is at https://austinjradi.github.io/unilink-b/.
 
-**Version B** is a second take on the UniLink web port ([`unilink-web`](https://github.com/austinjradi/unilink-web), "version A", [live here](https://austinjradi.github.io/unilink-web/)). It has the same features,
-the same look and the same code layout, but makes different decisions everywhere the requirements board leaves
-something open: what a class is, who sees what, how study sessions fill up, how the discussion board works,
-whether course info is personal or shared, how passwords are reset, and what "free time" means to the planner.
-[Decisions compared](#decisions-compared-version-a-vs-version-b) lists every one side by side. `git diff 73f42b5`
-shows exactly how B differs from A.
+*Last checked against the code on November 5, 2026.*
 
-Like A, it's a static website with no server: the app's backend runs inside the page, and everything is saved in
-the visitor's own browser. B keeps its data under its own name (IndexedDB `unilink-b`), so both versions can run
-on the same site without touching each other's data.
+## Start here
 
-It implements the ten in-scope ("green") features from the UniLink requirements board, plus the five
-"if time allows" ("yellow") ones listed further down:
+UniLink B has no server: its "backend" is TypeScript that runs inside the browser tab, next to the React app, and saves a real SQLite database to IndexedDB. Hold on to that one idea and the rest of the codebase makes sense.
 
-| ID  | Feature                                 | Where in the app                                  | Code                                          |
-| --- | --------------------------------------- | ------------------------------------------------- | --------------------------------------------- |
-| S1  | Class and classmate discovery           | Courses → Find courses (search, or paste your Minerva schedule); class page → Overview | `services/classes.ts`, `shared/courseQuery.ts` |
-| S2  | Group chat links                        | Class page → Group chats                          | `services/links.ts`, `class/GroupChats.tsx`   |
-| S3  | Study session creation and invitations  | Class page → Study sessions; Home                 | `services/studySessions.ts`                   |
-| S4  | Peer discussion board                   | Class page → Discussion                           | `services/board.ts`, `class/Discussion.tsx`   |
-| A3  | Dates and deadlines                     | Calendar (Key dates view; Add → Dates from a syllabus); class times on class page → Overview | `services/calendar.ts`, `pages/Calendar.tsx`, `shared/keyDates.ts`, `shared/syllabus.ts` |
-| A4  | Grade calculator                        | Class page → Grades                               | `shared/grades.ts`, `class/Grades.tsx`        |
-| A5  | Course info and grading scheme          | Class page → Overview and Grades                  | `services/courses.ts`                         |
-| G2  | Integrations                            | Integrations page; Calendar → Sync                | `shared/ics.ts`, `db/catalogue.ts`            |
-| G4  | Account sign-up and login               | Sign-in screens; Settings → Account               | `services/auth.ts`, `shared/validation.ts`    |
-| ST2 | Assignment planner                      | Planner (attach the handout to split it by question); Home | `shared/planner.ts`, `shared/assignment.ts`, `services/planner.ts` |
+UniLink is a study app for McGill students: classes, classmates, discussion boards, study sessions, deadlines, grades and assignment planning. It started as an Electron desktop app. This repo (`unilink-web-b`, called "version B") is the same code moved to a static website, with different product decisions from the first web port, "version A".
 
-The yellow features, with what couldn't be fully built:
+### Who this guide is for
 
-| ID  | Feature                              | Where in the app                         | Code                                          | Limits |
-| --- | ------------------------------------ | ---------------------------------------- | --------------------------------------------- | ------ |
-| A1  | Course, credit and grade tracking    | Courses → Course record (add by hand, from your classes, or by pasting a transcript) | `shared/academics.ts`, `shared/transcript.ts`, `services/academics.ts` | None |
-| A2  | Degree requirements and planning     | Courses → Degree plan; Catalogue → any program → Check my degree | `shared/degree.ts`, `shared/catalogue/`, `db/programs.ts` | **Group rules are estimates**: all 622 catalogue programs can be picked, and rules like "at least 3 credits from each group" are worked out from each program's text, so check with an adviser |
-| G3  | Notifications / email                | Bell in the sidebar; Profile → Notifications | `services/notifications.ts`              | **Email isn't delivered**: no mail server, so emails wait in an outbox |
-| ST1 | Study mode                           | Study Mode tab; pill in the top bar      | `shared/studyMode.ts`, `services/studyMode.ts` | **Can't block websites**; runs only while a UniLink tab is open; no system Do Not Disturb in a browser |
-| ST3 | To-do list                           | Home (first thing you see); a date typed at the end ("read chapter 3 friday") becomes the due date | `services/todos.ts`, `pages/Home.tsx`, `shared/taskDate.ts` | None |
+You are comfortable with components, props, `useState`, `useEffect`, custom hooks and context. You do not need to know the libraries here. Each one is explained the first time it matters, and the last section has a short refresher on the React features you may not use every day.
 
-## Professors
+### What will feel unfamiliar
 
-Beyond the requirements board, a section can have a professor. Signing up as **Professor** takes a `@mcgill.ca`
-email (students have `@mail.mcgill.ca`), and **Teach** on a section puts their name on it. They can teach several
-sections of a course. The demo has **Daniel Ouellet**, a made-up professor teaching both COMP 251 sections, with a
-posted assignment, a pinned announcement and a reported thread waiting in COMP 251-001.
+- **The server is a function call.** `rpc.classes.join({ classId })` looks like a network request but runs in the same tab. Nothing goes over the network.
+- **Folder names come from Electron.** `src/main` is the backend and `src/renderer` is the React app. The names were kept on purpose, so changes can be compared with the desktop app.
+- **There is no global state library.** No Redux or Zustand. Nearly all shared state is server state, held by TanStack Query.
+- **Everyone's data is in your browser.** Classmates are demo accounts seeded into your local database, so "other users" only exist in that browser.
 
-| A professor can | Where | How it works |
+### Where to go next
+
+| If you want to… | Read |
+| --- | --- |
+| See how everything connects | The big picture |
+| Run the app and find your way around the folders | Running it locally |
+| Understand a page or component | Frontend architecture, then State and data fetching |
+| Follow one feature from click to database | Key features walkthrough |
+| Add or change backend behaviour | Backend and API, then Database |
+| Make a specific change quickly | How to make common changes |
+
+### A reading order for your first day
+
+These files show the whole architecture in a few hundred lines, so read them in order:
+
+1. `src/web/main.ts`, then `src/web/bridge.ts`: how the app starts and where the database lives.
+2. `src/main/rpc/core.ts` and `src/main/rpc/router.ts`: what a procedure is and how calls run.
+3. `src/renderer/src/lib/rpc.ts` and `lib/hooks.ts`: how React calls the backend.
+4. `src/renderer/src/App.tsx`: providers, routes and the auth gate.
+5. `src/shared/links.ts`, `src/main/services/links.ts`, then `pages/class/GroupChats.tsx`: one complete feature.
+6. The `S2 group chat links` tests in `tests/services.test.ts`: the same feature as a story.
+
+Paths in this guide are relative to the repo root. Line counts and line numbers were checked on November 5, 2026, and drift as the code changes. [docs/PRODUCT.md](docs/PRODUCT.md), which was this repo's README before this guide, is the best record of product decisions; this guide covers how the code works.
+
+## The big picture
+
+Every click travels down a stack of plain function calls inside one tab, and only a saved copy of the database ever leaves memory.
+
+![UniLink B architecture · everything above the storage row runs in one tab](docs/images/architecture.png)
+
+Results return up the same path. The bridge is highlighted because it is the seam: move `src/main` behind an HTTP API, change `window.unilink.call`, and the React app would not notice. Smaller per-browser things (language, requirement switches, unsent drafts) live in `localStorage`.
+
+### What happens when the page loads
+
+1. `index.html` loads one script, `src/web/main.ts`. It imports `./bridge` first, then the React app.
+2. Importing `bridge.ts` calls `start()` straight away and defines `window.unilink`. `start()` is asynchronous, so its promise is stored as `ready`.
+3. `start()` loads the sql.js WebAssembly file and any saved database from IndexedDB, then calls `openDatabase` in `main/db/client.ts`. That turns on foreign keys, runs pending migrations and seeds the sample courses.
+4. `seedDemoData` adds classmates and sections if this browser's demo is missing or out of date. `persist()` then saves the result.
+5. `start()` builds the `ctx` object every procedure receives, listens for other tabs, and starts the background tick (after 3 seconds, then every 30).
+6. Meanwhile React has rendered. `Root` in `App.tsx` runs `useQuery({ queryKey: ['me'], queryFn: () => rpc.auth.me() })`. That call awaits `ready`, so a spinner shows until the database is open.
+7. `auth.me` restores the remembered session from the `app_state` table. A user sees the app; `null` shows the sign-in routes.
+
+### One call, from click to database
+
+Clicking **Join** on a class page runs this chain:
+
+1. `pages/ClassPage.tsx` calls `join.mutate()`. `join` came from `useAction(() => rpc.classes.join({ classId }))`.
+2. `rpc` is a JavaScript `Proxy`. Reading `.classes.join` builds a path, and calling it runs `window.unilink.call('classes.join', { classId })`.
+3. `call` in `web/bridge.ts` awaits `ready`, then runs `dispatch(appRouter, path, input, ctx)`.
+4. `dispatch` in `main/rpc/core.ts` walks the router to find the procedure, checks `ctx.session.userId`, validates the input with zod, and runs the handler.
+5. The handler in `main/services/classes.ts` checks the rules, then inserts a row: `ctx.db.insert(enrollments).values({ userId: ctx.userId, classId }).run()`.
+6. Back in the bridge, `persist()` sees that `total_changes()` is above zero. It exports the database to bytes, posts them to other tabs, and saves them to IndexedDB.
+7. The result comes back as `{ ok: true, data }`. The proxy unwraps it, or throws an `RpcError` when `ok` is false.
+8. `useAction`'s `onSuccess` invalidates the query cache, so every mounted `useQuery` refetches. The page re-renders with `c.joined` now true, and a toast says "Joined!".
+
+### The stack
+
+| Library | Version | Its job here |
 | --- | --- | --- |
-| Run the grading scheme, course details and class times | Class page → Grading scheme, Overview | Sections are wiki-style until a professor teaches them; then only the professor can change these, and students see them read-only. Students are told when the scheme changes, once a day at most. If the last professor leaves, it's wiki-style again |
-| Post assignments with a handout | Class page → Assignments (new tab) | A class deadline with instructions and a file, on everyone's calendar. Everyone's notified, and again if the due date moves. A weight adds it to the scheme. **Plan it** brings the handout and its problems into the student's plan, which follows the assignment's date |
-| Moderate the discussion | Class page → Discussion | **Pin** to the top of the class board, **lock** a thread so only they can reply, **endorse** a reply, or **remove** a post or reply with an optional reason. The author is told. A removed post with replies stays up, blanked |
-| Hear about problems | Notifications; Discussion → Filters | Students can **report** a post or reply. The professor sees the reason, never who gave it, and a "Reported by students" filter, and can remove it or dismiss the report. Nobody else can tell it was reported |
-| Make announcements | New post → Announcement | A note from a professor to the whole section notifies everyone |
-| Correct class deadlines | Calendar | They can edit or remove a class deadline a student added, not private ones |
-| See how an assignment is going | Class page → Assignments | How many students checked it off, as a count only, and only in sections of 5 or more so it can't point at anyone |
-| Hold office hours | Study Sessions | A session with the Office hours type, weekly if they like. It and any group chat link they add are tagged as theirs |
-| Send an assignment out later | Assignments | Written now, it stays hidden from students, with no notification, until the time set or **Send it out now** |
-| Teach several sections at once | Assignments, New post, Grading scheme | An assignment or announcement can **also post to** their other sections, and a scheme can be **copied to a section** that has none (never over one with marks) |
+| React | 19 | UI, in `StrictMode` |
+| TypeScript | 7 | Strict mode. Types flow from services to components |
+| Vite | 8 | Dev server and static build |
+| Mantine | 9 | All UI components, forms, modals, toasts, theming |
+| TanStack Query | 5 | Caches every read and refetches after writes |
+| React Router | 8 | Client-side routes, using `HashRouter` |
+| Drizzle ORM | 0.45 | Typed SQL queries and the schema |
+| sql.js | 1.14 | SQLite compiled to WebAssembly |
+| zod | 4 | Validates the input of every procedure |
+| dayjs | 1 | Date formatting in the UI |
+| @noble/hashes | 2 | scrypt and SHA-256, since Web Crypto has no scrypt and is missing on plain HTTP |
+| KaTeX | 0.19 | Renders math in posts. Loaded only when needed |
+| pdf.js | 6.4 | Reads attached PDFs. Loaded only when needed |
+| Vitest | 5 | Tests, in plain Node |
 
-What stays private: **students' marks**, which professors never see, and **private posts**, which they see only if a
-student picks them as the audience. There's no class list for them either: students appear once they post or reply,
-as they do for each other (S1). Group chat links stay editable only by whoever added them, as S2.5 requires. Planner,
-Calculator, Study Mode, the course record and the degree plan are hidden for professors.
+### Why it is built this way
 
-**Limits:** nothing checks that someone is really a professor, since there's no mail server to verify a `@mcgill.ca`
-address and no McGill login, so a real deployment needs one of those first. A handout lives in the browser that
-uploaded it, like everything else here. Students can't hand work in; assignments go one way.
+- **A shareable link instead of an installer.** A static site lets anyone try the desktop app without downloading it. `package.json` calls it a static website for demos.
+- **The services stayed the same.** better-sqlite3 and sql.js are both synchronous, so backend code moved over almost unchanged.
+- **Same folders as the desktop app.** `diff -r ../unilink/src src` shows the differences, so fixes can move between projects.
 
-## UI design
+The trade-off is real: data exists only in one browser. Classmates are seeded demo accounts, and two real people on two computers can never see each other.
 
-The interface follows the team's wireframes in `A2Team.pdf`:
+## Running it locally
 
-- **Top navigation:** pill tabs, and your goat avatar on the right. On phones and small tablets the tabs move into a menu. The search icon (or
-  Ctrl/Cmd+K) searches your classes, posts and replies, deadlines, graded work, study sessions, plans and group chats at once,
-  and only what you could already see elsewhere (`services/search.ts`).
-- **Goat mascot:** customizable under Settings → Goat (`components/Goat.tsx`, `shared/goat.ts`).
-- **Home:** "Can't study today?" moves today's planned tasks to your next free time in one click. A checklist of first steps for a new account, ticked off as they're done; today's tasks and deadline countdowns on the left, a cross-class discussion feed with 🐐
-  reactions in the middle, and filters on the right.
-- **Math:** posts and replies can have math between dollar signs, rendered by KaTeX (bundled, loaded only when needed), with a preview while writing.
-- **Threads:** one list of replies, with the accepted answer pinned first, and a Follow button for reply notifications. Posts and replies you haven't sent are kept as drafts on this device, per account. A classmate's name opens their
-  profile card; the feed sorts by newest or most 🐐, and posts since your last visit to a class are marked New
-  (counted on its course card).
-- **Grading scheme:** the breakdown can be read from the course outline or pasted ("Midterm 30%, Final exam 50%"), and reviewed before it's added (`parseScheme` in `shared/syllabus.ts`).
-- **Marks from myCourses:** a copied grades page is matched to the scheme by name and reviewed before anything's saved (`parsePastedGrades` in `shared/grades.ts`).
-- **Grade Calculator:** a "You need at least X%" bubble and a scenarios table, and below them every class this term with a
-  projected term GPA and CGPA on McGill's scale. A component made of many small marks takes them all at once ("8/10 9/10 7/10"),
-  counting only the best ones if the syllabus drops the rest.
-- **Calendar & Planner:** Month, Week, Semester and Key dates views, with a chip per class to show or hide it. Pick any day to list everything on it; on phones
-  the month shows a coloured dot per event. The Google Calendar export can include your planned tasks, as all-day events.
-- **Find courses:** **Fits my timetable** leaves out sections that clash with your classes. **Your final exams** tags any that overlap or share a day.
-- **Courses:** each class card shows the next lecture, the next thing due and unanswered questions; a class's
-  Overview lists what's coming up in it.
-- **Group chat links:** cards with Open/Report buttons.
-- **Study Sessions:** your upcoming sessions, plus a search page you can filter by class, format, free spots and date. A session
-  or a poll's time that overlaps one of your classes or another session you're going to says so (`busyChecker` in `services/calendar.ts`). A
-  section's tab can also **find a time**: offer two to five times, classmates tick the ones that work, and only the counts show.
-  Picking one sets up the session and tells everyone who answered, who then choose whether to join (`services/timePolls.ts`).
-- **Study Mode:** its own tab, with a pill in the top bar while it's on, a live countdown, and your own focus time this week and last. A planned task (on Home or the Planner) can start a
-  **focus session as long as the task is meant to take**, and when it ends the app asks whether you finished it.
-- **Degree plan:** which of your courses count and what's left, with the **credits a term** it takes to graduate in your expected year.
-- **Course record:** a chart of **GPA by term** (`components/GpaTrend.tsx`), credits and CGPA, plus a **CGPA goal**: type the CGPA you're aiming for and see what your next credits
-  have to average, or how far straight A's would get you if it's out of reach (`goalOutlook` in `shared/academics.ts`).
-- **Settings:** sections down the side.
-- **Info icons:** every feature and control has a small ⓘ. It opens a popup with the requirements that element implements (the board's own wording, or a note that it isn't on the board), what this version decided, and other requirements someone could have asked for instead (`components/ReqInfo.tsx`, `lib/reqTopics.ts`). The popups stay in English when the app is in French. Each icon shows once per screen, so in a list of posts only the first has them, and a modal, drawer or menu counts as its own screen. Table columns have the icon in their heading rather than on every row.
-- **Requirement switches:** under "Potential different requirements", an alternative can have a button that changes the site to that requirement, for trying it on the real thing (`shared/variants.ts`). Switches are saved in this browser for every account here, and a pill in the corner lists what's on and switches it back. `tests/reqInfo.test.ts` names the features done so far: each of their alternatives has a button, or says why it can't have one. Switch text stays in English, even when the app is in French. What people choose under a switch, like an anonymous post, is kept in `app_state` and ignored once it's switched back, so the tables stay as this version was built.
+You need Node 22 or newer. Run `npm install`, then `npm run dev`, and the whole app is at `http://localhost:5173`. There is no database, server or `.env` file to set up, because everything runs in the page.
 
-The design uses rounded fonts (Nunito, with Fredoka for headings), bundled locally through Fontsource, and
-works in light and dark mode. Text meets WCAG AA contrast in both (the colours are set in `theme.ts`), controls have accessible names,
-and keyboard users get a skip link.
+### Commands
 
-## Getting started
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Vite dev server with hot reload, port 5173 |
+| `npm test` | Runs all Vitest suites once (382 tests, about 85 seconds) |
+| `npm run typecheck` | `tsc --noEmit`. CI runs this before the tests |
+| `npm run build` | Builds the static site into `dist/` |
+| `npm run preview` | Serves `dist/` at port 4173. Use it to test the service worker and offline mode |
+| `npm run db:generate` | Creates a migration after you edit `src/main/db/schema.ts` |
+| `node scripts/i18n-keys.mjs` | Lists English UI strings with no French translation |
 
-Needs Node 22+.
+### Signing in
 
-```bash
-npm install
-npm run dev        # http://localhost:5173 with hot reload
-```
+The database seeds itself on first load, so there is data straight away. The sign-in screen lists three demo students and one demo professor. All demo accounts share `DEMO_PASSWORD` from `src/main/db/demo.ts`.
 
-Other scripts:
+To see the social features from two sides, open a second tab and sign in as someone else. Each tab keeps its own sign-in, and saved changes reach the other tab. **Reset demo data** on the sign-in screen wipes the browser's copy and starts again.
 
-```bash
-npm test           # unit + integration tests (plain Node; SQLite runs through sql.js)
-npm run typecheck
-npm run build      # static site in dist/
-npm run preview    # serve dist/ at http://localhost:4173
-npm run db:generate  # create a migration after editing src/main/db/schema.ts
-```
+### Folder map
 
-Every visitor starts in a busy Fall 2026 term: about 130 demo classmates spread over the catalogue's sections,
-and around 30 sections with shared course details, class times, grading schemes and deadlines, a discussion
-board with answered and open questions, group chats classmates vouch for (and one hidden after reports), and
-study sessions: open, full with a waitlist, online, invite-only, and some already over. Everything lives in
-`db/demoContent.ts`; `db/demo.ts` turns it into rows, with dates relative to the first visit.
-
-Three classmates and a professor are listed on the sign-in screen with the password `unilink-demo1` (every demo
-account uses it). Signing in as one of them shows a student mid-term: five classes, a course record going back a year
-and a degree program (A1–A2), marks on each section's scheme (A4), assignments broken into planned tasks
-(ST2), to-dos (ST3), private deadlines, and notifications about replies and accepted answers (G3).
-
-Or sign up with any `@mail.mcgill.ca` address and join a section, **COMP 251-001** for the most going on.
-Alex's invite-only "Midterm review" session there doesn't show up until you enter its code, `ALEXMT`.
-**Reset demo data** under the demo list wipes everything saved in the browser and starts over. Browsers that
-already had an older, smaller demo get the new classmates and sections added on their next visit.
-
-To see the social features from both sides, open a second tab, sign out there and sign in as another
-classmate. The tabs keep each other up to date.
-
-## Deploying
-
-`dist/` is plain static files with relative paths and hash routing, so any static host works without
-configuration: GitHub Pages, Netlify, Vercel, Cloudflare Pages, or any web server.
-
-- **GitHub Pages:** push this repository to GitHub, then under Settings → Pages set the source to
-  "GitHub Actions". `.github/workflows/deploy.yml` tests, builds and publishes every push to `main`.
-- **Netlify / Vercel / Cloudflare Pages:** build command `npm run build`, output directory `dist`.
-- **Anywhere else:** run `npm run build` and upload the contents of `dist/`.
-
-The site needs HTTPS (or `localhost`) for system notifications, and to work offline and install to a home screen;
-everything else also works over plain HTTP, e.g. from a phone on the same network with `npm run dev -- --host`.
-
-**Backups:** with no server, a browser's copy is the only copy. Settings → Privacy downloads everything in the browser
-(the database and attachments) as one file, without anyone's sign-in, and it can be restored there or from the sign-in
-screen on another computer. Restoring replaces what's there, after checking the file (`shared/backup.ts`).
-The site also asks the browser not to clear its data for space (`navigator.storage.persist()`), suggests a backup once a month, and shows a
-warning with a backup button if saving ever fails, for instance in some private windows or with full storage.
-
-**Offline:** since everything a visitor saves is already in their browser, the built site keeps working with no
-connection after one visit, and can be installed like an app (`public/manifest.webmanifest`). The service worker
-(`src/web/sw.js`, its file list filled in by `vite.config.ts`) always tries the network for the page itself, so a
-new deploy takes over on the next load. A tab left open across a deploy reloads itself if it needs a file that's gone.
-
-## Stack
-
-- **React 19 + TypeScript**, built with **Vite 8** as a static site
-- **Mantine 9** UI components, **TanStack Query** for data fetching, **React Router** (hash routing)
-- **Drizzle ORM** on **SQLite compiled to WebAssembly** (sql.js), with the same SQL migrations in `drizzle/`
-- **IndexedDB** for saving the database file and attachments between visits
-- **pdf.js** reads attached assignment PDFs (loaded only when one is attached)
-- **zod** validates every call; **Vitest** for tests; **@noble/hashes** for scrypt password hashing
-
-## How it fits together
-
-The code is the desktop app's, with the Electron parts swapped for browser ones. Folder names are kept so
-changes can be compared and copied between the two projects (`diff -r ../unilink/src src`).
-
-```
+```text
 src/
-  main/            the desktop app's "main process", here running inside the page
-    db/            schema.ts (all tables), client.ts (open + migrate), migrations.ts, catalogue + demo seed data
-    rpc/           core.ts (procedure/dispatch helpers), router.ts (the whole API)
-    services/      one file per feature area; each exports a router of procedures
-    crypto.ts      the hashing and random helpers node:crypto provided
-  web/             what replaces Electron
-    bridge.ts      sets up window.unilink: opens the database, runs the background tick, saves after changes
-    platform.ts    file picker, downloads, opening attachments, notifications
-    storage.ts     IndexedDB
-    node/          browser stand-ins for node:fs/promises and node:path (aliased in vite.config.ts)
-  renderer/src/    React app: pages/, components/, lib/rpc.ts (typed client)
-  shared/          pure logic used by both sides: grades, planner, links, ics, validation, dates
-    i18n/          translate(), plural English forms (en.ts), French dictionary (fr/*.json)
-tests/             shared.test.ts (pure logic), services.test.ts (real router + in-memory SQLite),
-                   i18n.test.ts (every UI string has a French translation),
-                   reqInfo.test.ts (every info icon has a topic, and every topic an icon)
+  web/            Replaces Electron: entry point, bridge, storage, service worker
+    main.ts       The real entry point, loaded by index.html
+    bridge.ts     Creates window.unilink and owns the database
+    platform.ts   File picker, downloads, notifications, reading PDFs
+    storage.ts    IndexedDB wrapper
+    node/         Browser stand-ins for node:fs/promises and node:path
+  main/           The backend, running in the page
+    db/           schema.ts, client.ts, migrations.ts, demo seed data
+    rpc/          core.ts (procedure, dispatch), router.ts (the whole API)
+    services/     One file per feature area
+    crypto.ts     scrypt, sha256 and random helpers
+  renderer/src/   The React app
+    main.tsx      createRoot, global CSS imports
+    App.tsx       Providers, routes, the query client
+    pages/        One file per route; pages/class/ holds the class page's tabs
+    components/   Shared pieces and large features (Feed, Sessions, GradeCalculator)
+    lib/          RPC client, hooks, i18n, drafts, undo, formatting
+    theme.ts      Mantine theme
+    styles.css    Global CSS
+  shared/         Pure logic imported by both sides
+    i18n/         translate(), English plurals, French dictionaries
+    catalogue/    Loader and JSON data for McGill's catalogue
+drizzle/          SQL migrations generated from schema.ts
+scripts/          Catalogue import (Python), i18n key collector
+tests/            Vitest suites
+public/           Icons and the web manifest, copied as they are
 ```
 
-The renderer calls the backend through a small tRPC-style layer. A procedure is declared once in a service:
+### Import rules worth knowing
+
+- **`@shared/*`** and **`@renderer/*`** are path aliases, set in `tsconfig.json` and `vite.config.ts`.
+- **The renderer imports only types from `src/main`.** `lib/rpc.ts` uses `import type`, so the compiler knows the API shape without React code reaching into services. All real calls go through `rpc`.
+- **Services import `node:fs/promises`, and it still works in the browser.** `vite.config.ts` aliases it to `src/web/node/fs.ts`. Vitest has no such alias, so tests use the real Node module.
+
+The codebase is about 41,000 lines including tests. Most files are small, but a few are large: `components/Feed.tsx` (1,905 lines), `pages/Calendar.tsx` (1,379) and `components/Sessions.tsx` (1,032). Expect several components per file in those.
+
+## Frontend architecture
+
+The React tree is a stack of providers, an auth gate called `Root`, then `Layout` wrapping lazy-loaded pages. Almost all of it is in one file, `src/renderer/src/App.tsx`.
+
+![The component tree in App.tsx, outermost first](docs/images/component-tree.png)
+
+A few things sit beside these wrappers: `Notifications` (toasts), `ReqInfoHost` (the info popup), `RequirementsView` (a full-page list of requirements) and `SiteBlockers`.
+
+### Details in that tree that matter
+
+- **The language key.** `<ModalsProvider key={locale}>` re-mounts everything below it when the language changes. That is why `t()` can be a plain function instead of a hook: nothing has to subscribe, because everything renders again from scratch.
+- **`HashRouter`.** URLs look like `/#/classes/3/sessions`. The server only ever sees `/`, so GitHub Pages needs no rewrite rule, even from a subfolder.
+- **Hidden, not unmounted.** When the requirements list opens, the site is wrapped in `display: none` rather than removed, so half-filled forms survive the trip.
+
+### The auth gate
+
+`Root` runs one query and branches on it. This is the whole sign-in check for the UI:
+
+```tsx
+const me = useQuery({ queryKey: ['me'], queryFn: () => rpc.auth.me() });
+
+if (me.isPending) return <Center h="100vh"><Loader /></Center>;
+if (!me.data) return <Routes>{/* /signup, /reset, and SignIn for anything else */}</Routes>;
+
+return (
+  <MeContext.Provider value={me.data}>
+    <Layout>{/* PageBoundary, Suspense, Routes */}</Layout>
+  </MeContext.Provider>
+);
+```
+
+Inside the signed-in tree, `useMe()` from `lib/hooks.ts` returns the user and is never null. It throws if used outside that tree, so components can skip null checks.
+
+Signing in and out need no special code. Both go through `useAction`, which invalidates all queries, so `me` refetches and `Root` re-renders. A session that ends mid-use is caught separately: the procedure fails with `UNAUTHORIZED`, and the query cache's `onError` in `App.tsx` runs `queryClient.setQueryData(['me'], null)`.
+
+### Routes
+
+| URL | Component | File |
+| --- | --- | --- |
+| `/` | `Home` | `pages/Home.tsx` (not lazy) |
+| `/courses/:tab?` | `CoursesPage` | `pages/Classes.tsx` |
+| `/classes/:classId/:tab?` | `ClassPage` | `pages/ClassPage.tsx` |
+| `/catalogue/:tab?/:id?` | `CataloguePage` | `pages/Catalogue.tsx` |
+| `/calendar` | `CalendarPage` | `pages/Calendar.tsx` |
+| `/planner` | `PlannerPage` | `pages/Planner.tsx` |
+| `/calculator` | `CalculatorPage` | `pages/Calculator.tsx` |
+| `/sessions`, `/sessions/search` | `SessionsPage`, `SessionSearchPage` | `pages/Sessions.tsx` |
+| `/sessions/join/:code` | `SessionInvitePage` | `pages/Sessions.tsx` |
+| `/study-mode` | `StudyModePage` | `pages/StudyMode.tsx` |
+| `/settings/:tab?` | `SettingsPage` | `pages/Settings.tsx` |
+| `/signup`, `/reset`, anything else signed out | `SignUp`, `ResetPassword`, `SignIn` | `pages/Auth.tsx` (not lazy) |
+
+Older paths such as `/focus` and `/integrations` redirect with `<Navigate>`. They stay because links stored in old notifications still point at them. A file can hold several pages: `pages/Classes.tsx` also exports `AcademicsPage`, and `pages/Settings.tsx` also exports `ProfilePage`.
+
+### Code splitting
+
+Sign-in and Home ship in the main bundle. Other pages load on first visit through a small helper around `React.lazy`, which expects a default export, so the helper adapts named exports:
+
+```tsx
+const page = <K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) =>
+  lazy(() => load().catch(reloadForNewVersion).then((m) => ({ default: m[name] })));
+
+const CalendarPage = page(() => import('./pages/Calendar'), 'CalendarPage');
+```
+
+The `.catch(reloadForNewVersion)` handles a real problem. After a deploy, a tab left open asks for old hashed files that no longer exist. The helper reloads the page once to pick up the new version, and uses `sessionStorage` to avoid a reload loop if the network is truly down.
+
+If that fails, `PageBoundary` takes over. It is the app's one class component, because React still has no hook for error boundaries. It resets when the path changes, so one broken page does not block navigation.
+
+After startup, `preloadCatalogue` in `lib/preload.ts` fetches catalogue data and likely pages one at a time during browser idle time, unless the visitor has data saver on.
+
+### `Layout`
+
+`components/Layout.tsx` draws the header and wraps each page. Three parts are worth reading:
+
+- **`NAV`**, a plain array of tabs. A `filter` removes items by role and by requirement switch, then one `.map` draws desktop tabs and another draws the phone menu.
+- **`useEffect` for `document.title`**, which names the tab after the current section.
+- **`SaveProblem`**, a red alert shown if saving to IndexedDB fails. It subscribes with `window.unilink.onSaveProblem`.
+
+### Where components live
+
+| Folder | What goes there | Examples |
+| --- | --- | --- |
+| `pages/` | One component per route | `Home`, `Calendar`, `Planner` |
+| `pages/class/` | One tab of the class page | `Overview`, `GroupChats`, `Assignments` |
+| `components/ui.tsx` | Small shared pieces | `PageHeader`, `SectionCard`, `Empty`, `Loading`, `Tag`, `KindBadge` |
+| `components/` | Features used in more than one place | `Feed`, `GradeCalculator`, `Sessions` |
+| `lib/` | Hooks and helpers with no page of their own | `rpc`, `useAction`, `useUndo`, drafts |
+
+Reuse shows up clearly in `Feed` and `GradeCalculator`. `pages/class/Discussion.tsx` is just `<Feed classId={classId} />`, and Home renders `<Feed left={left} />` with no class. `Feed` treats a missing `classId` as "all my classes".
+
+### A tab that lives in the URL
+
+The class page keeps its current tab in the route, not in `useState`, so links and the back button work:
+
+```tsx
+const tabInUrl = TABS.some((item) => item.value === params.tab) ? params.tab! : 'overview';
+
+<Tabs value={tab} onChange={(v) => navigate(`/classes/${classId}/${v}`)} keepMounted={false}>
+```
+
+`keepMounted={false}` means only the open tab is mounted, so its queries run only when someone opens it. The feed does the same with `?post=12` through `useSearchParams`, so an open thread has a shareable URL.
+
+## State and data fetching
+
+Nearly all shared state is data from the backend, and TanStack Query holds it. Two hooks cover almost everything: `useQuery` for reads (about 120 calls) and `useAction`, this repo's own hook, for writes (about 180).
+
+![Reads and writes in the React app · the highlighted step is what keeps the UI current](docs/images/reads-and-writes.png)
+
+You never have to work out which queries a write affects. A successful write refreshes every read on screen, which is cheap because the data is local. There are no optimistic updates anywhere.
+
+### Where each kind of state lives
+
+| Kind of state | Where it lives | How you use it |
+| --- | --- | --- |
+| Backend data | TanStack Query cache | `useQuery`, `useAction` |
+| The signed-in user | `MeContext`, filled from the `me` query | `useMe()` |
+| Language | A module variable plus `LocaleContext` | `t()`, `useLocale()` |
+| Current page, tab or open thread | The URL | `useParams`, `useSearchParams` |
+| Open modals, filters, toggles | `useState` in the component | `const [showHidden, setShowHidden] = useState(false)` |
+| Form fields | `useForm` from `@mantine/form` | `form.getInputProps('url')` |
+| Requirement switches | A module variable plus `localStorage` | `useVariant('no-browse-links')` |
+| Unsent posts and replies | `localStorage`, per account | `loadDraft`, `saveDraft` in `lib/drafts.ts` |
+| Small per-browser preferences | `localStorage` | `useLocalStorage` from `@mantine/hooks` |
+| Toasts and confirm dialogs | Mantine's imperative APIs | `notifications.show()`, `modals.openConfirmModal()` |
+
+### Reading with `useQuery`
+
+This is the shape nearly every component uses, taken from `pages/class/GroupChats.tsx`:
+
+```tsx
+const links = useQuery({
+  queryKey: ['links', classId],
+  queryFn: () => rpc.links.list({ classId }),
+});
+const shown = links.data?.filter((l) => !l.hidden && !l.pending) ?? [];
+
+return links.isPending ? <Loading /> : shown.length ? <LinkList /> : <Empty />;
+```
+
+The `queryKey` is the cache address. Two components using the same key share one fetch and one result. Every value the fetch depends on belongs in the key, so `Feed` uses `['board', 'feed', classId ?? null, feedFilters]` and refetches whenever a filter changes. By convention, the first item is the service name: `classes`, `calendar`, `board`.
+
+The global defaults in `App.tsx` are `retry: false` and `refetchOnWindowFocus: false`. A local call that failed would just fail again, so retrying adds nothing. These per-query options come up often:
+
+| Option | What it does | Where |
+| --- | --- | --- |
+| `enabled: !!classId` | Skips the query until the condition is true | `Feed` |
+| `placeholderData: keepPreviousData` | Keeps old results on screen while new ones load, so lists don't flash empty | `Feed`, `GlobalSearch`, `Calendar` |
+| `refetchInterval: 15_000` | Polls | `NotificationBell`, study mode status |
+| `staleTime: Infinity` | Never refetches, for data that cannot change | Catalogue JSON |
+| `select: toCodes` | Reshapes the cached data for this one caller | `CatalogueLink` |
+
+Polling exists for one reason. The background tick writes notifications without going through `useAction`, so nothing invalidates the cache. The bell polls so it can notice them.
+
+`useInfiniteQuery` appears once, in `pages/Classes.tsx`, to page through course search results. `Feed` takes a simpler route: `board.feed` returns at most 100 posts, and it renders only `feed.data.slice(0, shownPosts)`. `components/LoadOnScroll.tsx` raises that number with an `IntersectionObserver` as you near the bottom.
+
+### Types come from the backend
+
+There are no hand-written API types. A component derives them from what the service returns:
+
+```tsx
+type ChatLink = Out<typeof rpc.links.list>[number];
+```
+
+`rpc` is typed as `RpcClient<AppRouter>`, a mapped type in `main/rpc/core.ts` that turns each procedure into an async function. Rename a field in a service, and every component using it fails `npm run typecheck`.
+
+Because nothing is serialized, **a `Date` from the database reaches your component as a real `Date`**, so `link.createdAt.getTime()` works. In a normal HTTP app that value would be a string. Keep this in mind if the backend ever moves to a real server.
+
+### Writing with `useAction`
+
+`lib/hooks.ts` wraps TanStack's `useMutation`. Writes should go through it, because it handles the cache and the toasts. Here is its core, with the offline-queue switch removed:
+
+```tsx
+export function useAction<I = void, O = unknown>(fn: (input: I) => Promise<O>, options: ActionOptions<I, O> = {}) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: I) => fn(input),
+    onSuccess: async (data, input) => {
+      await queryClient.invalidateQueries({ predicate: changesWithWrites });
+      const message = typeof options.success === 'function' ? options.success(data, input) : options.success && t(options.success);
+      if (message) notifications.show({ color: 'teal', message });
+      options.onSuccess?.(data, input);
+    },
+    onError: (error) => notifications.show({ color: 'red', title: t("That didn't work"), message: error.message }),
+  });
+}
+```
+
+Three typical uses:
+
+```tsx
+// No input: the values are already in scope.
+const remove = useAction(() => rpc.links.remove({ linkId: link.id }), { success: 'Link removed' });
+<Button onClick={() => remove.mutate()} loading={remove.isPending} />
+
+// Input passed to mutate().
+const decide = useAction((keep: boolean) => rpc.links.decide({ linkId: link.id, keep }));
+decide.mutate(true);
+
+// Close a modal or navigate afterwards.
+const join = useAction((classId: number) => rpc.classes.join({ classId }), {
+  onSuccess: (_data, classId) => navigate(`/classes/${classId}`),
+});
+```
+
+A few details to remember:
+
+- **A `success` string is an English key.** `useAction` translates it for you. A `success` function must return text that is already translated.
+- **You rarely need `try`/`catch`.** A failed procedure throws `RpcError`, and `useAction` shows its translated message in a red toast.
+- **Catalogue data is exempt from invalidation.** `changesWithWrites` in `lib/preload.ts` skips it, because those JSON files never change while the page is open.
+- **Undo has its own helper.** `useUndo` in `lib/undo.tsx` shows a toast with an Undo button for things deleted without a confirmation.
+
+A few writes skip `useAction` on purpose. `rpc.board.seen({ classId })` in `Feed` runs in a `useEffect` with no invalidation, so posts keep their New badge until the next visit.
+
+### Forms
+
+The app has about 16 forms using `useForm` from `@mantine/form`. Here is `LinkForm` from `GroupChats.tsx`, shortened:
+
+```tsx
+const form = useForm({
+  initialValues: { url: existing?.url ?? '', label: existing?.label ?? '' },
+  validate: { url: (v) => (parseChatLink(v) ? null : t('Paste a full link, starting with https://')) },
+});
+const save = useAction((v: typeof form.values) => rpc.links.add({ classId, ...v }), { onSuccess: onDone });
+
+return (
+  <form onSubmit={form.onSubmit((v) => save.mutate(v))}>
+    <TextInput label={t('Invite link')} {...form.getInputProps('url')} />
+    <Button type="submit" loading={save.isPending}>{t('Share link')}</Button>
+  </form>
+);
+```
+
+`getInputProps` supplies `value`, `onChange` and `error`. `parseChatLink` comes from `@shared/links`, and the service calls it too, so the form and the backend cannot disagree. The form check gives quick feedback, and the backend check is the one that counts.
+
+The parent renders the form with `key={editing === 'new' ? 'new' : editing.id}`. Changing the key gives a fresh component, which resets the fields when you edit a different link.
+
+### State outside React
+
+A few values must be readable from non-React code, so they live in plain modules and React subscribes with `useSyncExternalStore`. Requirement switches are the main example:
 
 ```ts
-join: procedure(z.object({ classId: idSchema }), ({ classId }, ctx) => { … })
+// src/shared/variants.ts: no React here, so services can use it too.
+let on = load();
+const listeners = new Set<() => void>();
+export const isOn = (id: VariantId) => on.includes(id);
+export function subscribeVariants(listener: () => void) {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
+// src/renderer/src/lib/variants.ts: the React side.
+export const useVariant = (id: VariantId) => useSyncExternalStore(subscribeVariants, () => isOn(id));
 ```
 
-The renderer calls it as `rpc.classes.join({ classId })`, fully typed from that declaration. In the desktop
-app every call crosses one IPC channel; here `window.unilink.call()` dispatches straight to the router in the
-same page. Either way it's validated with zod and runs as the signed-in user (`ctx.userId`). Errors come back
-as `{ code, message, key, params }` and show up as notifications, translated in the renderer.
+The hook takes a subscribe function and a snapshot function, and re-renders when the snapshot changes. `lib/reqView.ts` uses the same pattern, and so does the popup in `ReqInfo.tsx`.
 
-### What changed from the desktop app
+### Requirement switches: the pattern you will see most
 
-| Desktop (Electron) | Web |
+This project reviews a requirements board, so the site can demonstrate other answers to each open question. Each small info icon opens a popup listing the alternatives, and many have a button that switches the live site to that alternative.
+
+There are 374 switches in `VARIANTS` in `shared/variants.ts`. That explains the long `useVariant` lists at the top of components, and the `isOn` checks through the services:
+
+```tsx
+// In a component (about 400 of these)
+const noBrowseLinks = useVariant('no-browse-links');
+
+// In a service (about 280 of these)
+if (isOn('whatsapp-discord-only') && parsed.platform !== 'WhatsApp' && parsed.platform !== 'Discord') throw new AppError(ONLY_WHATSAPP_DISCORD);
+```
+
+**When reading a component, ignore the switches first.** Assume each one is off and read the default path, then come back to them if you need to. The default behaviour is version B as designed.
+
+- **Icons:** `<ReqInfo id="chat-add" />` draws one icon, and `<WithInfo id="chat-add">` wraps a control and adds one. The text lives in `lib/reqTopics.ts`, in English only.
+- **Applying a switch:** `useApply` in `ReqInfo.tsx` flips it and invalidates every query, because services return different data afterwards.
+- **Data under a switch:** when a switch needs extra data, such as which posts are anonymous, `services/variantData.ts` keeps it as JSON in `app_state`. The real tables stay as version B was built.
+- **Tests enforce this:** `tests/reqInfo.test.ts` fails if an icon has no topic, a topic has no icon, or a switch is never checked in the code.
+
+## Key features walkthrough
+
+The quickest way in is to follow one small feature end to end, and group chat links are the smallest complete slice. The other features have the same shape but more rules.
+
+A feature usually has four parts:
+
+| Layer | Where | Holds |
+| --- | --- | --- |
+| Tables | `main/db/schema.ts` | The data |
+| Pure rules | `shared/<feature>.ts` | Logic with no database, easy to test |
+| Service | `main/services/<feature>.ts` | Access checks, queries, notifications, and a router of procedures |
+| UI | `pages/` or `components/` | `useQuery`, `useAction`, Mantine components |
+
+### Group chat links: the one to read first
+
+Files: `pages/class/GroupChats.tsx` (512 lines), `services/links.ts` (301), `shared/links.ts` (88), and the tables `chat_links` and `chat_link_votes`.
+
+**Adding a link.** `LinkForm` calls `rpc.links.add`. The procedure runs these steps in order:
+
+1. `requireMember` throws `FORBIDDEN` unless you are in the section.
+2. `parseChatLink` from `shared/links.ts` validates the URL, detects the platform, and builds a `chatKey`. `discord.gg/abc` and `discord.com/invite/abc` both become `discord:abc`, so the same chat is recognised under any URL.
+3. `assertNotDuplicate` looks for that `chatKey` in every section of the course. A match throws `CONFLICT`, naming who shared it and where.
+4. Drizzle inserts the row.
+
+**Voting.** Classmates mark a link "works" or report it. The rule for hiding is one line in `shared/links.ts`:
+
+```ts
+export function isHidden(reports: number, works: number) {
+  return reports >= HIDE_AFTER_REPORTS && reports > works; // HIDE_AFTER_REPORTS is 2
+}
+```
+
+The `vote` procedure counts votes before and after the write, and notifies the owner only when a link goes from visible to hidden. That before-and-after check prevents repeat notifications on later reports.
+
+**The UI.** `GroupChats` fetches the list and splits it into `shown`, `pending` and `hidden`. Each `LinkCard` declares its own actions: `works`, `report`, `remove`, `fixed`. `hidden` is computed in the service and returned as a field, so the UI never re-implements the rule.
+
+### Discussion board: a large component
+
+Files: `components/Feed.tsx` (1,905 lines), `services/board.ts` (937), `shared/postText.ts`. It is the largest component in the app, so here is a map:
+
+| Component | Line | Job |
+| --- | --- | --- |
+| `Feed` | 657 | Entry point. Renders `FeedBoard` |
+| `FeedBoard` | 707 | Filter state, the `board.feed` query, the list, the composer |
+| `PostCard` | 514 | One post in the list |
+| `PostThread` | 1322 | An open thread and its replies, from `board.get` |
+| `ReplyItem`, `ReplyBox` | 1109, 1062 | One reply, and the box for writing one |
+| `PostForm` | 1618 | Creating or editing a post |
+| `Body` | 188 | Turns post text into code, math and links |
+| `ReactionBar` | 150 | The goat reactions |
+
+**Filtering.** `FeedBoard` keeps each filter in `useState`, builds a `feedFilters` object, and uses it as both the input and part of the key. Changing any filter triggers a new fetch. `useDebouncedValue(search, 200)` waits for a pause in typing, and `keepPreviousData` stops the list flashing.
+
+**Who can see what.** The service enforces this in SQL, not in the UI. `canSeePost` returns a Drizzle condition that every post query includes:
+
+```ts
+export function canSeePost(userId: number) {
+  return or(
+    eq(posts.visibility, 'class'),
+    eq(posts.authorId, userId),
+    inArray(posts.id, sql`(select ${postAudience.postId} from ${postAudience} where ${postAudience.userId} = ${userId})`),
+  );
+}
+```
+
+**Replying.** `ReplyBox` keeps its text in `useState` and copies each change to `localStorage` through `saveDraft`, so a closed tab loses nothing. `board.reply` then checks visibility and locks, stores images, inserts the reply, marks you as following the thread, and notifies the other followers.
+
+**Rendering a post.** `parsePost` from `shared/postText.ts` splits text into parts: plain text, code, math and links. `Body` maps those to React elements, so nothing goes through `dangerouslySetInnerHTML`. `MathText` loads KaTeX with a dynamic `import()` only when a post contains math, and shows the raw source until it arrives.
+
+### Assignment planner: pure logic and side effects kept apart
+
+Files: `shared/planner.ts` (127 lines), `services/planner.ts` (651), `pages/Planner.tsx` (963). The planner shows the repo's most useful pattern: **the algorithm is a pure function, and the service feeds it.**
+
+`planTasks` knows nothing about databases or dates on the clock. It takes tasks, today, a due date, buffer days and a `capacity(day)` function, and returns a date per task. It puts each task on the first day with room, without going earlier than the previous task. Tasks the student moved by hand (`pinned`) stay put.
+
+The service's `replan` collects the real values, calls it, and saves the result:
+
+```ts
+const budget = studyBudget(db, userId);   // free minutes per weekday, minus days off
+const load = dailyLoad(db, userId, today, dueDate, assignmentId); // other tasks and sessions
+
+const plan = schedule({
+  tasks: /* rows mapped to PlannableTask */,
+  today,
+  dueDate,
+  bufferDays: bufferFor(assignment.bufferDays, today, dueDate),
+  capacity: (day) => Math.max(0, budget(day) - (load.get(day) ?? 0)),
+});
+```
+
+**Plans fix themselves when read.** There is no scheduled job, so `reconcile` runs at the start of `todos.today` and `planner.list`. It follows moved deadlines, then re-plans anything with a missed task or an overloaded day. **So some reads write rows**, and that is why the bridge checks `total_changes()` instead of guessing from the procedure name.
+
+**Attached handouts.** `planner.chooseAttachment` opens the file picker through `ctx.platform`. `readParts` reads the text, using pdf.js for PDFs, and `findParts` from `shared/assignment.ts` finds numbered questions to offer as tasks.
+
+### Grade calculator: derive, don't store
+
+Files: `components/GradeCalculator.tsx` (914 lines), `shared/grades.ts` (283), `services/courses.ts` (618).
+
+The scheme is shared and marks are private, so they live in two tables: `assessments` for the components and `assessment_scores` for each student's mark. `courses.assessments` joins them for the current user, so nobody else's marks are ever returned.
+
+The component holds no computed values in state. It runs the pure function during render:
+
+```tsx
+const items = useQuery({ queryKey: ['courses', 'assessments', classId], queryFn: () => rpc.courses.assessments({ classId }) });
+const summary = summarize(list, scale); // average, best and worst final, what you need per letter
+```
+
+Saving a mark calls `setScore`, `useAction` invalidates the queries, `items` refetches, and `summarize` runs again. No `useEffect` is keeping a total in sync. Use this as your model when you add a calculation.
+
+### Study sessions: states and hand-offs
+
+Files: `components/Sessions.tsx` (1,032 lines), `services/studySessions.ts` (756).
+
+![A student's seat in a study session, as rows in study_session_members](docs/images/study-session-seats.png)
+
+A host who leaves hands the session to the next person going, and the session is cancelled only if nobody is left. Both paths are in `leaveSession`. Every path that frees a spot ends in `promoteWaitlist`, which also sends the notification.
+
+Invite-only sessions are hidden from anyone without the 6-character code. Weekly sessions are separate rows that share a `seriesId` and one invite code. The per-viewer view, including who may see the attendee list, is built in one function: `describe`.
+
+### Other features
+
+| Feature | UI | Service and logic |
+| --- | --- | --- |
+| Calendar, deadlines, `.ics` export | `pages/Calendar.tsx` | `services/calendar.ts`, `shared/ics.ts`, `shared/keyDates.ts` |
+| Syllabus import | `pages/Calendar.tsx` | `shared/syllabus.ts` |
+| Course record and degree plan | `pages/Academics.tsx` | `services/academics.ts`, `shared/degree.ts` |
+| Catalogue browser | `pages/Catalogue.tsx` | `shared/catalogue/` |
+| Study mode | `pages/StudyMode.tsx` | `services/studyMode.ts`, `shared/studyMode.ts` |
+| Professors' assignments | `pages/class/Assignments.tsx` | `services/assignments.ts` |
+| Global search | `components/GlobalSearch.tsx` | `services/search.ts` |
+| Time polls | `components/TimePolls.tsx` | `services/timePolls.ts` |
+| Goat avatar | `components/Goat.tsx` | `shared/goat.ts` |
+
+## Backend and API
+
+The backend is about 220 procedures in 18 routers, and each procedure is a plain object: a zod schema plus a handler function. It looks like a small tRPC, and it needs no HTTP.
+
+### Declaring a procedure
+
+Here is a real one from `services/todos.ts`:
+
+```ts
+export const todosRouter = {
+  remove: procedure(z.object({ id: idSchema }), ({ id }, ctx) => {
+    ownTodo(ctx.db, ctx.userId, id);                  // throws unless this to-do is yours
+    ctx.db.delete(todos).where(eq(todos.id, id)).run();
+  }),
+};
+```
+
+- **`procedure`** requires a signed-in user. **`publicProcedure`** does not, and is used for things like `auth.signIn`.
+- **The handler can be synchronous or `async`.** Database calls are synchronous. `async` is only needed for file access or password hashing.
+- **Registering it:** `main/rpc/router.ts` lists every router, so `todosRouter.remove` becomes `rpc.todos.remove({ id })` in React, with no other wiring.
+
+### What `dispatch` does
+
+Every call passes through this function in `main/rpc/core.ts`, which is short enough to read in full:
+
+```ts
+export async function dispatch(router: Router, path: string, rawInput: unknown, ctx: Context): Promise<RpcResult> {
+  const node = path.split('.').reduce<unknown>((n, key) => (n as Router | undefined)?.[key], router);
+  if (!isProcedure(node)) return fail('NOT_FOUND', `Unknown procedure "${path}"`);
+
+  try {
+    if (node.requiresAuth && ctx.session.userId == null) {
+      throw new AppError('Your session has ended. Please sign in again.', 'UNAUTHORIZED');
+    }
+    const input = node.input.parse(rawInput);
+    const data = await node.handler(input, { ...ctx, userId: ctx.session.userId ?? -1 });
+    return { ok: true, data };
+  } catch (err) {
+    if (err instanceof z.ZodError) return fail('BAD_INPUT', err.issues[0]?.message ?? 'Invalid input');
+    if (err instanceof AppError) return fail(err.code, err.key, err.params);
+    console.error(`[rpc] ${path} failed:`, err);
+    return fail('INTERNAL', 'Something went wrong. Please try again.');
+  }
+}
+```
+
+### Errors
+
+Throw an `AppError` and the user sees it as a toast, translated:
+
+```ts
+throw new AppError('{{name}} already shared this chat in {{class}}.', 'CONFLICT', { name, class: label });
+```
+
+The first argument is both the English message and the translation key. The code is one of `BAD_INPUT` (the default), `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT` or `INTERNAL`. Zod messages work the same way, so `.min(1, 'Pick a topic')` is also a translation key. An unexpected exception is logged, and the user sees a generic message.
+
+### The `ctx` object
+
+Every handler receives `ctx`, which is how services reach the outside world. Injecting these is what makes the services testable:
+
+| Field | What it is | Why it is injected |
+| --- | --- | --- |
+| `ctx.db` | The Drizzle database | Tests use an in-memory one |
+| `ctx.userId` | The signed-in user, added by `dispatch` | Always use this, never a user id from the input |
+| `ctx.session` | `{ userId }`, changed by sign-in and sign-out | Holds the tab's signed-in user |
+| `ctx.platform` | File picker, notifications, opening files | The browser version is in `web/platform.ts`, and tests use a fake |
+| `ctx.filesDir` | `/attachments` | Where owned files go |
+| `ctx.now()` | The current time | Tests set the clock |
+| `ctx.isDev` | Always `true` in this build | Shows demo accounts and on-screen codes |
+
+Call `ctx.now()` instead of `new Date()` in services, or your code cannot be tested for time-based behaviour.
+
+### Access checks
+
+A service checks permissions first, using helpers from `services/access.ts`:
+
+| Helper | Meaning |
 | --- | --- |
-| better-sqlite3, a file in the user data folder | sql.js (SQLite in WebAssembly). The whole database file is saved to IndexedDB after every change |
-| `node:crypto` scrypt | `@noble/hashes` scrypt with Node's default settings, so password hashes have the same format |
-| Native open/save dialogs, files on disk | A file picker; exports download; attachments are stored in IndexedDB and open in a new tab |
-| Desktop notifications | A toast in the page, or a system notification when the tab is in the background and the site has permission |
-| GNOME Do Not Disturb (ST1) | Not available |
-| Demo classmates in dev builds only | Always on, plus **Reset demo data** |
-| One app window | Any number of tabs; each saved change is sent to the others, and each tab keeps its own sign-in |
+| `requireMember(db, userId, classId)` | Throws `FORBIDDEN` unless you joined this section |
+| `teaches(db, userId, classId)` | You are a professor enrolled in this section |
+| `requireTeacher(db, userId, classId)` | Throws unless `teaches` is true |
+| `canEditShared`, `requireSharedEditor` | Anyone in a section can edit shared info, until a professor teaches it. Then only the professor can |
+| `notFound('link')` | Throws `That link no longer exists.` |
 
-In version A, only `services/auth.ts`, `services/planner.ts` (one import), `db/client.ts` and `db/demo.ts` differ
-in `src/main`; version B's own decisions change much more (see below). In the renderer, the sign-in screen has the reset link, and the header scrolls on phones.
+Each service adds its own ownership helpers in the same style, such as `ownLink`, `ownTodo` and `ownTask`. They fetch the row, check it, and return it, so the handler gets a checked row in one line.
 
-### Languages (English and French)
+These checks enforce the product's rules, but **they are not real security**. All the data sits in the visitor's own browser, and anyone can open dev tools and read the database. [docs/PRODUCT.md](docs/PRODUCT.md) says the same about professor accounts. A real deployment would need a server.
 
-Language is chosen on the sign-in screen or under Settings → General, and saved on the account, so
-notifications and emails go out in the same language. The English text is the translation key:
+### Drizzle in five minutes
+
+Drizzle writes SQL from TypeScript, and the result types follow from your `select`. Because sql.js is synchronous, you finish a query with `.all()`, `.get()` or `.run()`, with no `await`:
+
+| You want | You write |
+| --- | --- |
+| Many rows | `db.select().from(todos).where(eq(todos.userId, id)).all()` |
+| One row or undefined | `db.select().from(users).where(eq(users.id, id)).get()` |
+| Chosen columns and a join | `db.select({ id: chatLinks.id, ownerName: users.name }).from(chatLinks).innerJoin(users, eq(chatLinks.ownerId, users.id)).all()` |
+| Insert and get the id | `db.insert(chatLinks).values({ ... }).returning({ id: chatLinks.id }).get()` |
+| Insert or update | `.onConflictDoUpdate({ target: appState.key, set: { value } })` |
+| Update | `db.update(todos).set({ doneAt: null }).where(eq(todos.id, id)).run()` |
+| Delete | `db.delete(todos).where(eq(todos.id, id)).run()` |
+| Raw SQL piece | ``sql<number>`count(*)`.mapWith(Number)`` |
+| Optional condition | `and(eq(a, b), maybe ? eq(c, d) : undefined)`, where `undefined` is ignored |
+| All or nothing | `db.transaction((tx) => { tx.insert(...).run(); tx.update(...).run(); })` |
+
+A row's type is available as `typeof users.$inferSelect`. Date inputs use `z.date()`, because nothing is converted to JSON on the way in.
+
+### Signing in
+
+`services/auth.ts` handles accounts and is written as if the data were on a real server:
+
+1. **Sign-up** checks the rules from `shared/validation.ts`, which the form also uses. It stores the password as `scrypt:<salt>:<hash>`, and returns a one-time recovery code.
+2. **Sessions** use a random token. Only its SHA-256 goes in `auth_sessions`, and the raw token is kept in `app_state` under `session_token`. `ctx.session.userId` is the tab's live answer to "who is signed in".
+3. **Restoring** happens in `auth.me`. If the tab has no user yet, `restoreSession` looks up the token.
+4. **Limits:** five wrong passwords in a row pause sign-in for 15 minutes, using `failedSignIns` and `lockedUntil` on `users`.
+5. **Leaving data out:** `publicUser` strips the password and recovery hashes before a user is returned.
+
+### Notifications
+
+Any service can notify someone with one call:
+
+```ts
+notify(ctx.db, link.ownerId, {
+  type: 'link-hidden',
+  title: m('Your {{platform}} link in {{class}} was hidden', { platform: link.platform, class: label }),
+  body: m('{{count}} classmates reported it. Fix the link, or mark it fixed if it works.', { count: after.reports }),
+  link: `/classes/${link.classId}/chats`,
+});
+```
+
+- **`m()` stores a key and params**, so the text is translated when read, in the reader's language. Use `raw()` for user-written text, which must not be looked up.
+- **`type`** must be a key of `NOTIFICATION_TYPES` in `shared/notifications.ts`, which also sets the default channels.
+- **`dedupeKey`** makes reminders safe to repeat. A unique index on `(user_id, dedupe_key)` with `onConflictDoNothing` stops duplicates.
+- **Email goes nowhere.** With no mail server, messages are written to the `outbox` table and shown under Settings.
+
+The background tick in `web/bridge.ts` runs `backgroundTick` from `services/studyMode.ts` every 30 seconds while a tab is open. It sweeps for due reminders, switches study mode on or off, and passes undelivered notifications to `platform.showNotification`. That shows a system notification if the tab is hidden and has permission, and a toast otherwise.
+
+### Files
+
+Services use `node:fs/promises`, unchanged from the desktop app, through the stand-in at `web/node/fs.ts`. It recognises three kinds of path:
+
+| Path | Means | Backed by |
+| --- | --- | --- |
+| `/picked/1/notes.pdf` | A file just chosen in the picker | A `File` in memory, gone on reload |
+| `/attachments/<uuid>-notes.pdf` | A file the app owns | A `Blob` in IndexedDB |
+| Anything else | A place to save to | Writing to it downloads the file |
+
+A typical flow: `platform.chooseFile` returns a `/picked/` path, the form holds that string, and `storeAttachment` copies the file to `/attachments/` when the form is saved. `platform.fileUrl` then gives React an object URL to show it.
+
+### The services
+
+| Router | File | Procedures | Covers |
+| --- | --- | --- | --- |
+| `auth`, `profile` | `auth.ts` | 27 | Accounts, profile, data export, deletion |
+| `catalogue`, `classes` | `classes.ts` | 12 | Course search, joining, switching sections |
+| `board` | `board.ts` | 30 | Posts, replies, reactions, moderation |
+| `courses` | `courses.ts` | 29 | Shared course details, grading scheme, marks |
+| `planner` | `planner.ts` | 25 | Assignments, tasks, free time |
+| `studySessions` | `studySessions.ts` | 21 | Sessions, invites, waitlists |
+| `calendar` | `calendar.ts` | 15 | Events, deadlines, `.ics` import and export |
+| `record`, `degree` | `academics.ts` | 11 | Course record, degree plan |
+| `links` | `links.ts` | 10 | Group chat links |
+| `studyMode` | `studyMode.ts` | 10 | Focus sessions, background tick |
+| `notifications` | `notifications.ts` | 9 | Notification list, reminders, email outbox |
+| `assignments` | `assignments.ts` | 8 | Assignments posted by professors |
+| `todos` | `todos.ts` | 5 | To-do list and today's tasks |
+| `timePolls` | `timePolls.ts` | 5 | Polls for finding a session time |
+| `search` | `search.ts` | 1 | Search across everything you can see |
+
+Three files have no router and hold shared helpers: `access.ts`, `myData.ts` (data export) and `variantData.ts` (data kept for switches). Services import from each other freely. For example, `todos.ts` imports `reconcile` from `planner.ts`.
+
+## Database
+
+The app has 37 tables in one file, `src/main/db/schema.ts`. SQLite runs as a real database file held in memory, and the file is saved whole after each change.
+
+![The 37 tables in src/main/db/schema.ts, grouped by what they belong to](docs/images/database-tables.png)
+
+This grouping is simplified. Section tables also record a person, such as `posts.author_id`, and a few private tables link to a class. The `classes` box is highlighted because of the naming: **in this codebase a "class" is one section of a course in one term.** Each section has its own board, chats and sessions. `courses` is the catalogue entry above it.
+
+### Reading `schema.ts`
+
+A few small helpers at the top keep the tables short:
+
+```ts
+const id = () => integer('id').primaryKey({ autoIncrement: true });
+const timestamp = (name: string) => integer(name, { mode: 'timestamp_ms' });
+const createdAt = () => timestamp('created_at').notNull().$defaultFn(() => new Date());
+const userRef = (name = 'user_id') => integer(name).notNull().references(() => users.id, { onDelete: 'cascade' });
+
+export const chatLinkVotes = sqliteTable(
+  'chat_link_votes',
+  {
+    linkId: integer('link_id').notNull().references(() => chatLinks.id, { onDelete: 'cascade' }),
+    userId: userRef(),
+    vote: text('vote', { enum: ['works', 'report'] }).notNull(),
+    reason: text('reason'),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.linkId, t.userId] })],
+);
+```
+
+SQLite has few column types, so Drizzle's modes add meaning on top:
+
+| Declared as | Stored as | You get in TypeScript |
+| --- | --- | --- |
+| `integer(name, { mode: 'timestamp_ms' })` | Milliseconds | `Date` |
+| `integer(name, { mode: 'boolean' })` | 0 or 1 | `boolean` |
+| `text(name, { mode: 'json' }).$type<T>()` | JSON text | `T` |
+| `text(name, { enum: [...] })` | Text | A union of those strings |
+
+**Two kinds of time.** A moment is a timestamp, such as `dueAt`. A calendar day is a `"YYYY-MM-DD"` string, such as `scheduledFor`. Strings sort correctly and cannot drift across time zones, and `shared/dates.ts` has the helpers: `ymd`, `parseYmd`, `addDays`.
+
+### Shared versus private data
+
+Many product decisions are visible as table pairs:
+
+| Shared with the section | Private to one student |
+| --- | --- |
+| `assessments`: the grading scheme | `assessment_scores`: your marks |
+| `class_details`: professor, office hours, outline | `course_info`: your notes and target grade |
+| `deadlines` with a `class_id` | `deadline_done`: whether you checked it off, and `deadlines` with no `class_id` |
+
+**Watch out for `user_id` on shared tables.** On `assessments`, `deadlines` and `class_meetings`, it means who added the row, not who owns it. Everyone in the section sees that row. When someone deletes their account, these rows are handed to a placeholder "Former student" user, so the section keeps them.
+
+### Migrations
+
+There are 26 migrations, `0000` to `0025`, in `drizzle/`. To change the schema:
+
+1. Edit `src/main/db/schema.ts`.
+2. Run `npm run db:generate`. This writes a new SQL file and updates `drizzle/meta/`.
+3. **Read the generated SQL.** `0020_focus_on_task` came out without its `ON DELETE set null`, and had to be fixed by hand.
+4. Run `rm -rf node_modules/.vitest-cache`. Otherwise Vitest fails with `Missing migration`, because it has cached the old file list.
+
+Migrations ship in the JavaScript bundle. `main/db/migrations.ts` reads every SQL file at build time with Vite's `import.meta.glob`, and `openDatabase` runs any that this database has not had yet:
+
+```ts
+const files = import.meta.glob<string>('../../../drizzle/*.sql', { query: '?raw', import: 'default', eager: true });
+```
+
+So **each migration runs in each visitor's browser on their next load**, against their saved data. Never edit a migration that has shipped, and make sure a new one works on a database with rows in it. The dev server applies a migration as soon as it reloads, so test upgrades on the built site as well.
+
+### Seed data
+
+Two layers of data appear without anyone signing up:
+
+- **`seedCatalogue`** in `db/client.ts` runs every time the database opens. It adds 36 sample courses and their sections, and `onConflictDoNothing` makes it safe to repeat.
+- **`seedDemoData`** in `db/demo.ts` adds about 130 classmates and a busy term. `db/demoContent.ts` holds the content, with dates relative to the first visit.
+
+Demo data is versioned. `SEED_VERSION` (now `'11'`) is compared with a `demo_seed` marker in `app_state`, and each seed function must be safe to run on a browser that already has older data. `seedSections` only runs when there is no marker at all. A past bug re-ran it for newer versions, which gave returning visitors a duplicate term. `removeRepeatedSeed` exists to repair that.
+
+### The catalogue is not in the database
+
+McGill's full catalogue has 4,490 courses and 622 programs, about 4 MB of JSON in `shared/catalogue/data/`. Creating rows for all of it on each open would be too slow, so it stays as JSON:
+
+- **Loaded on demand.** `loadCourses()` and its siblings are dynamic imports, so each file becomes a separate chunk fetched when needed.
+- **Rows are created lazily.** When `catalogue.search` could show a course, `stockCourses` inserts its `courses` and `classes` rows. Everything else then treats it as a normal class.
+- **Searches don't save.** The bridge skips `persist()` after `catalogue.search`, because those rows can always be added again.
+
+The JSON is generated by Python scripts in `scripts/catalogue/`. [docs/PRODUCT.md](docs/PRODUCT.md) explains how to rerun them for a new year.
+
+## Offline, saving and tabs
+
+Three separate mechanisms do this work: IndexedDB keeps data between visits, `BroadcastChannel` updates other tabs, and a service worker keeps the site's files. None of them is sync in the usual sense, because there is no server and no other device.
+
+### Saving
+
+`persist()` in `web/bridge.ts` runs after every background tick, and after every RPC call except course search:
+
+```ts
+function persist() {
+  if (resetting) return;
+  const changes = sqlite.exec('SELECT total_changes()')[0]?.values[0]?.[0];
+  if (!changes) return;
+  // export() reopens the connection, which also resets total_changes() and pragmas.
+  const bytes = sqlite.export();
+  sqlite.run('PRAGMA foreign_keys = ON');
+  channel?.postMessage({ type: 'saved', key: DB_KEY, bytes });
+  saving = saving
+    .then(async () => {
+      await storage.save(DB_KEY, bytes);
+      setSaveProblem(!(await storage.available()));
+    })
+    .catch((err) => {
+      console.error('[storage] could not save the database:', err);
+      setSaveProblem(true);
+    });
+}
+```
+
+- **`total_changes()` decides whether to save.** It is a counter inside SQLite, so a read that changed nothing costs almost nothing.
+- **The whole file is exported every time.** sql.js has no incremental save. That is simple, but cost grows with the database size.
+- **`saving` is a promise chain,** so saves reach IndexedDB in order.
+- **Foreign keys are switched back on** after each export, because the pragma resets. Without this, cascading deletes would quietly stop working.
+
+`web/storage.ts` is a small IndexedDB wrapper. A database named `unilink-b` has one object store, `files`. It holds the database under `db` and each attachment under its `/attachments/` path. If IndexedDB is unavailable, as in some private windows, values go to a `Map` in memory. Then `onSaveProblem` fires, and `Layout` shows a red warning with a backup button.
+
+### Tabs
+
+Each tab has its own full copy of the database in memory:
+
+1. Tab A writes something, and `persist()` posts the bytes on a `BroadcastChannel`.
+2. Tab B receives them and runs `use(new SQL.Database(data.bytes), ctx)`. This closes its old database and replaces `ctx.db`.
+3. If both write at the same instant, the last save wins. [docs/PRODUCT.md](docs/PRODUCT.md) lists this as a known limit.
+
+Two behaviours can surprise you:
+
+- **Tab B's screen does not update straight away.** Receiving a save swaps the database but does not invalidate the query cache. Tab B shows the new data on its next fetch: when a component mounts, after its own next write, or within 15 seconds for the bell and study mode status.
+- **Sign-in is per tab only until reload.** `ctx.session.userId` is in each tab's memory, but `session_token` is in the shared database. Reloading a tab restores whichever account signed in last.
+
+### The service worker
+
+`src/web/sw.js` makes the site load with no connection. It is registered in `web/main.ts` only when `import.meta.env.PROD` is true, so it never interferes with the dev server.
+
+A small Vite plugin in `vite.config.ts` builds it. The plugin lists the hashed `.js`, `.css` and `.wasm` files, leaves out PDF reading, and writes the list into `sw.js`. A hash of the list becomes the cache name, so each deploy gets its own cache.
+
+| Event | What happens |
+| --- | --- |
+| `install` | Downloads and caches the page and every listed file |
+| `activate` | Deletes caches from older deploys and takes control of open tabs |
+| `fetch`, a page navigation | Tries the network first, so people get new versions. Falls back to the cached page |
+| `fetch`, anything else | Serves from the cache first, because file names contain hashes. Caches what it fetches, such as fonts and pdf.js |
+
+`caches.match` uses `ignoreVary: true` on purpose. Without it, a host sending a `Vary` header can make the cache miss while offline, and the page fails.
+
+In the app, `useNetwork` from Mantine drives an Offline badge in the header. Nearly everything still works offline, because the data is local. Group chats and online sessions need a connection only because they open other sites.
+
+### Backups
+
+A browser's copy is the only copy, so the app offers backups from Settings and the sign-in screen:
+
+- **`downloadBackup`** in the bridge copies the database, removes sign-in data from the copy, adds attachments, and downloads a `.unilink` JSON file.
+- **`restoreBackup`** checks the file before replacing anything: `readBackup` in `shared/backup.ts` validates it, and the bridge confirms it opens with a `users` table. It then clears storage, tells other tabs to reload, and reloads.
+- **`resetDemo`** clears IndexedDB and every `unilink-` key in `localStorage`.
+
+The app also calls `navigator.storage.persist()`, asking the browser not to evict its data, and reminds people to back up once a month.
+
+## Styling, UI conventions and translation
+
+Styling is Mantine components and their style props first, with one global CSS file for what they can't do. There are no CSS modules, Tailwind or CSS-in-JS. All English text doubles as its own translation key.
+
+### Mantine style props
+
+Most layout and spacing is written as props, and Mantine has a component for most UI needs:
+
+```tsx
+<Group justify="space-between" align="flex-start" mb="lg">
+  <Text fw={700} size="sm" c="dimmed">{t('Group Chat Links')}</Text>
+  <Button size="md" variant="default" leftSection={<IconPlus size={18} />}>{t('Add a group link')}</Button>
+</Group>
+```
+
+| Prop | Meaning |
+| --- | --- |
+| `mt`, `mb`, `p`, `px`, `gap` | Margin, padding, gap. Takes `xs` to `xl` or a number |
+| `c`, `fw`, `fz`, `ta` | Colour, font weight, font size, text align |
+| `c="dimmed"` | Secondary text, already contrast-checked |
+| `Group`, `Stack` | A flex row, a flex column |
+| `span={{ base: 24, lg: 8 }}` | A responsive value, in `Grid.Col` |
+| `visibleFrom="xl"` | Hides below that breakpoint |
+| `component={Link} to="/x"` | Renders a Mantine component as another element |
+
+Icons come from `@tabler/icons-react`, for example `<IconPlus size={16} />`.
+
+### The theme
+
+`src/renderer/src/theme.ts` sets the look of the whole app:
+
+- **Colours:** a custom `periwinkle` primary colour, and tinted dark greys so dark mode has a cool hue.
+- **Fonts:** Nunito for text and Fredoka for headings, bundled through Fontsource. Add `className="display"` to use Fredoka on non-heading text.
+- **Component defaults:** buttons and badges are pill-shaped, and every `Card` gets the `sketch` class for its hand-drawn outline.
+- **`cssVariablesResolver`:** adjusts Mantine's colour variables so text meets WCAG AA contrast in both colour schemes.
+- **`KIND_COLORS`:** one pastel colour per kind of item, shared by calendar chips, feed tags and badges.
+
+Use Mantine's variables rather than hex values, such as `var(--mantine-color-teal-light)`, so dark mode keeps working. The app defaults to the system colour scheme through `defaultColorScheme="auto"`.
+
+### `styles.css`
+
+The 661-line global file holds what props can't express:
+
+- **`--ul-*` variables** for page colours, redefined under `[data-mantine-color-scheme='dark']`.
+- **Custom layouts** such as `.month-grid` and `.week-grid` for the calendar, and `.nav-pill` for the header tabs.
+- **Many header media queries.** The nav has so many items that its breakpoints are tuned by hand.
+- **Switch hooks**, such as `.with-bottom-tabs` and the `data-high-contrast` attribute on `<html>`.
+
+### Small conventions
+
+- **Comments explain what and why.** Most files carry comments for readers newer to React and TypeScript, covering what each part does and any tricky syntax. Keep that up in new code. Requirement IDs mark what code implements (`// S2.5: only the owner edits`), and a quoted name marks a switch (`// 'private-links': ...`).
+- **Accessibility is expected:** icon-only buttons need an `aria-label`. The header has a skip link, and `respectReducedMotion` is on.
+- **Shared UI goes through `components/ui.tsx`:** `PageHeader`, `SectionCard`, `Empty`, `Loading`, `Tag`.
+- **No formatter or linter config.** The repo has no ESLint or Prettier setup, so match the file you are in. `tsconfig.json` has `noUnusedLocals` on, so an unused variable fails `npm run typecheck`.
+
+### Content Security Policy
+
+`index.html` sets a strict CSP: `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:`.
+
+It means **a script, stylesheet or font from a CDN will be blocked, and so will any `fetch` to another origin.** Bundle what you need instead. `wasm-unsafe-eval` is there for sql.js.
+
+### Translation (English and French)
+
+English text is the key. There are no key names like `home.title`:
 
 ```tsx
 <Text>{t('Add a deadline')}</Text>
-<Text>{t('{{count}} credits', { count })}</Text>   // plural: needs `_one` / `_other` forms
+<Text>{t('Taught by {{names}}', { names: 'Prof. Ouellet' })}</Text>
+<Text>{t('{{count}} credits', { count: 3 })}</Text>
 ```
 
-- `t()` translates now, `tx()` only marks a string for translation (for labels in constants).
-- English plural forms live in `shared/i18n/en.ts`; every French string lives in `shared/i18n/fr/*.json`.
-- The main process stores messages as `{ key, params }` (notifications, errors) so they can be shown in
-  whichever language the reader picks. Errors are `new AppError('English text', code, params)`.
-- `node scripts/i18n-keys.mjs` lists strings that are missing a French translation. `npm test` fails if
-  any are missing, if placeholders don't match, or if the French file has entries nothing uses.
-- User content (posts, titles, course names from the catalogue) isn't translated. The imported catalogue
-  stays in the language McGill published it in; only the page around it is translated.
+The functions in `lib/i18n.ts`:
 
-## The course catalogue
-
-The Catalogue page has McGill's whole 2026–27 undergraduate and professional catalogue (1,291 pages): 622
-programs, 4,490 courses, 296 awards and loan funds, 433 contacts, every date and amount, the table of contents,
-and the rules of each faculty. The rest of the app uses it too: Find courses, pasted schedules, the course
-record's search and lookup, the degree plan, global search and the Integrations panel all work from every course
-and program, and a class, record or degree line links to its catalogue page.
-
-- **Facts are copied, prose is not.** Courses, requirements, credits, dates, fees, awards, contacts and links
-  come from the PDF. The running text is McGill's and this site is public, so it's summarized in our own words,
-  much shorter than the original, with the page to check. The official text has the last word.
-- **It isn't all in the database.** `seedCatalogue` makes class rows for every course and term each time the
-  database opens, which would be far too slow here, so the data is JSON loaded when first needed. A course gets
-  its row and sections from `stockCourses` the first time a search could show it or a schedule names it, so
-  everything that works on classes works on it. The sample in `db/catalogue.ts` still drives the demo term's classes.
-- **What the PDF doesn't have, and what fills in.** It gives no terms, sections, times or exam dates, and only a few
-  prerequisites. `scripts/catalogue/infer.py` fills those in, and the notes on each screen say which is which:
-  - **Exams**: Fall is McGill's real December 2026 schedule (833 sittings, `exams.json`). Winter is an estimated date
-    in the April exam period for courses that probably run then and have a final.
-  - **Terms and sections** (`offerings.json`): real for Fall courses on the December schedule; otherwise from the code
-    (D1 in Fall, D2 in Winter), program lists, titles (part 1 in Fall, part 2 in Winter) and, for courses with a
-    likely final that aren't on the schedule, Winter. Searching an exact code, or pasting a schedule, overrides this.
-  - **Prerequisites** (`prereqs.json`, `shared/prereqs.ts`): sentences the catalogue states, which can stop a plan under
-    `check-prereqs`, and hints: the other half of a two-term course, an earlier part by title, a lower level in the subject.
-  - **Program rules** (`rules` on each part of `programs.json`, `shared/degree.ts`): limits read from the program's text
-    and checked in the degree plan. About a fifth are sentences it can't check, which it shows for the student to check.
-- **To update it for a new year,** rerun the three steps below, then redo the notes that changed. Python reads
-  the PDF, so use `-I` and keep the scripts away from the download:
-
-  ```
-  python3 -I scripts/catalogue/extract.py <pdf> <work>      # 20 pages at a time, keeps the ligatures
-  python3 -I scripts/catalogue/parse.py <work>              # sections and course tables
-  pdftotext -layout <december exam schedule pdf> <work>/exams.txt
-  python3 -I scripts/catalogue/build.py <work> src/shared/catalogue/data
-  python3 -I scripts/catalogue/build.py <work> batch 1 20   # prints the prose still without a summary
-  ```
-
-  Summaries live in `scripts/catalogue/notes/*.json`, as `{ section key: [points] }`. The build reports how much
-  running text is covered. `pdftotext` won't do: the PDF keeps ligatures in the private use area, and "ft" only
-  shows up as a wide "f" (see `extract.py`).
-
-## Decisions compared: version A vs version B
-
-The requirements board specifies the features but leaves many details open, either as explicit questions or by
-not saying. Each row is one of those choices. Everything the board *does* specify (McGill email sign-up, joining
-many classes but each once, no member list, owner-only link edits, links opening in a new tab, posts visible to
-the class or selected students, the McGill grading system, deleting the account and its data…) is the same in
-both versions.
-
-| Requirement | Left open | Version A (`unilink-web`) | Version B (this project) |
-| --- | --- | --- | --- |
-| S1.2 | Is "COMP 251" one class, or one per term/section? | One class per course per term; sections share it | **One class per section** ("COMP 251-001"). You can be in one section of a course per term; *Switch section* moves you. Each section has its own board, chats, sessions and shared info |
-| S1.1 | Search by code, name, other filters? | Code or title, plus term and subject filters | **Code wildcards** like the board's "COMP 2XX" (X, \* or ? = any digit), title words, plus term and **course level** filters |
-| S1.1 | Anything about when a section meets? | No | Search and the section's page show its **class times** (as its classmates entered them) and **warn when they clash** with your other classes that term. Joining is still allowed |
-| S4 | Who can be picked as a post's audience? | Anyone in the class, by email | Only **classmates you can already see** (who've posted or replied). Anyone else gets the same answer, so typing emails can't reveal who's in the class |
-| S1 note | When do classmates become visible, and what's shown? | Name and email, once they post, reply or join a study session | **Only posting or replying** reveals someone (joining a session doesn't). Shown: name, email, **pronouns and faculty**. The class page lists the classmates you can see |
-| S2.1 | What's shown per link? | Platform, name, who added it, when | Platform, name, who added it, **what it's for** (whole course, this section, project team, study group), and **how many classmates say it works** and when it was last checked |
-| S2.2 | Private first, then public? | Yes: private to whoever adds it until they share it | **No:** links are shared with the section as soon as they're added |
-| S2.2 | Duplicates | Same URL in the same class, after light normalization | Same **chat** (invite code), under any of its URLs (`discord.gg/x` = `discord.com/invite/x`, tracking parameters ignored), across **every section of the course**. The error says who shared it and where |
-| S2.4 | How are flagged links handled? | Reports are shown on the link; at 3 it's marked likely broken; changing the URL clears them | Classmates vote **"it works" or report** (with a reason). A link is **hidden** once 2+ report it and reports outnumber "works"; the owner is notified then and can **mark it fixed** without changing the URL |
-| S3 | Who can see a session? | Everyone in the class | **Open** to the section, or **invite-only** (hidden from anyone without the code) |
-| S3.4 | How do you invite if members are hidden? | By McGill email (must be in the class) | With a 6-character **invite code** the host shares anywhere (group chat, DM), or a ready-made **invite message with a link** that opens the session with a Join button. Codes can be regenerated. No email invites |
-| S3 | Size limit | Optional; full sessions refuse new people | **Required** (2–30, default 6); once full, people join a **waitlist** and move up automatically |
-| S3 | Where | A place or call link, in one text field | **In person** (a place) or **online** (a meeting link, shown only to people going) |
-| S3.1 | Sessions that meet every week? | Created one at a time | A session can **repeat weekly** (2–12 weeks). The weeks share one invite code, which joins every upcoming week; anyone can **join every week** from any of them; the host can cancel one week or that week and all later ones |
-| S3 | Who's going | Everyone sees names and emails of people going | **Only people going** see who else is; others see a count and the host's first name |
-| S3.5 | Host leaves; session changes | Hosts can't leave, only cancel. Edits don't notify | Leaving **hands the session to the next person going** (cancelled only if nobody's left). Moving the time or place **notifies everyone in it** |
-| S4 | Post types and topics | Free-form "type" with suggestions (Assignment, Midterm, Just yapping…) | Posts are a **question or a note**, under a **fixed topic list** (Lectures, Assignments, Exams, Labs and tutorials, Logistics, Off-topic) |
-| S4 | Replies | Threaded, one level of replies to replies | **One flat list.** Whoever asked can **accept an answer**: it's pinned first, the question shows as answered, and the feed can filter to unanswered questions |
-| S4 | Anything besides text in a post? | Inline code | Code blocks and clickable links, and **up to 4 images** per post or reply (PNG, JPEG, GIF or WebP, 5 MB each), added or pasted as a screenshot. Images follow the post's visibility and go when it's deleted |
-| S4 | Repeated questions | Nothing | While you write a title, the composer lists up to three **similar posts** in the class you can see (answered ones marked), so you can open the existing thread instead |
-| S4 | Who hears about new replies? | The post's author | **Everyone following the thread**: posting or replying follows it, anyone who can see it can follow or unfollow (unfollowing sticks), and the feed can show only followed threads |
-| S4 | Deleting a post | Deletes its replies too | A post **with replies is blanked** and the thread stays; one without replies is removed |
-| A2/G2 | Course catalogue | A built-in sample | **The whole 2026–27 catalogue** (see [The course catalogue](#the-course-catalogue)): search, programs, courses, rules, awards, dates and amounts, contacts and contents. Any course can be added and any program checked against your record |
-| A3 | Term key dates and final exams? | Not included | **Built in** (`shared/keyDates.ts`): McGill's 2026–27 key dates (classes start and end, add/drop, withdrawal with and without refund, reading breaks, exam period) on everyone's calendar, deadlines among them on Home; **no classes on breaks and holidays** (weekly class times skip them on the calendar, in the .ics export and for study mode); **McGill's December 2026 final exam schedule** per course and section, with estimated April dates until that one's out, and your own finals on your calendar and each class page |
-| A3 | "Imported from my syllabus in a later version" | Not built | **Read the course outline or any PDF, Word or text file, or paste the schedule**: lines with a date and something to hand in or write are found (English or French dates, times, weights) and reviewed before adding. Weighted ones join the section's grading scheme; the rest become class deadlines |
-| A3 | Whose class times and deadlines? | Personal: each student enters their own | **Shared with the section**: one person enters the lecture times or a class deadline and everyone sees it. Deadlines with no class stay private; each student checks deadlines off separately; only whoever added a deadline can edit it |
-| A5 | Whose course details? | Personal ("only you see these") | Professor, email, office hours, room and the **course outline file** are **shared, wiki-style** (anyone in the section edits; "edited by Priya 2 days ago"), until a [professor](#professors) teaches the section. Notes stay private |
-| A4/A5 | Whose grading scheme? | Personal, with your scores | The scheme is **shared by the section**, or set by its [professor](#professors) if it has one; **marks are private**. A component can't be removed once a classmate has a mark on it (a professor can), and the scheme can't add up to more than 100% |
-| A4/A5 | Courses graded on two schemes ("the final replaces the midterm if higher")? | Not supported | The section can add a **second scheme**, with its own weight per component; your grade is **whichever is higher**, and "what you need" and the scenarios use the better scheme for each target |
-| A4 | Weights that don't add up to 100% | Grades are scaled up to the listed total | The missing weight counts as **work still to come** (not scaled), so "what you need" covers it too |
-| G4.1 | Password requirements? | 8+ characters with a letter and a number | **Passphrases:** 12+ characters, no character rules, but **not a common password** and **not your own name** from your email |
-| G4.1/5 | Which profile info? | Name, email (read-only), program, year, daily study time | Name, **pronouns** (optional), **faculty**, **expected graduation**. The McGill email stays the one you signed up with |
-| G4.2 | What does "log in securely" mean beyond a hashed password? | Nothing more | **Five wrong passwords or recovery codes in a row pause sign-in for 15 minutes** (with a warning two tries before), and the next sign-in tells you how many attempts failed |
-| G4.4 | How does password reset work? | 6-digit code by email (shown on screen in the demo), valid 15 minutes | A **recovery code** shown once at sign-up, and replaced with a new one after each reset. No reset emails |
-| G4.7 | What happens to shared things when you delete your account? | Everything you created is deleted | Your data is deleted; you can choose to **leave your posts and replies up without your name** ("Former student"). Class times, deadlines and schemes you added to a section stay with it. Sessions you host pass to the next person going |
-| ST2 | What is "free time"? | One daily study budget (default 120 min) minus other tasks and sessions | **Free minutes per weekday** (default 90 Mon–Thu, 60 Fri, 180 weekends) minus other tasks and sessions you're going to, and none on **days off** you pick, like a trip. **"Start from my class times"** fills them in: four hours on a day with no classes, less your time in class, at least an hour |
-| ST2 | "Upload the file": what's done with it? | Kept with the plan, to open later | Kept, and **read** (PDF, Word or text): its numbered questions or problems are offered as tasks, with time shared out by their points |
-| ST2 | How is work spread? | Evenly over the days before the deadline, 1 buffer day | **As early as possible** (each task on the first day with room), **2 buffer days** by default. Missed tasks move to the next free time |
-| ST2 | "If a deadline moves, the plan adjusts": which deadline? | The plan's own due date, changed by hand | A plan can **start from a class deadline or graded item** and then **follows it**: when a classmate moves the shared date, the plan takes it, re-plans and notifies you. Picking your own date stops following. A plan due the same day as its class deadline is listed once |
-
-The yellow features (A1, A2, G3, ST1, ST3) keep version A's decisions, adjusted where they touch the above:
-notifications cover waitlist spots, host hand-offs, session changes, replies in followed threads, accepted answers,
-hidden links and failed sign-ins instead of invitations and individual reports; study mode follows the section's shared class times.
-McGill's **add/drop and withdrawal deadlines** remind students a week ahead and the day before. Students also get **one summary of the week ahead**, the first time they open the app after Sunday 16:00, listing what's due in
-the next seven days (nothing if nothing is due; it can be turned off for desktop and email like the rest).
-
-### Where the decisions live
-
-| Decision | Code |
+| Function | Use it for |
 | --- | --- |
-| Catalogue import, data and pages | `scripts/catalogue/`, `shared/catalogue/`, `pages/Catalogue.tsx` |
-| Sections, wildcard search, classmate visibility, time clashes | `db/catalogue.ts` (`sectionsFor`), `services/classes.ts`, `shared/courseQuery.ts`, `shared/meetings.ts` |
-| Link identity, purposes, hiding rule | `shared/links.ts`, `services/links.ts` |
-| Invite codes, waitlist, hand-off, weekly series | `services/studySessions.ts` |
-| Questions, accepted answers, topics, deleted posts, following threads, similar posts, images, formatting | `services/board.ts`, `components/Feed.tsx`, `shared/similar.ts`, `shared/postText.ts` |
-| Shared section info and private marks | `services/courses.ts`, `services/calendar.ts` (`visibleDeadlines`), `db/schema.ts` (`class_details`, `assessment_scores`, `deadline_done`) |
-| Unlisted weight, a second scheme | `shared/grades.ts`, `services/courses.ts` (`setSecondScheme`) |
-| Passphrases, recovery codes, sign-in pauses, deletion | `shared/validation.ts`, `services/auth.ts`, `services/access.ts` (`formerStudentId`) |
-| Free time per weekday, front-loaded plans | `shared/planner.ts`, `services/planner.ts` |
-| Tasks from the assignment file | `shared/assignment.ts`, `shared/docx.ts`, `web/platform.ts` (`readText`) |
-| Plans that follow a class deadline | `services/planner.ts` (`followMovedDeadlines`), `services/calendar.ts` (`collect`) |
-| Professors: who can change what, assignments, moderation | `services/access.ts` (`canEditShared`, `requireTeacher`), `services/assignments.ts`, `services/board.ts` |
+| `t(key, params)` | Translating now, during render |
+| `tx(key)` | Marking text in a module-level constant, then calling `t()` on it when rendering |
+| `tm(message)` | A stored `{ key, params }`, such as a notification |
+| `term('Fall 2026')` | A term name, which becomes `Automne 2026` |
 
-The database changes are migrations `0004_version_b` (new tables and columns), `0005_version_b_cleanup`
-(columns and tables B no longer uses) `0006_planner_follows_deadlines` (what a plan follows) `0007_board_visits` (new posts since your last visit), `0008_reply_edits`, `0009_thread_follows`, `0010_sign_in_limits`, `0011_second_grading_scheme`, `0012_weekly_sessions`, `0013_professors`, `0014_board_images`, `0015_mute_replies`, `0016_days_off`, `0017_post_reports`, `0018_course_outline`, `0019_cgpa_goal`, `0020_focus_on_task`, `0021_time_polls`, `0022_several_marks`, `0023_weekly_todos`, `0024_assignment_release` and `0025_focus_log`.
+**Why `tx` exists:** a constant at the top of a file is created once, so calling `t()` there would freeze the language. `tx` returns its argument unchanged, and it only marks the string so the checker can find it.
 
-## Not built yet
+**Plurals** have two entries in each language, using `_one` and `_other`. English forms go in `shared/i18n/en.ts`, and French forms in `shared/i18n/fr/*.json`:
 
-- **A shared server.** Data lives in each visitor's browser, so classmates are only shared between accounts in
-  the same browser. The RPC layer is the seam: move `src/main` behind an HTTP API and point
-  `window.unilink.call()` (in `web/bridge.ts`) at it.
-- **Email delivery (G3).** Notification emails are written to an `outbox` table and can be viewed under
-  Settings → Notifications → Email outbox. (Password resets don't need email in version B.)
-- **Website blocking (ST1).** Needs a browser extension that asks UniLink whether study mode is on. Study mode
-  only runs while a UniLink tab is open.
-- **Official exam schedule (A3).** Key dates follow McGill's published 2026–27 dates (the Winter add/drop and
-  withdrawal dates weren't out yet and are marked approximate). Fall finals are McGill's December 2026 schedule as of
-  October 27, without rooms (posted November 27). Winter finals are estimates until April's is published.
-- **Program rules (A2).** Catalogue programs are real, but the rules are worked out from their text, and some can
-  only be shown, so the degree plan needs an adviser's check. The three samples in `db/programs.ts` only
-  show for accounts that had already picked one.
-- **Live integrations (G2).** Google Calendar and myCourses use `.ics` export/import. The catalogue is a snapshot
-  of the 2026–27 PDF, not a live feed: course offerings per term, times and rooms aren't in it, so sections and
-  terms are placeholders until someone enters real ones.
-- **Two tabs saving at the same instant.** The last save wins. A save takes milliseconds, so this only
-  happens by accident.
+```ts
+// en.ts: the key itself is the plural; the helper adds the singular.
+...plural('{{count}} credits', '{{count}} credit'),
+```
+
+```json
+{
+  "{{count}} credits_one": "{{count}} crédit",
+  "{{count}} credits_other": "{{count}} crédits"
+}
+```
+
+**The backend translates too.** `AppError` keys, zod messages and `m()` notification messages all go through the same system. They are stored or sent in English and shown in the reader's language.
+
+**A test enforces completeness.** `tests/i18n.test.ts` calls `collectKeys()` from `scripts/i18n-keys.mjs`, which scans the source with regular expressions for about 1,400 keys. It fails if a French string is missing, if placeholders differ, or if a French entry is no longer used.
+
+Two consequences:
+
+- **`t(someVariable)` can't be checked.** The scanner only sees literal strings, so mark the text with `tx('...')` where it is defined.
+- **Some text stays English on purpose.** Info popups and switch-related text are for reviewers, not students. They are written as plain strings or constants, so the French check ignores them. You will see the comment "Switches stay in English".
+
+User content is never translated. The imported catalogue stays in the language McGill published it in. Date patterns are translated, as in `dayjs(d).format(t('ddd, MMM D'))`, because French puts the day first.
+
+## Testing
+
+There are 382 tests in six files, and they all run in plain Node with no browser. They cover the backend and shared logic thoroughly, but **no test renders a React component**, so UI changes must be checked by hand.
+
+| File | Tests | What it checks |
+| --- | --- | --- |
+| `tests/services.test.ts` | 235 | The real router against an in-memory database |
+| `tests/shared.test.ts` | 84 | Pure functions in `src/shared` |
+| `tests/reqInfo.test.ts` | 28 | Every info icon has a topic, and every switch is used |
+| `tests/catalogue.test.ts` | 23 | The imported McGill data |
+| `tests/demo.test.ts` | 6 | Demo seed counts, and that seeding twice adds nothing |
+| `tests/i18n.test.ts` | 6 | French coverage, placeholders, `translate()` |
+
+Run everything with `npm test`, which takes about 85 seconds here. For one file while you work, use `npx vitest run tests/shared.test.ts`, or add `-t 'S2 group chat'` to filter by test name.
+
+### Service tests read like user stories
+
+`tests/services.test.ts` uses the same Proxy client as React, except that it calls `dispatch` directly. So each test runs the real validation, access checks and SQL:
+
+```ts
+it('hides links classmates report more than they vouch for, until the owner fixes them', async () => {
+  const { classId, people } = await classmates('Maya', 'Leo', 'Ana', 'Bo');
+  const [maya, leo, ana, bo] = people;
+  const { id: linkId } = await maya.api.links.add({ classId, url: 'https://chat.whatsapp.com/Grp1', label: '', purpose: 'course' });
+
+  await expectCode(maya.api.links.vote({ linkId, vote: 'works', reason: null }), 'FORBIDDEN');
+  await leo.api.links.vote({ linkId, vote: 'report', reason: 'Expired' });
+  await bo.api.links.vote({ linkId, vote: 'report', reason: 'Broken' });
+  // ...
+});
+```
+
+The helpers at the top of that file are worth learning:
+
+| Helper | What it does |
+| --- | --- |
+| `student('Maya')` | Signs up a user and returns `{ api, user, email, ctx, recoveryCode }` |
+| `classmates('Maya', 'Leo')` | Several students joined to COMP 251-001 |
+| `comp251(api, '002')` | Finds a section's class id through search |
+| `session({ capacity: 2 })` | Valid input for creating a study session |
+| `expectCode(promise, 'FORBIDDEN')` | Asserts a call fails with that error code |
+| `titles(student)` | That student's notification titles |
+
+`beforeEach` creates a fresh in-memory database and sets `clock` to Monday 5 October 2026, 9:00. Because services call `ctx.now()`, a test can move time by assigning `clock`. `newContext()` supplies a fake `platform`, which records notifications in `shown`.
+
+Each student gets their own `ctx`, so several people can be signed in at once in one test, all sharing `db`.
+
+### Pure logic tests are simple
+
+Functions in `src/shared` take plain values, so their tests need no setup:
+
+```ts
+it('maps percentages onto the McGill scale', () => {
+  expect(letterFor(85).letter).toBe('A');
+  expect(letterFor(84.9).letter).toBe('A-');
+});
+```
+
+This is the main reason to put a rule in `shared/`: you can test its edge cases in a few lines.
+
+### Tests that guard conventions
+
+Three suites check the project itself, and can fail when you only changed UI code:
+
+- **`i18n.test.ts`** fails if you add `t('New text')` with no French entry. It also fails if you remove text but leave its French entry behind.
+- **`reqInfo.test.ts`** fails if a `<ReqInfo id="...">` has no topic, a topic has no icon, or a switch is defined but never checked. It scans source files as text.
+- **`demo.test.ts`** compares table counts, which catches seeds that run twice.
+
+### Checking things by hand
+
+These come from real near-misses on this project:
+
+- **A migration fails with `Missing migration`?** Run `rm -rf node_modules/.vitest-cache`. Vitest cached the old `import.meta.glob` result. CI is unaffected because it installs fresh.
+- **Test upgrades on the built site,** not the dev server. The dev tab has already run your migration, so editing the SQL afterwards never reaches its saved database.
+- **Start clean:** run `window.unilink.resetDemo()` in the console. You can also call `window.unilink.call('classes.mine')` there to try any procedure.
+- **React forms ignore values set by script.** `useForm` holds its own state, so use real typing when driving a form from automation.
+- **Test offline by really stopping the server,** then reloading. The service worker only runs on a build, so use `npm run build` and `npm run preview`.
+- **To simulate a deploy,** make a real content change and rebuild. A comment change is removed by minification, so file names stay the same.
+- **To test the save warning,** stub `IDBObjectStore.prototype.put` to throw a `QuotaExceededError`, then make a write. Restore it and write again to clear the warning.
+
+## Build and deployment
+
+`npm run build` produces a folder of static files, and every push to `main` on GitHub tests the code and publishes that folder to GitHub Pages. There is nothing else to deploy, because no server exists.
+
+### What the build produces
+
+`dist/` is about 11 MB, because the backend, SQLite and the whole catalogue ship to the browser. `base: './'` in `vite.config.ts` makes every URL relative, so the site works from any subfolder. The largest files in a recent build:
+
+| File | Size | What it is |
+| --- | --- | --- |
+| `guide-*.js` | 1.9 MB | Catalogue text, as a chunk |
+| `pdf.worker.min-*.mjs` | 1.3 MB | pdf.js worker. Loaded when a PDF is attached |
+| `index-*.js` | 1.1 MB | The main bundle, including the backend |
+| `programs-*.js` | 1.1 MB | Catalogue programs, as a chunk |
+| `ui-*.js` | 0.7 MB | Shared UI code |
+| `sql-wasm-browser-*.wasm` | 0.7 MB | SQLite |
+
+Lazy loading keeps the first render small, but the service worker's `install` step then downloads every listed `.js`, `.css` and `.wasm` file in the background, for offline use. Only PDF reading and fonts wait until they are used. Keep this in mind when adding large dependencies.
+
+### How a change goes live
+
+**The local branch is `version-b`, and it is pushed as `main` on GitHub.** Local `main` is an old copy of version A, kept for comparison, so don't push it.
+
+```bash
+git push origin version-b:main
+```
+
+`.github/workflows/deploy.yml` then runs:
+
+1. `npm ci`, on Node 24.
+2. `npm run typecheck`, then `npm test`. A failure stops here and nothing is published.
+3. `npm run build`, and `dist/` is uploaded as a Pages artifact.
+4. A `deploy` job publishes the artifact with `actions/deploy-pages`.
+
+`cancel-in-progress: true` means a second push cancels a deploy still running. If you push twice quickly, wait for the later run.
+
+On a visitor's next load, the page comes from the network, the new service worker takes over, and any new migrations run against their saved database. A tab left open reloads itself if it asks for a file that no longer exists.
+
+### Confirming a deploy
+
+Check the Actions tab on `austinjradi/unilink-b`. To test the live bundle itself, search it for a string only the new build contains, and make sure that string isn't already in the demo content. An email address from `demoContent.ts` once gave a false positive this way.
+
+The site's address is `https://austinjradi.github.io/unilink-b/`. Earlier on 2026-11-05 it returned GitHub's "Site not found" page even though deploys were succeeding. After the next deploy, of commit `3bf5f39`, it loaded again.
+
+### Other hosts
+
+Any static host works, with build command `npm run build` and output folder `dist`. The site needs HTTPS (or `localhost`) for the service worker and system notifications. Everything else also works over plain HTTP, for example on a phone with `npm run dev -- --host`. That is why hashing uses `@noble/hashes`: Web Crypto is missing on plain HTTP.
+
+### If the backend moved to a real server
+
+[docs/PRODUCT.md](docs/PRODUCT.md) names `window.unilink.call()` as the seam. Reading the code suggests these would also need attention, none of which has been built or tried:
+
+- **Dates would be strings.** Components and `z.date()` inputs both expect real `Date` objects, so you'd need a serializer.
+- **`ctx.session` would be per request.** Today it's one object per tab.
+- **`ctx.platform` splits in two.** File pickers and notifications must stay in the browser.
+- **Switches live in `localStorage`.** Services call `isOn` directly, so a server couldn't see them.
+- **`bridge.ts` would go away,** along with whole-file saving and `BroadcastChannel`. better-sqlite3 is what the desktop app already uses.
+
+## How to make common changes
+
+Most changes follow one of these recipes, and the tests will tell you if you missed a step. The examples are made up, but each pattern is copied from real code.
+
+Before any commit, run:
+
+```bash
+npm run typecheck
+```
+
+```bash
+npm test
+```
+
+Then look at the change in the browser, because no test covers rendering. Try light and dark mode, French, and a phone width.
+
+### Add a backend call and use it
+
+Say you want to rename a to-do.
+
+1. Add a procedure to the router in the feature's service, with its access check first:
+
+   ```ts
+   // src/main/services/todos.ts
+   rename: procedure(z.object({ id: idSchema, title: nonEmpty('Task', 200) }), ({ id, title }, ctx) => {
+     ownTodo(ctx.db, ctx.userId, id);
+     ctx.db.update(todos).set({ title }).where(eq(todos.id, id)).run();
+   }),
+   ```
+2. Call it from a component. It is already typed, and `useAction` handles the refresh and error toast:
+
+   ```tsx
+   const rename = useAction((title: string) => rpc.todos.rename({ id: item.id, title }), { success: 'Renamed' });
+   <Button onClick={() => rename.mutate(draft)} loading={rename.isPending}>{t('Save')}</Button>
+   ```
+3. Add `"Renamed"` to a French file, such as `shared/i18n/fr/version-b.json`.
+4. Add a test to `tests/services.test.ts`, covering success and a stranger's `FORBIDDEN` or `NOT_FOUND`.
+
+A brand-new service file also needs a line in `main/rpc/router.ts`. Nothing else needs registering.
+
+### Add a table or column
+
+1. Edit `src/main/db/schema.ts`. Use the helpers: `id()`, `createdAt()`, `userRef()`, `classRef()`.
+2. Run `npm run db:generate`.
+3. Read the new file in `drizzle/`. Check that foreign keys kept their `ON DELETE`, and that it works on a table with rows. A new `NOT NULL` column needs a default.
+4. Run `rm -rf node_modules/.vitest-cache`.
+5. Run the tests, then load the built site with an old saved database to test the upgrade.
+6. If the data belongs in a data export, add it to `services/myData.ts`.
+
+Data needed only under a requirement switch does not get a column. Use `read` and `write` from `services/variantData.ts`.
+
+### Add a pure rule
+
+If logic needs no database, put it in `src/shared`, so the form and the service can share it:
+
+```ts
+// src/shared/todos.ts
+export const isOverdue = (due: string | null, today: string) => due != null && due < today;
+```
+
+Import it as `@shared/todos` from either side, and test it in `tests/shared.test.ts`. Don't import React, Drizzle or anything from `src/main` here. Reading switches with `isOn` is fine, and `shared/validation.ts` does it.
+
+### Add a page
+
+1. Create `src/renderer/src/pages/Reading.tsx` with a named export:
+
+   ```tsx
+   export function ReadingPage() {
+     const list = useQuery({ queryKey: ['todos', 'reading'], queryFn: () => rpc.todos.today() });
+     if (list.isPending) return <Loading />;
+     return <PageHeader title={t('Reading')} info="nav-home" />;
+   }
+   ```
+2. Make it lazy and add a route in `App.tsx`:
+
+   ```tsx
+   const ReadingPage = page(() => import('./pages/Reading'), 'ReadingPage');
+   <Route path="/reading" element={<ReadingPage />} />
+   ```
+3. Add a tab to `NAV` in `components/Layout.tsx`. Use `tx`, because this is a module constant:
+
+   ```tsx
+   { to: '/reading', label: tx('Reading'), info: 'nav-home', match: (p) => p.startsWith('/reading') },
+   ```
+4. Add the French text. The header's media queries in `styles.css` are tuned to the current tabs, so check that the nav still fits.
+
+### Add an info icon
+
+Every icon needs a topic in `REQ_TOPICS` in `lib/reqTopics.ts`, and a new topic carries obligations. It needs a `board` id, a `how`, and at least one alternative. `reqInfo.test.ts` then requires each alternative to have a switch or a stated reason why it can't.
+
+**So reuse an existing topic when the new element belongs to the same feature.** Three tabs in `NAV` share `nav-courses`, for example. The icon also shows only once per screen, so reusing one is harmless.
+
+### Add a requirement switch
+
+1. Add the alternative's wording to a topic in `lib/reqTopics.ts`.
+2. Add an entry to `VARIANTS` in `shared/variants.ts`. The `alternative` text must match exactly, because that is how the popup finds its button. Use `groups` for switches that can't be on together.
+3. Check it with `useVariant('my-switch')` in components, and `isOn('my-switch')` in services and shared code.
+4. Write any new user-facing text as a plain string or a constant, outside `t()`, so the French check doesn't ask for it.
+5. Add a test in the "Requirement switches" area of `services.test.ts`, and call `clearVariants()` if your test needs a clean state.
+
+### Send a notification
+
+1. For a new type, add it to `NOTIFICATION_TYPES` in `shared/notifications.ts`, with a `group`, `label` and default channels. The `label` needs French.
+2. Call `notify` from the service. Use `m()` for app text and `raw()` for user-written text.
+3. Set `link` to a route, so clicking it opens the right page. Old links stay in people's databases, so keep redirects if you change routes.
+4. For a reminder that the tick could repeat, pass a `dedupeKey`.
+
+### Add demo data
+
+1. Add content to `db/demoContent.ts`, with times relative to now.
+2. Returning visitors already have a marker, so add a seed function in `db/demo.ts` that checks before inserting, and call it from `seedDemoData`.
+3. Bump `SEED_VERSION`, and note what changed in the comment above it.
+4. **Don't re-run `seedSections`.** It only runs when there is no marker.
+5. Check `tests/demo.test.ts`, which compares whole-table counts. Keep attachments in `DEMO_HANDOUTS`, since files live outside the database.
+
+### Add a heavy library
+
+Load it only when needed, as `MathText` does with KaTeX. It also needs a current flag in the effect, so a slow import can't touch an unmounted component:
+
+```tsx
+useEffect(() => {
+  let current = true;
+  import('katex').then(({ default: katex }) => {
+    if (current && ref.current) katex.render(tex, ref.current);
+  });
+  return () => { current = false; };
+}, [tex]);
+```
+
+Bundle it from npm, since the CSP blocks CDNs. If it should not be downloaded for offline use, exclude it in the `serviceWorker` plugin in `vite.config.ts`, as PDF reading is.
+
+### Commit messages
+
+Recent history uses one short sentence describing the outcome for the user, such as "Draw feed posts as they scroll into view" or "Clash warnings on study sessions, a first-steps checklist". The local branch is `version-b`.
+
+## Glossary, React refresher and gotchas
+
+Several everyday words mean something specific here, and a few behaviours surprise people new to this repo. Keep this section handy while you read the code.
+
+### Words that mean something specific
+
+| Term | Meaning here |
+| --- | --- |
+| **Class** | One section of a course in one term, such as COMP 251-001 in Fall 2026. The `classes` table and every `classId` |
+| **Course** | The catalogue entry above sections, such as COMP 251. The `courses` table |
+| **Term** | A string such as `'Fall 2026'`. `TERMS` is in `shared/dates.ts` |
+| **Main** | The backend in `src/main`. The name comes from Electron's main process |
+| **Renderer** | The React app in `src/renderer`. Also an Electron name |
+| **Bridge** | `web/bridge.ts`, which connects the two and owns the database |
+| **Procedure, router** | One backend function with its input schema, and a group of them |
+| **Platform** | The `Platform` interface: browser features such as file pickers, passed in through `ctx` |
+| **Switch, variant** | A flag that changes the site to an alternative requirement |
+| **Topic** | The content of one info popup, in `REQ_TOPICS` |
+| **Board** | Two meanings. The `board` router is the discussion board. `BOARD` in `reqTopics.ts` is the requirements board |
+| **Component** | Two meanings. A React component, or a graded item in a scheme, such as "Midterm 30%" |
+| **Scheme, assessment** | A section's grading breakdown, and one item in it |
+| **Tick** | The background job, every 30 seconds while a tab is open |
+| **Stocking** | Creating database rows for a catalogue course the first time it's needed |
+| **Version A, version B** | The two web ports. This repo is B. It makes different product choices where the board left things open |
+| **Goat** | The mascot: avatars, and the reaction on posts |
+
+Comments and tests use requirement IDs from the board: **S1 to S4** are social features, **A1 to A5** academics, **G2 to G4** general features such as accounts, and **ST1 to ST3** study tools. The first tables in [docs/PRODUCT.md](docs/PRODUCT.md) map each ID to its code.
+
+### React and TypeScript features used here
+
+| Feature | What it does | Where |
+| --- | --- | --- |
+| `lazy` and `Suspense` | Load a component's code on first render, with a fallback | `App.tsx` |
+| Error boundary | A class component that catches render errors below it | `PageBoundary` in `App.tsx` |
+| `useSyncExternalStore` | Subscribes React to a value kept outside React | `lib/variants.ts`, `lib/reqView.ts` |
+| `key` to reset state | A new key makes a fresh component | `<LinkForm key={...}>`, `<ModalsProvider key={locale}>` |
+| Returning a subscribe call from an effect | The subscribe function returns the unsubscribe, which becomes the cleanup | `useEffect(() => window.unilink.onNavigate(...), [navigate])` |
+| Lazy `useState` initialiser | Runs the expensive read only once | `useState(() => loadDraft(...))` in `ReplyBox` |
+| `useRef` for the latest callback | Lets a long-lived observer call the newest function | `more.current = onMore` in `LoadOnScroll` |
+| `useLayoutEffect` | Runs before paint, so hiding an icon doesn't flicker | `ReqInfo` |
+| `memo` | Skips re-rendering a row whose props didn't change | `SectionRow`, `CourseListRow` |
+| `useDeferredValue` | Keeps typing smooth while a long list catches up | `pages/Catalogue.tsx`, `pages/Calendar.tsx` |
+| `StrictMode` | Runs effects twice in development, to expose missing cleanup | `main.tsx` |
+| `Proxy` | Intercepts property reads and calls on an object | `lib/rpc.ts` |
+| `satisfies` | Checks a value's type without widening it | `REQ_TOPICS` |
+
+The mapped type behind `rpc` is the hardest type in the repo, and it is worth a minute:
+
+```ts
+export type RpcClient<R> = {
+  [K in keyof R]: R[K] extends Procedure<infer S, infer O>
+    ? (...args: undefined extends z.input<S> ? [input?: z.input<S>] : [input: z.input<S>]) => Promise<Awaited<O>>
+    : RpcClient<R[K]>;
+};
+```
+
+For each key of the router: if it's a procedure, the type becomes an async function that takes the schema's input and returns the handler's output. Otherwise it's a nested router, so the type recurses. The `undefined extends` part makes the argument optional for procedures that take no input.
+
+The Proxy has one subtle guard: `key !== 'then'`. Without it, `await rpc.x` would treat the proxy as a promise and try to call `.then`.
+
+### Things that catch people out
+
+1. **The Network tab shows no data calls.** Nothing crosses the network. Try procedures in the console with `await window.unilink.call('classes.mine')`. The database in IndexedDB is one binary blob, so you can't browse its rows there.
+2. **Dates are real `Date` objects,** because nothing is serialized.
+3. **Some reads write rows.** `todos.today` and `planner.list` run `reconcile`, so they may re-plan work. Don't assume a query has no side effects.
+4. **Other tabs don't update on their own.** They get the new database straight away, but the screen waits for the next fetch.
+5. **Every save writes the whole database.** Large seeds or data make every write slower.
+6. **Exporting resets pragmas.** Code calling `sqlite.export()` must run `PRAGMA foreign_keys = ON` again, or cascades stop working. `persist()` and `downloadBackup` both do this.
+7. **`user_id` on `assessments`, `deadlines` and `class_meetings` means who added the row.** Don't filter on it to find "my" rows, because those rows are shared with the section.
+8. **Switches apply to the whole browser, across all accounts.** If the app behaves strangely, check the pill in the corner that lists what's on, or clear `unilink-variants` from `localStorage`.
+9. **A `/picked/` file path dies on reload.** It points at a `File` in memory, so `storeAttachment` must copy it before the path is saved.
+10. **The file picker needs a recent click.** `platform.chooseFile` relies on the browser's user activation, so start it directly from a click handler, with nothing slow before it.
+11. **Never edit a migration that has shipped.** Visitors' browsers have already run it, so it won't run again.
+12. **`t(variable)` escapes the French check.** The scanner only finds literal strings, so mark the text with `tx()` where it's defined.
+13. **External resources are blocked by the CSP,** including scripts, fonts and `fetch` calls to other origins.
+14. **A save from another tab closes the current database.** An `async` handler part-way through an `await` could then hit a closed database, and fail with the generic error. This comes from reading `use()` in `bridge.ts`, and hasn't been reproduced.
+
+### What isn't built
+
+There is no shared server, so classmates exist only inside one browser. Emails wait in the `outbox` table, study mode can't block websites, and integrations work through file import and export rather than live connections. The "Not built yet" section of [docs/PRODUCT.md](docs/PRODUCT.md) has the full list and reasons.

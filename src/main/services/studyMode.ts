@@ -28,7 +28,7 @@ const NO_STOPPING = 'A focus session can’t be stopped early.';
 
 // ST1: study mode switches on during class times and study sessions (or by hand),
 // holds back notifications while it's on, and can turn on GNOME's Do Not Disturb.
-// Blocking websites isn't possible from here; see README.
+// Blocking websites isn't possible from here; see docs/PRODUCT.md.
 
 // `null as Date | null` gives these fields a wider type
 // than their starting value, so they can hold a Date later.

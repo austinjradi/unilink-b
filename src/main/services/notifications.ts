@@ -29,7 +29,7 @@ import { gradedItems } from './courses';
 
 // G3: in-app notifications, desktop notifications and email.
 // Email can't actually be delivered without a mail server, so messages are kept in
-// the `outbox` table, ready for a sender to pick up (see README).
+// the `outbox` table, ready for a sender to pick up (see docs/PRODUCT.md).
 
 // What a service passes to notify(). title and body are Messages ({ key,
 // params }), not finished text, so they can be shown in the reader's language.
