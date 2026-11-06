@@ -1,6 +1,6 @@
 import { type ReactNode, type SyntheticEvent, useLayoutEffect, useSyncExternalStore } from 'react';
 import { Badge, Button, Group, List, Modal, Stack, Text } from '@mantine/core';
-import { IconAdjustments, IconEye, IconEyeOff, IconInfoCircle, IconListDetails } from '@tabler/icons-react';
+import { IconAdjustments, IconBrandGithub, IconEye, IconEyeOff, IconInfoCircle, IconListDetails } from '@tabler/icons-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { clearVariants, NOT_SWITCHABLE, setVariant, variantFor, VARIANTS } from '@shared/variants';
 import { BOARD, type BoardId, type BoardItem, REQ_TOPICS, type ReqTopic, type ReqTopicId } from '../lib/reqTopics';
@@ -269,6 +269,19 @@ function Dock() {
         onClick={() => setInfoHidden(!infoHidden)}
       >
         <span className="req-dock-label">{infoHidden ? 'Show info buttons' : 'Hide info buttons'}</span>
+      </Button>
+      <Button
+        component="a"
+        href="https://github.com/austinjradi/unilink-b"
+        target="_blank"
+        rel="noreferrer"
+        size="compact-sm"
+        radius="xl"
+        variant="default"
+        aria-label="GitHub"
+        leftSection={<IconBrandGithub size={14} />}
+      >
+        <span className="req-dock-label">GitHub</span>
       </Button>
       <ChangesPill />
     </div>
