@@ -105,18 +105,18 @@ The trade-off is real: data exists only in one browser. Classmates are seeded de
 
 ## Running it locally
 
-You need Node 22 or newer. Run `npm install`, then `npm run dev`, and the whole app is at `http://localhost:5173`. There is no database, server or `.env` file to set up, because everything runs in the page.
+You need Node 22 or newer. Run `pnpm install`, then `pnpm run dev`, and the whole app is at `http://localhost:5173`. There is no database, server or `.env` file to set up, because everything runs in the page.
 
 ### Commands
 
 | Command | What it does |
 | --- | --- |
-| `npm run dev` | Vite dev server with hot reload, port 5173 |
-| `npm test` | Runs all Vitest suites once (382 tests, about 85 seconds) |
-| `npm run typecheck` | `tsc --noEmit`. CI runs this before the tests |
-| `npm run build` | Builds the static site into `dist/` |
-| `npm run preview` | Serves `dist/` at port 4173. Use it to test the service worker and offline mode |
-| `npm run db:generate` | Creates a migration after you edit `src/main/db/schema.ts` |
+| `pnpm run dev` | Vite dev server with hot reload, port 5173 |
+| `pnpm test` | Runs all Vitest suites once (382 tests, about 85 seconds) |
+| `pnpm run typecheck` | `tsc --noEmit`. CI runs this before the tests |
+| `pnpm run build` | Builds the static site into `dist/` |
+| `pnpm run preview` | Serves `dist/` at port 4173. Use it to test the service worker and offline mode |
+| `pnpm run db:generate` | Creates a migration after you edit `src/main/db/schema.ts` |
 | `node scripts/i18n-keys.mjs` | Lists English UI strings with no French translation |
 
 ### Signing in
@@ -329,7 +329,7 @@ There are no hand-written API types. A component derives them from what the serv
 type ChatLink = Out<typeof rpc.links.list>[number];
 ```
 
-`rpc` is typed as `RpcClient<AppRouter>`, a mapped type in `main/rpc/core.ts` that turns each procedure into an async function. Rename a field in a service, and every component using it fails `npm run typecheck`.
+`rpc` is typed as `RpcClient<AppRouter>`, a mapped type in `main/rpc/core.ts` that turns each procedure into an async function. Rename a field in a service, and every component using it fails `pnpm run typecheck`.
 
 Because nothing is serialized, **a `Date` from the database reaches your component as a real `Date`**, so `link.createdAt.getTime()` works. In a normal HTTP app that value would be a string. Keep this in mind if the backend ever moves to a real server.
 
@@ -806,7 +806,7 @@ Many product decisions are visible as table pairs:
 There are 26 migrations, `0000` to `0025`, in `drizzle/`. To change the schema:
 
 1. Edit `src/main/db/schema.ts`.
-2. Run `npm run db:generate`. This writes a new SQL file and updates `drizzle/meta/`.
+2. Run `pnpm run db:generate`. This writes a new SQL file and updates `drizzle/meta/`.
 3. **Read the generated SQL.** `0020_focus_on_task` came out without its `ON DELETE set null`, and had to be fixed by hand.
 4. Run `rm -rf node_modules/.vitest-cache`. Otherwise Vitest fails with `Missing migration`, because it has cached the old file list.
 
@@ -966,7 +966,7 @@ The 661-line global file holds what props can't express:
 - **Comments explain what and why.** Most files carry comments for readers newer to React and TypeScript, covering what each part does and any tricky syntax. Keep that up in new code. Requirement IDs mark what code implements (`// S2.5: only the owner edits`), and a quoted name marks a switch (`// 'private-links': ...`).
 - **Accessibility is expected:** icon-only buttons need an `aria-label`. The header has a skip link, and `respectReducedMotion` is on.
 - **Shared UI goes through `components/ui.tsx`:** `PageHeader`, `SectionCard`, `Empty`, `Loading`, `Tag`.
-- **No formatter or linter config.** The repo has no ESLint or Prettier setup, so match the file you are in. `tsconfig.json` has `noUnusedLocals` on, so an unused variable fails `npm run typecheck`.
+- **No formatter or linter config.** The repo has no ESLint or Prettier setup, so match the file you are in. `tsconfig.json` has `noUnusedLocals` on, so an unused variable fails `pnpm run typecheck`.
 
 ### Content Security Policy
 
@@ -1033,7 +1033,7 @@ There are 382 tests in six files, and they all run in plain Node with no browser
 | `tests/demo.test.ts` | 6 | Demo seed counts, and that seeding twice adds nothing |
 | `tests/i18n.test.ts` | 6 | French coverage, placeholders, `translate()` |
 
-Run everything with `npm test`, which takes about 85 seconds here. For one file while you work, use `npx vitest run tests/shared.test.ts`, or add `-t 'S2 group chat'` to filter by test name.
+Run everything with `pnpm test`, which takes about 85 seconds here. For one file while you work, use `pnpm exec vitest run tests/shared.test.ts`, or add `-t 'S2 group chat'` to filter by test name.
 
 ### Service tests read like user stories
 
@@ -1096,13 +1096,13 @@ These come from real near-misses on this project:
 - **Test upgrades on the built site,** not the dev server. The dev tab has already run your migration, so editing the SQL afterwards never reaches its saved database.
 - **Start clean:** run `window.unilink.resetDemo()` in the console. You can also call `window.unilink.call('classes.mine')` there to try any procedure.
 - **React forms ignore values set by script.** `useForm` holds its own state, so use real typing when driving a form from automation.
-- **Test offline by really stopping the server,** then reloading. The service worker only runs on a build, so use `npm run build` and `npm run preview`.
+- **Test offline by really stopping the server,** then reloading. The service worker only runs on a build, so use `pnpm run build` and `pnpm run preview`.
 - **To simulate a deploy,** make a real content change and rebuild. A comment change is removed by minification, so file names stay the same.
 - **To test the save warning,** stub `IDBObjectStore.prototype.put` to throw a `QuotaExceededError`, then make a write. Restore it and write again to clear the warning.
 
 ## Build and deployment
 
-`npm run build` produces a folder of static files, and every push to `main` on GitHub tests the code and publishes that folder to GitHub Pages. There is nothing else to deploy, because no server exists.
+`pnpm run build` produces a folder of static files, and every push to `main` on GitHub tests the code and publishes that folder to GitHub Pages. There is nothing else to deploy, because no server exists.
 
 ### What the build produces
 
@@ -1129,9 +1129,9 @@ git push origin version-b:main
 
 `.github/workflows/deploy.yml` then runs:
 
-1. `npm ci`, on Node 24.
-2. `npm run typecheck`, then `npm test`. A failure stops here and nothing is published.
-3. `npm run build`, and `dist/` is uploaded as a Pages artifact.
+1. `pnpm install --frozen-lockfile`, on Node 24.
+2. `pnpm run typecheck`, then `pnpm test`. A failure stops here and nothing is published.
+3. `pnpm run build`, and `dist/` is uploaded as a Pages artifact.
 4. A `deploy` job publishes the artifact with `actions/deploy-pages`.
 
 `cancel-in-progress: true` means a second push cancels a deploy still running. If you push twice quickly, wait for the later run.
@@ -1146,7 +1146,7 @@ The site's address is `https://austinjradi.github.io/unilink-b/`. Earlier on 202
 
 ### Other hosts
 
-Any static host works, with build command `npm run build` and output folder `dist`. The site needs HTTPS (or `localhost`) for the service worker and system notifications. Everything else also works over plain HTTP, for example on a phone with `npm run dev -- --host`. That is why hashing uses `@noble/hashes`: Web Crypto is missing on plain HTTP.
+Any static host works, with build command `pnpm run build` and output folder `dist`. The site needs HTTPS (or `localhost`) for the service worker and system notifications. Everything else also works over plain HTTP, for example on a phone with `pnpm run dev -- --host`. That is why hashing uses `@noble/hashes`: Web Crypto is missing on plain HTTP.
 
 ### If the backend moved to a real server
 
@@ -1165,11 +1165,11 @@ Most changes follow one of these recipes, and the tests will tell you if you mis
 Before any commit, run:
 
 ```bash
-npm run typecheck
+pnpm run typecheck
 ```
 
 ```bash
-npm test
+pnpm test
 ```
 
 Then look at the change in the browser, because no test covers rendering. Try light and dark mode, French, and a phone width.
@@ -1201,7 +1201,7 @@ A brand-new service file also needs a line in `main/rpc/router.ts`. Nothing else
 ### Add a table or column
 
 1. Edit `src/main/db/schema.ts`. Use the helpers: `id()`, `createdAt()`, `userRef()`, `classRef()`.
-2. Run `npm run db:generate`.
+2. Run `pnpm run db:generate`.
 3. Read the new file in `drizzle/`. Check that foreign keys kept their `ON DELETE`, and that it works on a table with rows. A new `NOT NULL` column needs a default.
 4. Run `rm -rf node_modules/.vitest-cache`.
 5. Run the tests, then load the built site with an old saved database to test the upgrade.

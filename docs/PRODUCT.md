@@ -116,18 +116,18 @@ and keyboard users get a skip link.
 Needs Node 22+.
 
 ```bash
-npm install
-npm run dev        # http://localhost:5173 with hot reload
+pnpm install
+pnpm run dev        # http://localhost:5173 with hot reload
 ```
 
 Other scripts:
 
 ```bash
-npm test           # unit + integration tests (plain Node; SQLite runs through sql.js)
-npm run typecheck
-npm run build      # static site in dist/
-npm run preview    # serve dist/ at http://localhost:4173
-npm run db:generate  # create a migration after editing src/main/db/schema.ts
+pnpm test           # unit + integration tests (plain Node; SQLite runs through sql.js)
+pnpm run typecheck
+pnpm run build      # static site in dist/
+pnpm run preview    # serve dist/ at http://localhost:4173
+pnpm run db:generate  # create a migration after editing src/main/db/schema.ts
 ```
 
 Every visitor starts in a busy Fall 2026 term: about 130 demo classmates spread over the catalogue's sections,
@@ -156,11 +156,11 @@ configuration: GitHub Pages, Netlify, Vercel, Cloudflare Pages, or any web serve
 
 - **GitHub Pages:** push this repository to GitHub, then under Settings → Pages set the source to
   "GitHub Actions". `.github/workflows/deploy.yml` tests, builds and publishes every push to `main`.
-- **Netlify / Vercel / Cloudflare Pages:** build command `npm run build`, output directory `dist`.
-- **Anywhere else:** run `npm run build` and upload the contents of `dist/`.
+- **Netlify / Vercel / Cloudflare Pages:** build command `pnpm run build`, output directory `dist`.
+- **Anywhere else:** run `pnpm run build` and upload the contents of `dist/`.
 
 The site needs HTTPS (or `localhost`) for system notifications, and to work offline and install to a home screen;
-everything else also works over plain HTTP, e.g. from a phone on the same network with `npm run dev -- --host`.
+everything else also works over plain HTTP, e.g. from a phone on the same network with `pnpm run dev -- --host`.
 
 **Backups:** with no server, a browser's copy is the only copy. Settings → Privacy downloads everything in the browser
 (the database and attachments) as one file, without anyone's sign-in, and it can be restored there or from the sign-in
@@ -247,7 +247,7 @@ notifications and emails go out in the same language. The English text is the tr
 - English plural forms live in `shared/i18n/en.ts`; every French string lives in `shared/i18n/fr/*.json`.
 - The main process stores messages as `{ key, params }` (notifications, errors) so they can be shown in
   whichever language the reader picks. Errors are `new AppError('English text', code, params)`.
-- `node scripts/i18n-keys.mjs` lists strings that are missing a French translation. `npm test` fails if
+- `node scripts/i18n-keys.mjs` lists strings that are missing a French translation. `pnpm test` fails if
   any are missing, if placeholders don't match, or if the French file has entries nothing uses.
 - User content (posts, titles, course names from the catalogue) isn't translated. The imported catalogue
   stays in the language McGill published it in; only the page around it is translated.
