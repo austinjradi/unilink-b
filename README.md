@@ -53,18 +53,18 @@ works in light and dark mode.
 Needs Node 22+.
 
 ```bash
-npm install        # also rebuilds the SQLite driver for Electron
-npm run dev        # app with hot reload
+pnpm install        # also rebuilds the SQLite driver for Electron
+pnpm run dev        # app with hot reload
 ```
 
 Other scripts:
 
 ```bash
-npm test           # unit + integration tests (run inside Electron's Node)
-npm run typecheck
-npm run build      # production build into out/
-npm start          # run the production build
-npm run db:generate  # create a migration after editing src/main/db/schema.ts
+pnpm test           # unit + integration tests (run inside Electron's Node)
+pnpm run typecheck
+pnpm run build      # production build into out/
+pnpm start          # run the production build
+pnpm run db:generate  # create a migration after editing src/main/db/schema.ts
 ```
 
 When run from source, the app seeds three demo classmates in COMP 251 and MATH 240 (Fall 2026) so the
@@ -75,7 +75,7 @@ social features have someone to interact with. The sign-in screen lists them; th
 
 Ubuntu 23.10 and later block unprivileged user namespaces, so Electron falls back to its setuid
 `chrome-sandbox` helper and aborts because that file isn't owned by root. Allow Electron dev builds through
-AppArmor once per machine. This keeps the sandbox on and survives `npm install`:
+AppArmor once per machine. This keeps the sandbox on and survives `pnpm install`:
 
 ```bash
 sudo tee /etc/apparmor.d/electron-dev > /dev/null <<'EOF'
@@ -150,7 +150,7 @@ notifications and emails go out in the same language. The English text is the tr
 - English plural forms live in `shared/i18n/en.ts`; every French string lives in `shared/i18n/fr/*.json`.
 - The main process stores messages as `{ key, params }` (notifications, errors) so they can be shown in
   whichever language the reader picks. Errors are `new AppError('English text', code, params)`.
-- `node scripts/i18n-keys.mjs` lists strings that are missing a French translation. `npm test` fails if
+- `node scripts/i18n-keys.mjs` lists strings that are missing a French translation. `pnpm test` fails if
   any are missing, if placeholders don't match, or if the French file has entries nothing uses.
 - User content (posts, titles, course names from the catalogue) isn't translated.
 
